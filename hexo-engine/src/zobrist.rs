@@ -5,6 +5,11 @@
 //! Two independent PRNG streams (window seed vs. lazy seed) so the two
 //! domains never collide on the same `u128`.
 
+// All `as usize` casts in this module compute indices into a bounded
+// 2W+1 square (default 255 × 255) after validating coord ∈ [-W, W].
+// Sign loss / truncation cannot happen for in-window coords.
+#![allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+
 use crate::board::Player;
 use crate::config::ZOBRIST_WINDOW;
 use crate::coords::Coord;
@@ -37,10 +42,11 @@ pub struct ZobristTable {
 #[allow(clippy::new_without_default)]
 impl ZobristTable {
     /// Allocate and seed the table.
+    #[must_use]
     pub fn new() -> Self {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(WINDOW_SEED);
         let mut window = vec![0u128; WINDOW_LEN].into_boxed_slice();
-        for slot in window.iter_mut() {
+        for slot in &mut window {
             *slot = next_u128(&mut rng);
         }
         Self {
@@ -50,8 +56,8 @@ impl ZobristTable {
         }
     }
 
-    /// Hash key for `(c, p)`. O(1) for in-window coords (array load); lazy
-    /// insert (O(1) amortised) for far cells.
+    /// Hash key for `(c, p)`. `O(1)` for in-window coords (array load);
+    /// lazy insert (amortised `O(1)`) for far cells.
     #[inline]
     pub fn key(&mut self, c: Coord, p: Player) -> u128 {
         if in_window(c) {
@@ -86,7 +92,7 @@ fn index(c: Coord, p: Player) -> usize {
 
 #[inline]
 fn next_u128(rng: &mut Xoshiro256PlusPlus) -> u128 {
-    let lo = rng.next_u64() as u128;
-    let hi = rng.next_u64() as u128;
+    let lo = u128::from(rng.next_u64());
+    let hi = u128::from(rng.next_u64());
     (hi << 64) | lo
 }

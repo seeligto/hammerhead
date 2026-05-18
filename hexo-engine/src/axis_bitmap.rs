@@ -5,6 +5,15 @@
 //! Shared infrastructure for win detection, window-scan eval, and shape
 //! detection. Maintained incrementally by `Board::place` / `Board::undo`.
 
+// All `as usize` / `as i16` casts in this module index into a bitmap whose
+// range has been validated by `in_range` or `word_index`. Pedantic clippy
+// can't track that invariant, so we allow the cast lints locally.
+#![allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+
 use crate::board::Player;
 use crate::coords::Coord;
 use fxhash::FxHashMap;
@@ -25,6 +34,7 @@ pub enum Axis {
 impl Axis {
     /// All three axes, in declaration order.
     #[inline]
+    #[must_use]
     pub const fn all() -> [Axis; 3] {
         [Axis::Q, Axis::R, Axis::S]
     }
@@ -32,6 +42,7 @@ impl Axis {
     /// Identifier of the line `c` lies on for this axis. Adjacent cells on
     /// the same line share the same `line_id`.
     #[inline]
+    #[must_use]
     pub const fn line_id(self, c: Coord) -> i16 {
         match self {
             Axis::Q => c.r,
@@ -43,11 +54,13 @@ impl Axis {
     /// Position of `c` along its line for this axis. Adjacent cells on the
     /// same line have consecutive `pos` values.
     #[inline]
+    #[must_use]
     pub const fn pos(self, c: Coord) -> i16 {
         match self {
-            Axis::Q => c.q,
             Axis::R => c.r,
-            Axis::S => c.q,
+            // Axes Q and S both use `q` as position; they are distinguished
+            // by their `line_id`, not their pos formula.
+            Axis::Q | Axis::S => c.q,
         }
     }
 }
@@ -63,6 +76,7 @@ pub struct LineBitmap {
 impl LineBitmap {
     /// `true` iff bit at `pos` is set. Out-of-range → false.
     #[inline]
+    #[must_use]
     pub fn get(&self, pos: i16) -> bool {
         let Some((wi, bi)) = self.indices(pos) else {
             return false;
@@ -93,6 +107,7 @@ impl LineBitmap {
     /// Count consecutive set bits backward from `pos - 1` down to `pos - 5`.
     /// Returns `0..=5`.
     #[inline]
+    #[must_use]
     pub fn run_backward(&self, pos: i16) -> u8 {
         let mut count: u8 = 0;
         for i in 1i16..=5 {
@@ -108,6 +123,7 @@ impl LineBitmap {
     /// Count consecutive set bits forward from `pos + 1` up to `pos + 5`.
     /// Returns `0..=5`.
     #[inline]
+    #[must_use]
     pub fn run_forward(&self, pos: i16) -> u8 {
         let mut count: u8 = 0;
         for i in 1i16..=5 {
@@ -123,6 +139,7 @@ impl LineBitmap {
     /// 6-bit window. Bit `i` (LSB-first) is `get(pos + i)`. Used by Layer-1
     /// eval window scan.
     #[inline]
+    #[must_use]
     pub fn window6(&self, pos: i16) -> u8 {
         let mut out: u8 = 0;
         for i in 0i16..6 {

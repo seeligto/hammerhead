@@ -31,18 +31,21 @@ pub const AXES: [Coord; 3] = [AXIS_Q, AXIS_R, AXIS_S];
 impl Coord {
     /// Build a coord.
     #[inline]
+    #[must_use]
     pub const fn new(q: i16, r: i16) -> Self {
         Self { q, r }
     }
 
     /// Cube `s` coordinate. Invariant: `q + r + s == 0`.
     #[inline]
+    #[must_use]
     pub const fn s(self) -> i16 {
         -self.q - self.r
     }
 
     /// Component-wise add.
     #[inline]
+    #[must_use]
     pub const fn add(self, other: Coord) -> Coord {
         Coord {
             q: self.q + other.q,
@@ -52,6 +55,7 @@ impl Coord {
 
     /// Component-wise sub.
     #[inline]
+    #[must_use]
     pub const fn sub(self, other: Coord) -> Coord {
         Coord {
             q: self.q - other.q,
@@ -62,6 +66,7 @@ impl Coord {
 
 /// Hex distance between two coords.
 #[inline]
+#[must_use]
 pub fn hex_distance(a: Coord, b: Coord) -> i16 {
     let dq = a.q - b.q;
     let dr = a.r - b.r;
@@ -70,6 +75,7 @@ pub fn hex_distance(a: Coord, b: Coord) -> i16 {
 
 /// `hex_distance(a, b) <= range`.
 #[inline]
+#[must_use]
 pub fn within_range(a: Coord, b: Coord, range: i16) -> bool {
     hex_distance(a, b) <= range
 }

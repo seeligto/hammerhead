@@ -1,4 +1,4 @@
-//! HeXO board state.
+//! `HeXO` board state.
 //!
 //! Owns piece map, candidate (legal-empty) set, history, 128-bit Zobrist hash,
 //! and per-coord proximity counts. `place`/`undo` maintain candidates and hash
@@ -22,6 +22,7 @@ pub enum Player {
 impl Player {
     /// Other player.
     #[inline]
+    #[must_use]
     pub const fn opponent(self) -> Player {
         match self {
             Player::X => Player::O,
@@ -44,10 +45,10 @@ pub enum BoardError {
 }
 
 /// Initial capacity for piece-keyed maps. Avoids rehashing during a typical
-/// game (HeXO games rarely exceed ~256 stones).
+/// game (`HeXO` games rarely exceed ~256 stones).
 const INITIAL_MAP_CAPACITY: usize = 256;
 
-/// HeXO board state.
+/// `HeXO` board state.
 pub struct Board {
     pieces: FxHashMap<Coord, Player>,
     proximity_count: FxHashMap<Coord, u32>,
@@ -68,6 +69,7 @@ impl Default for Board {
 
 impl Board {
     /// Empty board. Single candidate `ORIGIN`. X to move, ply 0, hash 0.
+    #[must_use]
     pub fn new() -> Self {
         let mut candidate_cells: FxHashSet<Coord> =
             FxHashSet::with_capacity_and_hasher(INITIAL_MAP_CAPACITY, FxBuildHasher::default());
@@ -105,6 +107,13 @@ impl Board {
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BoardError::MustStartAtOrigin` on a non-origin first move,
+    /// `BoardError::AlreadyOccupied` if `c` is taken, or
+    /// `BoardError::OutOfRange` if `c` is farther than `MAX_PIECE_DISTANCE`
+    /// from every existing piece.
     pub fn place(&mut self, c: Coord) -> Result<(), BoardError> {
         if self.ply == 0 {
             if c != ORIGIN {
@@ -147,6 +156,15 @@ impl Board {
     }
 
     /// Undo the most recent placement.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BoardError::NoHistory` when there is nothing to undo.
+    ///
+    /// # Panics
+    ///
+    /// Panics if internal invariants are violated (history entry missing
+    /// from the pieces map or proximity map). These should be unreachable.
     pub fn undo(&mut self) -> Result<(), BoardError> {
         let c = self.history.pop().ok_or(BoardError::NoHistory)?;
         let player = self
@@ -189,42 +207,49 @@ impl Board {
 
     /// Total stones placed so far.
     #[inline]
+    #[must_use]
     pub fn ply(&self) -> u32 {
         self.ply
     }
 
     /// 128-bit Zobrist hash of the position.
     #[inline]
+    #[must_use]
     pub fn hash(&self) -> u128 {
         self.hash
     }
 
     /// Player who places the next stone.
     #[inline]
+    #[must_use]
     pub fn to_move(&self) -> Player {
         player_at_ply(self.ply)
     }
 
     /// Number of stones on the board.
     #[inline]
+    #[must_use]
     pub fn piece_count(&self) -> usize {
         self.pieces.len()
     }
 
     /// `true` iff `c` has no stone.
     #[inline]
+    #[must_use]
     pub fn is_empty_cell(&self, c: Coord) -> bool {
         !self.pieces.contains_key(&c)
     }
 
     /// Player on `c`, or `None` if empty.
     #[inline]
+    #[must_use]
     pub fn piece_at(&self, c: Coord) -> Option<Player> {
         self.pieces.get(&c).copied()
     }
 
     /// `true` iff placing at `c` would succeed.
     #[inline]
+    #[must_use]
     pub fn is_legal(&self, c: Coord) -> bool {
         if !self.is_empty_cell(c) {
             return false;
@@ -248,12 +273,14 @@ impl Board {
 
     /// Move history in placement order.
     #[inline]
+    #[must_use]
     pub fn history(&self) -> &[Coord] {
         &self.history
     }
 
     /// Per-axis per-player line bitmaps. Used by win detection and eval.
     #[inline]
+    #[must_use]
     pub fn axes(&self) -> &AxisBitmaps {
         &self.axes
     }
@@ -261,6 +288,7 @@ impl Board {
     /// Player who just won, if any. `Some(p)` iff the most recent
     /// non-undone `place` produced a 6-in-row for `p`.
     #[inline]
+    #[must_use]
     pub fn winner(&self) -> Option<Player> {
         self.winner
     }
@@ -272,8 +300,9 @@ impl Board {
     }
 }
 
-/// Map a ply index to the player who plays that ply (see SPEC_ENGINE.md).
+/// Map a ply index to the player who plays that ply (see `SPEC_ENGINE.md`).
 #[inline]
+#[must_use]
 pub fn player_at_ply(p: u32) -> Player {
     if p == 0 {
         Player::X
