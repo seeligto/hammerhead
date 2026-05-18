@@ -89,9 +89,13 @@ fn forced_block_of_opp_closed_five() {
         "must block the only remaining endpoint, got {:?}",
         r.best_move
     );
+    // After blocking, O's 5-run is fully sealed and the position is
+    // close to even. A regression that wrongly scored the block as
+    // catastrophic (e.g. -100_000) would still satisfy a loose
+    // > -MATE/2 bound, so use a tight envelope.
     assert!(
-        r.score > -(MATE_SCORE / 2),
-        "blocking must avoid mate-class loss, got {}",
+        r.score.abs() < 50_000,
+        "post-block score must be near-neutral, got {}",
         r.score
     );
 }
@@ -196,9 +200,11 @@ fn tt_replay_reduces_nodes() {
 
     let r1 = search_root(&mut b, &mut tt, &mut ord, &cfg);
     let r2 = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    // Strict reduction: a broken TT (probes always miss) would satisfy
+    // a `<=` bound. Require warm to be noticeably smaller than cold.
     assert!(
-        r2.nodes <= r1.nodes,
-        "warm TT must not increase nodes: cold={}, warm={}",
+        r2.nodes * 2 < r1.nodes,
+        "warm TT must materially reduce nodes: cold={}, warm={}",
         r1.nodes,
         r2.nodes
     );
@@ -206,8 +212,8 @@ fn tt_replay_reduces_nodes() {
     tt.clear();
     let r3 = search_root(&mut b, &mut tt, &mut ord, &cfg);
     assert!(
-        r3.nodes >= r2.nodes,
-        "cleared TT must re-explore at least as much as warm: warm={}, cleared={}",
+        r3.nodes > r2.nodes,
+        "cleared TT must re-explore more than the warm pass: warm={}, cleared={}",
         r2.nodes,
         r3.nodes
     );
@@ -334,10 +340,20 @@ fn quiescence_finds_two_stone_mate() {
         r_q.score,
         r_noq.score
     );
+    // Strong assertion: qsearch must reach within a few plies of MATE,
+    // not just any large positional eval. A bug where qsearch stands
+    // pat at the layer-2 open-5 score (~800k) would otherwise pass.
     assert!(
-        r_q.score > MATE_SCORE / 2,
-        "quiescence must reach mate-class score, got {}",
+        r_q.score >= MATE_SCORE - 8,
+        "quiescence must reach mate-class score (within 8 plies), got {}",
         r_q.score
+    );
+    // The no-q path stands pat with the static eval; it must NOT reach
+    // mate-class scoring (proves the qsearch path is doing the work).
+    assert!(
+        r_noq.score < MATE_SCORE - 32,
+        "no-qsearch must not reach mate-class via standpat, got {}",
+        r_noq.score
     );
 }
 
