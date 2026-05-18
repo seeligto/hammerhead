@@ -7,8 +7,10 @@
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
+use crate::threats::{self, ThreatSet};
 use crate::zobrist::ZobristTable;
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::cell::{Cell, Ref, RefCell};
 use thiserror::Error;
 
 /// Players. Discriminant doubles as Zobrist player index.
@@ -64,6 +66,14 @@ pub struct Board {
     zobrist: ZobristTable,
     axes: AxisBitmaps,
     winner: Option<Player>,
+    /// Per-player lazily-computed threat caches. `None` means "stale; recompute
+    /// on next read". `RefCell` so the public accessor on `&self` can fill
+    /// the cache.
+    threats_x: RefCell<Option<ThreatSet>>,
+    threats_o: RefCell<Option<ThreatSet>>,
+    /// Centre of the most recent change that invalidated the threat caches.
+    /// Reserved for the Phase 8 incremental scanner.
+    threats_dirty_center: Cell<Option<Coord>>,
 }
 
 impl Default for Board {
@@ -103,6 +113,9 @@ impl Board {
             zobrist: ZobristTable::new(),
             axes: AxisBitmaps::new(),
             winner: None,
+            threats_x: RefCell::new(None),
+            threats_o: RefCell::new(None),
+            threats_dirty_center: Cell::new(None),
         }
     }
 
@@ -119,6 +132,9 @@ impl Board {
         self.ply = 0;
         self.axes = AxisBitmaps::new();
         self.winner = None;
+        self.threats_x.borrow_mut().take();
+        self.threats_o.borrow_mut().take();
+        self.threats_dirty_center.set(None);
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.
@@ -168,6 +184,7 @@ impl Board {
         self.history.push(c);
         self.ply += 1;
         self.axes.set(c, player);
+        self.invalidate_threats(c);
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
         }
@@ -192,6 +209,7 @@ impl Board {
             .expect("invariant: history piece in pieces map");
 
         self.axes.clear(c, player);
+        self.invalidate_threats(c);
         if self.winner == Some(player) {
             self.winner = None;
         }
@@ -333,6 +351,78 @@ impl Board {
     #[inline]
     fn is_legal_internal(&self, c: Coord) -> bool {
         self.proximity_count.get(&c).copied().unwrap_or(0) > 0
+    }
+
+    /// Threat snapshot for `player`. Cached on the board and refreshed on
+    /// first read after any `place` / `undo`.
+    ///
+    /// Returns a `Ref` (not a `&ThreatSet`) because the cache lives behind
+    /// a `RefCell`. Callers must hold the `Ref` for the duration of their
+    /// access window.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is concurrently borrowed mutably — should never
+    /// happen in single-threaded search code.
+    #[must_use]
+    pub fn threats(&self, player: Player) -> Ref<'_, ThreatSet> {
+        let slot = match player {
+            Player::X => &self.threats_x,
+            Player::O => &self.threats_o,
+        };
+        if slot.borrow().is_none() {
+            let center = self.threats_dirty_center.get();
+            let fresh = threats::compute(self, player, center, None);
+            *slot.borrow_mut() = Some(fresh);
+        }
+        Ref::map(slot.borrow(), |o| {
+            o.as_ref().expect("filled above by lazy load")
+        })
+    }
+
+    /// Drop the cached threat sets for both players and record `center` as
+    /// the dirty origin. Called by `place` / `undo` after every mutation.
+    fn invalidate_threats(&mut self, center: Coord) {
+        self.threats_x.borrow_mut().take();
+        self.threats_o.borrow_mut().take();
+        self.threats_dirty_center.set(Some(center));
+    }
+
+    /// Test-only: place a stone for an arbitrary player, bypassing the
+    /// HeXO parity / turn rules. Updates every internal cache exactly as
+    /// `place` would, including the threat dirty marker.
+    ///
+    /// Skips the empty-board and legal-range checks: callers are
+    /// responsible for legality. **Do not call from production code.**
+    #[doc(hidden)]
+    pub fn place_for_test(&mut self, c: Coord, player: Player) {
+        self.candidate_cells.remove(&c);
+        self.inner_candidate_cells.remove(&c);
+        self.pieces.insert(c, player);
+
+        add_proximity(
+            &mut self.proximity_count,
+            &mut self.candidate_cells,
+            c,
+            MAX_PIECE_DISTANCE,
+            &self.pieces,
+        );
+        add_proximity(
+            &mut self.inner_proximity_count,
+            &mut self.inner_candidate_cells,
+            c,
+            MOVE_GEN_INNER_RADIUS,
+            &self.pieces,
+        );
+
+        self.hash ^= self.zobrist.key(c, player);
+        self.history.push(c);
+        self.ply += 1;
+        self.axes.set(c, player);
+        self.invalidate_threats(c);
+        if crate::win::is_winning_move(self, c, player) {
+            self.winner = Some(player);
+        }
     }
 }
 
