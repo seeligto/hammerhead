@@ -209,12 +209,8 @@ fn extension_factor(
     let right = classify(bitmaps, axis, line_id, base_pos + 6, own, other);
     match (left, right) {
         (ExtCell::Empty, ExtCell::Empty) => OPEN_EXTENSION_FACTOR,
-        (ExtCell::Empty, ExtCell::Opp) | (ExtCell::Opp, ExtCell::Empty) => {
-            CLOSED_EXTENSION_FACTOR
-        }
-        (ExtCell::Opp, ExtCell::Opp)
-        | (ExtCell::Same, _)
-        | (_, ExtCell::Same) => 0,
+        (ExtCell::Empty, ExtCell::Opp) | (ExtCell::Opp, ExtCell::Empty) => CLOSED_EXTENSION_FACTOR,
+        (ExtCell::Opp, ExtCell::Opp) | (ExtCell::Same, _) | (_, ExtCell::Same) => 0,
     }
 }
 

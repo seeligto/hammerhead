@@ -464,7 +464,11 @@ fn perf_cached_eval_30_pieces() {
     // 30 stones spread over a 6x5 patch.
     for q in 0..6i16 {
         for r in 0..5i16 {
-            let p = if (q + r) % 2 == 0 { Player::X } else { Player::O };
+            let p = if (q + r) % 2 == 0 {
+                Player::X
+            } else {
+                Player::O
+            };
             b.place_for_test(Coord::new(q, r), p);
         }
     }
