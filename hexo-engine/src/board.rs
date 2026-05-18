@@ -5,7 +5,7 @@
 //! incrementally — no full scan.
 
 use crate::axis_bitmap::AxisBitmaps;
-use crate::config::MAX_PIECE_DISTANCE;
+use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::zobrist::ZobristTable;
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -51,8 +51,13 @@ const INITIAL_MAP_CAPACITY: usize = 256;
 /// `HeXO` board state.
 pub struct Board {
     pieces: FxHashMap<Coord, Player>,
+    /// Per-cell count of pieces within `MAX_PIECE_DISTANCE`. Drives legality.
     proximity_count: FxHashMap<Coord, u32>,
+    /// Per-cell count of pieces within `MOVE_GEN_INNER_RADIUS`. Drives the
+    /// default-radius move generator without scanning every legal cell.
+    inner_proximity_count: FxHashMap<Coord, u32>,
     candidate_cells: FxHashSet<Coord>,
+    inner_candidate_cells: FxHashSet<Coord>,
     history: Vec<Coord>,
     hash: u128,
     ply: u32,
@@ -83,7 +88,15 @@ impl Board {
                 INITIAL_MAP_CAPACITY,
                 FxBuildHasher::default(),
             ),
+            inner_proximity_count: FxHashMap::with_capacity_and_hasher(
+                INITIAL_MAP_CAPACITY,
+                FxBuildHasher::default(),
+            ),
             candidate_cells,
+            inner_candidate_cells: FxHashSet::with_capacity_and_hasher(
+                INITIAL_MAP_CAPACITY,
+                FxBuildHasher::default(),
+            ),
             history: Vec::with_capacity(INITIAL_MAP_CAPACITY),
             hash: 0,
             ply: 0,
@@ -97,8 +110,10 @@ impl Board {
     pub fn reset(&mut self) {
         self.pieces.clear();
         self.proximity_count.clear();
+        self.inner_proximity_count.clear();
         self.candidate_cells.clear();
         self.candidate_cells.insert(ORIGIN);
+        self.inner_candidate_cells.clear();
         self.history.clear();
         self.hash = 0;
         self.ply = 0;
@@ -131,19 +146,23 @@ impl Board {
         let player = self.to_move();
 
         self.candidate_cells.remove(&c);
+        self.inner_candidate_cells.remove(&c);
         self.pieces.insert(c, player);
 
-        let pieces = &self.pieces;
-        let proximity_count = &mut self.proximity_count;
-        let candidate_cells = &mut self.candidate_cells;
-        for_each_in_range(c, MAX_PIECE_DISTANCE, |d| {
-            let count = proximity_count.entry(d).or_insert(0);
-            let was_zero = *count == 0;
-            *count += 1;
-            if d != c && was_zero && !pieces.contains_key(&d) {
-                candidate_cells.insert(d);
-            }
-        });
+        add_proximity(
+            &mut self.proximity_count,
+            &mut self.candidate_cells,
+            c,
+            MAX_PIECE_DISTANCE,
+            &self.pieces,
+        );
+        add_proximity(
+            &mut self.inner_proximity_count,
+            &mut self.inner_candidate_cells,
+            c,
+            MOVE_GEN_INNER_RADIUS,
+            &self.pieces,
+        );
 
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
@@ -180,26 +199,33 @@ impl Board {
         self.hash ^= self.zobrist.key(c, player);
         self.ply -= 1;
 
-        let proximity_count = &mut self.proximity_count;
-        let candidate_cells = &mut self.candidate_cells;
-        for_each_in_range(c, MAX_PIECE_DISTANCE, |d| {
-            let entry = proximity_count
-                .get_mut(&d)
-                .expect("invariant: proximity_count entry exists for r8 neighbour");
-            *entry -= 1;
-            if *entry == 0 {
-                proximity_count.remove(&d);
-                candidate_cells.remove(&d);
-            }
-        });
+        remove_proximity(
+            &mut self.proximity_count,
+            &mut self.candidate_cells,
+            c,
+            MAX_PIECE_DISTANCE,
+        );
+        remove_proximity(
+            &mut self.inner_proximity_count,
+            &mut self.inner_candidate_cells,
+            c,
+            MOVE_GEN_INNER_RADIUS,
+        );
 
         if self.ply == 0 {
-            // Board empty: only ORIGIN is legal.
+            // Board empty: only ORIGIN is legal (outer). Inner stays empty —
+            // move-gen short-circuits on `ply == 0` before consulting it.
             self.candidate_cells.clear();
             self.candidate_cells.insert(ORIGIN);
-        } else if self.proximity_count.get(&c).copied().unwrap_or(0) > 0 {
-            // c is empty again and still within r8 of some remaining piece.
-            self.candidate_cells.insert(c);
+            self.inner_candidate_cells.clear();
+        } else {
+            // c is empty again; re-add if still within range of some piece.
+            if self.proximity_count.get(&c).copied().unwrap_or(0) > 0 {
+                self.candidate_cells.insert(c);
+            }
+            if self.inner_proximity_count.get(&c).copied().unwrap_or(0) > 0 {
+                self.inner_candidate_cells.insert(c);
+            }
         }
 
         Ok(())
@@ -266,6 +292,13 @@ impl Board {
         self.candidate_cells.iter().copied()
     }
 
+    /// Empty cells within `MOVE_GEN_INNER_RADIUS` of some piece. Backs the
+    /// default-radius move generator. Empty on an empty board (the move
+    /// generator handles the empty-board case explicitly).
+    pub fn inner_candidates(&self) -> impl Iterator<Item = Coord> + '_ {
+        self.inner_candidate_cells.iter().copied()
+    }
+
     /// All placed pieces.
     pub fn pieces(&self) -> impl Iterator<Item = (Coord, Player)> + '_ {
         self.pieces.iter().map(|(&c, &p)| (c, p))
@@ -311,4 +344,46 @@ pub fn player_at_ply(p: u32) -> Player {
     } else {
         Player::X
     }
+}
+
+/// Increment proximity counts around `center` and insert any cell whose count
+/// rose from 0 into `candidates` (if it's not already occupied).
+///
+/// Used to maintain both the outer (`r8`, legality) and inner
+/// (`MOVE_GEN_INNER_RADIUS`, move-gen) refcounts via the exact same algorithm.
+fn add_proximity(
+    counts: &mut FxHashMap<Coord, u32>,
+    candidates: &mut FxHashSet<Coord>,
+    center: Coord,
+    radius: i16,
+    pieces: &FxHashMap<Coord, Player>,
+) {
+    for_each_in_range(center, radius, |d| {
+        let count = counts.entry(d).or_insert(0);
+        let was_zero = *count == 0;
+        *count += 1;
+        if d != center && was_zero && !pieces.contains_key(&d) {
+            candidates.insert(d);
+        }
+    });
+}
+
+/// Decrement proximity counts around `center`. When a count reaches 0 the
+/// entry is removed from `counts` and (if present) from `candidates`.
+fn remove_proximity(
+    counts: &mut FxHashMap<Coord, u32>,
+    candidates: &mut FxHashSet<Coord>,
+    center: Coord,
+    radius: i16,
+) {
+    for_each_in_range(center, radius, |d| {
+        let entry = counts
+            .get_mut(&d)
+            .expect("invariant: proximity_count entry exists for neighbour");
+        *entry -= 1;
+        if *entry == 0 {
+            counts.remove(&d);
+            candidates.remove(&d);
+        }
+    });
 }

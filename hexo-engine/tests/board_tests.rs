@@ -1,5 +1,5 @@
 use hexo_engine::board::{Board, BoardError, Player};
-use hexo_engine::config::MAX_PIECE_DISTANCE;
+use hexo_engine::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use hexo_engine::coords::{Coord, ORIGIN, RANGE_OFFSETS, hex_distance};
 use std::collections::HashSet;
 
@@ -314,6 +314,104 @@ fn winner_via_diagonal_s() {
         (Coord::new(0, 4), Coord::new(0, -4)),
     );
     assert_eq!(b.winner(), Some(Player::X));
+}
+
+#[test]
+fn inner_candidates_after_origin() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    let r = MOVE_GEN_INNER_RADIUS;
+    let expected = 3 * r as usize * (r as usize + 1);
+    assert_eq!(inner.len(), expected);
+    assert!(!inner.contains(&ORIGIN));
+    for d in &inner {
+        let dist = hex_distance(*d, ORIGIN);
+        assert!(dist >= 1 && dist <= r, "cell {d:?} dist {dist} outside 1..={r}");
+    }
+}
+
+#[test]
+fn inner_candidates_excludes_far_cell() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    assert!(!inner.contains(&Coord::new(MAX_PIECE_DISTANCE, 0)));
+}
+
+#[test]
+fn inner_candidates_after_two_pieces() {
+    // INNER_RADIUS-aware test: place pieces far enough apart that some cells
+    // are only inner-adjacent to one of them.
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    let r = MOVE_GEN_INNER_RADIUS;
+    let far = Coord::new(r + 1, 0); // just outside inner of origin
+    place_ok(&mut b, far);
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+
+    // A cell `r` steps past `far` along q axis is inner of `far` only.
+    let near_far = Coord::new(far.q + r, 0);
+    assert!(inner.contains(&near_far), "missing {near_far:?}");
+
+    // A cell `r + 1` steps past origin in the opposite direction is inner of
+    // neither piece.
+    let beyond_origin = Coord::new(-(r + 1), 0);
+    assert!(!inner.contains(&beyond_origin), "should not contain {beyond_origin:?}");
+
+    // Placed pieces are never candidates.
+    assert!(!inner.contains(&ORIGIN));
+    assert!(!inner.contains(&far));
+}
+
+#[test]
+fn inner_candidates_undo() {
+    let mut b = Board::new();
+    let moves = [ORIGIN, Coord::new(2, 0), Coord::new(-1, 1), Coord::new(3, -2)];
+    for &m in &moves {
+        place_ok(&mut b, m);
+    }
+    for _ in 0..moves.len() {
+        b.undo().unwrap();
+    }
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    assert!(inner.is_empty(), "expected empty inner candidates, got {inner:?}");
+}
+
+#[test]
+fn inner_candidates_undo_intermediate() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    place_ok(&mut b, Coord::new(2, 0));
+    let snapshot: HashSet<Coord> = b.inner_candidates().collect();
+
+    place_ok(&mut b, Coord::new(-1, 1));
+    b.undo().unwrap();
+    let after: HashSet<Coord> = b.inner_candidates().collect();
+    assert_eq!(after, snapshot);
+}
+
+#[test]
+fn inner_candidates_excludes_placed_pieces() {
+    let mut b = Board::new();
+    let moves = [ORIGIN, Coord::new(2, 0), Coord::new(-1, 1)];
+    for &m in &moves {
+        place_ok(&mut b, m);
+    }
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    for m in moves {
+        assert!(!inner.contains(&m), "inner contains placed {m:?}");
+    }
+}
+
+#[test]
+fn reset_clears_inner_candidates() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    place_ok(&mut b, Coord::new(2, 0));
+    b.reset();
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    assert!(inner.is_empty());
 }
 
 #[test]
