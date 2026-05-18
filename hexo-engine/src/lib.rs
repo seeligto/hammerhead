@@ -19,7 +19,7 @@ pub use coords::{
     AXES, AXIS_Q, AXIS_R, AXIS_S, Coord, ORIGIN, RANGE_OFFSET_COUNT, RANGE_OFFSETS,
     for_each_in_range, hex_distance, within_range,
 };
-pub use eval::eval;
+pub use eval::{eval, is_mate_for};
 pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
 pub use ordering::order_moves;
 pub use search::{SearchConfig, SearchResult, search};
