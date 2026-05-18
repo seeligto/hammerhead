@@ -31,6 +31,7 @@ fn main() {
     emit_threats(&mut out, &cfg);
     emit_tt(&mut out, &cfg);
     emit_search(&mut out, &cfg);
+    emit_ordering(&mut out, &cfg);
     emit_board(&mut out, &cfg);
 
     fs::write(&out_path, out).expect("write config_generated.rs");
@@ -233,11 +234,38 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "move_gen_outer_radius"],
         "MOVE_GEN_OUTER_RADIUS",
     );
+}
+
+fn emit_ordering(out: &mut String, cfg: &toml::Value) {
     emit_usize(
         out,
         cfg,
-        &["engine", "search", "move_gen_cap"],
+        &["engine", "ordering", "move_gen_cap"],
         "MOVE_GEN_CAP",
+    );
+    emit_usize(
+        out,
+        cfg,
+        &["engine", "ordering", "killer_slots"],
+        "KILLER_SLOTS",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["engine", "ordering", "history_cutoff_max"],
+        "HISTORY_CUTOFF_MAX",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["engine", "ordering", "history_decay_num"],
+        "HISTORY_DECAY_NUM",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["engine", "ordering", "history_decay_den"],
+        "HISTORY_DECAY_DEN",
     );
 }
 
@@ -289,6 +317,11 @@ fn emit_i8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_u64(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: u64 = {v};").unwrap();
+}
+
+fn emit_u32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = as_int(get(cfg, path), path);
+    writeln!(out, "pub const {name}: u32 = {v};").unwrap();
 }
 
 fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {

@@ -84,7 +84,14 @@ aspiration_start_depth = 4
 # Move-generation tuning. See SPEC_ENGINE.md "Move Generation".
 move_gen_inner_radius = 2     # default radius for normal search nodes
 move_gen_outer_radius = 4     # extended search (anti-colony)
-move_gen_cap          = 30    # max moves returned after ordering
+
+[engine.ordering]
+# Move-ordering tuning. See SPEC_ENGINE.md "Ordering".
+move_gen_cap        = 24            # cap returned/searched moves per node
+killer_slots        = 2             # killer-move slots per ply
+history_cutoff_max  = 0x00FFFFFF    # 24-bit saturation for history scores
+history_decay_num   = 1             # per-root-search decay numerator
+history_decay_den   = 2             # per-root-search decay denominator (1/2)
 
 [engine.board]
 # legality: any move must be within this hex-distance of some piece

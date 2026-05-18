@@ -93,7 +93,15 @@ class SearchConfigDefaults:
     aspiration_start_depth: int
     move_gen_inner_radius: int
     move_gen_outer_radius: int
+
+
+@dataclass(frozen=True, slots=True)
+class OrderingConfig:
     move_gen_cap: int
+    killer_slots: int
+    history_cutoff_max: int
+    history_decay_num: int
+    history_decay_den: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +116,7 @@ class HexoConfig:
     threats: ThreatsConfig
     tt: TTConfig
     search: SearchConfigDefaults
+    ordering: OrderingConfig
     board: BoardConfig
     source_path: Path
 
@@ -124,6 +133,7 @@ def load() -> HexoConfig:
     t = engine["threats"]
     tt = engine["tt"]
     s = engine["search"]
+    o = engine["ordering"]
     b = engine["board"]
 
     return HexoConfig(
@@ -167,7 +177,13 @@ def load() -> HexoConfig:
             aspiration_start_depth=s["aspiration_start_depth"],
             move_gen_inner_radius=s["move_gen_inner_radius"],
             move_gen_outer_radius=s["move_gen_outer_radius"],
-            move_gen_cap=s["move_gen_cap"],
+        ),
+        ordering=OrderingConfig(
+            move_gen_cap=o["move_gen_cap"],
+            killer_slots=o["killer_slots"],
+            history_cutoff_max=o["history_cutoff_max"],
+            history_decay_num=o["history_decay_num"],
+            history_decay_den=o["history_decay_den"],
         ),
         board=BoardConfig(
             max_piece_distance=b["max_piece_distance"],
