@@ -8,7 +8,7 @@ use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::threats::{self, ThreatSet};
-use crate::zobrist::ZobristTable;
+use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::cell::{Cell, Ref, RefCell};
 use thiserror::Error;
@@ -63,6 +63,12 @@ pub struct Board {
     history: Vec<Coord>,
     hash: u128,
     ply: u32,
+    /// 0 = side-to-move is about to place stone 1 of their turn;
+    /// 1 = about to place stone 2. See `SPEC_ENGINE.md` "Zobrist hashing".
+    halfmove: u8,
+    /// Explicit cache of `to_move()`. Maintained in lockstep with `ply`
+    /// and `halfmove`; debug builds assert agreement with the parity formula.
+    side_to_move: Player,
     zobrist: ZobristTable,
     axes: AxisBitmaps,
     winner: Option<Player>,
@@ -86,7 +92,9 @@ impl Default for Board {
 }
 
 impl Board {
-    /// Empty board. Single candidate `ORIGIN`. X to move, ply 0, hash 0.
+    /// Empty board. Single candidate `ORIGIN`. X to move, ply 0,
+    /// halfmove 0; initial hash is the X-turn parity overlay
+    /// ([`Z_TURN_X`]).
     #[must_use]
     pub fn new() -> Self {
         let mut candidate_cells: FxHashSet<Coord> =
@@ -111,8 +119,10 @@ impl Board {
                 FxBuildHasher::default(),
             ),
             history: Vec::with_capacity(INITIAL_MAP_CAPACITY),
-            hash: 0,
+            hash: Z_TURN_X,
             ply: 0,
+            halfmove: 0,
+            side_to_move: Player::X,
             zobrist: ZobristTable::new(),
             axes: AxisBitmaps::new(),
             winner: None,
@@ -132,8 +142,10 @@ impl Board {
         self.candidate_cells.insert(ORIGIN);
         self.inner_candidate_cells.clear();
         self.history.clear();
-        self.hash = 0;
+        self.hash = Z_TURN_X;
         self.ply = 0;
+        self.halfmove = 0;
+        self.side_to_move = Player::X;
         self.axes = AxisBitmaps::new();
         self.winner = None;
         self.threats_x.borrow_mut().take();
@@ -164,7 +176,7 @@ impl Board {
             }
         }
 
-        let player = self.to_move();
+        let player = self.side_to_move;
 
         self.candidate_cells.remove(&c);
         self.inner_candidate_cells.remove(&c);
@@ -188,6 +200,7 @@ impl Board {
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
         self.ply += 1;
+        self.advance_parity();
         self.axes.set(c, player);
         self.invalidate_threats(c);
         if crate::win::is_winning_move(self, c, player) {
@@ -221,6 +234,7 @@ impl Board {
 
         self.hash ^= self.zobrist.key(c, player);
         self.ply -= 1;
+        self.retreat_parity();
 
         remove_proximity(
             &mut self.proximity_count,
@@ -274,7 +288,21 @@ impl Board {
     #[inline]
     #[must_use]
     pub fn to_move(&self) -> Player {
-        player_at_ply(self.ply)
+        debug_assert_eq!(
+            self.side_to_move,
+            player_at_ply(self.ply),
+            "side_to_move desync at ply {}",
+            self.ply,
+        );
+        self.side_to_move
+    }
+
+    /// Halfmove flag: 0 = side-to-move is about to play stone 1 of their
+    /// turn; 1 = about to play stone 2. See [`crate::zobrist`].
+    #[inline]
+    #[must_use]
+    pub fn halfmove(&self) -> u8 {
+        self.halfmove
     }
 
     /// Number of stones on the board.
@@ -358,6 +386,36 @@ impl Board {
         self.proximity_count.get(&c).copied().unwrap_or(0) > 0
     }
 
+    /// Advance `(side_to_move, halfmove)` one stone forward and XOR the
+    /// resulting parity overlay into `self.hash`.
+    ///
+    /// Must be called after `self.ply` has been incremented; the post-ply
+    /// value is used to decide the X-singleton edge case.
+    #[inline]
+    fn advance_parity(&mut self) {
+        let old = parity_overlay(self.side_to_move, self.halfmove);
+        let (new_side, new_half) = next_parity(self.side_to_move, self.halfmove, self.ply);
+        self.side_to_move = new_side;
+        self.halfmove = new_half;
+        let new = parity_overlay(new_side, new_half);
+        self.hash ^= old ^ new;
+    }
+
+    /// Reverse of [`advance_parity`]: re-derive `(side, halfmove)` from
+    /// the post-undo ply and XOR the overlay back into `self.hash`.
+    ///
+    /// Must be called after `self.ply` has been decremented.
+    #[inline]
+    fn retreat_parity(&mut self) {
+        let old = parity_overlay(self.side_to_move, self.halfmove);
+        let new_side = player_at_ply(self.ply);
+        let new_half = halfmove_at_ply(self.ply);
+        self.side_to_move = new_side;
+        self.halfmove = new_half;
+        let new = parity_overlay(new_side, new_half);
+        self.hash ^= old ^ new;
+    }
+
     /// Threat snapshot for `player`. Cached on the board and refreshed on
     /// first read after any `place` / `undo`.
     ///
@@ -437,11 +495,29 @@ impl Board {
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
         self.ply += 1;
+        self.advance_parity();
         self.axes.set(c, player);
         self.invalidate_threats(c);
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
         }
+    }
+
+    /// Test-only: overwrite `(side_to_move, halfmove)` and re-overlay the
+    /// resulting parity bits into `self.hash`. Used by zobrist tests to
+    /// construct hypothetical parity-distinct positions that are not
+    /// reachable from a normal game start.
+    ///
+    /// **Do not call from production code** — leaves the parity desynced
+    /// from `ply`, which trips the `debug_assert` inside `to_move()`.
+    #[doc(hidden)]
+    pub fn force_parity_for_test(&mut self, side: Player, halfmove: u8) {
+        debug_assert!(halfmove <= 1, "halfmove must be 0 or 1");
+        let old = parity_overlay(self.side_to_move, self.halfmove);
+        let new = parity_overlay(side, halfmove);
+        self.hash ^= old ^ new;
+        self.side_to_move = side;
+        self.halfmove = halfmove;
     }
 }
 
@@ -455,6 +531,44 @@ pub fn player_at_ply(p: u32) -> Player {
         Player::O
     } else {
         Player::X
+    }
+}
+
+/// Halfmove flag derived from ply. `0` before any stone is placed, then
+/// `(p + 1) % 2` for `p >= 1` (encodes the X-singleton exception at ply 1).
+#[inline]
+#[must_use]
+pub fn halfmove_at_ply(p: u32) -> u8 {
+    if p == 0 { 0 } else { ((p + 1) & 1) as u8 }
+}
+
+/// Parity overlay XOR'd into `Board::hash` given a `(side, halfmove)`
+/// state. See `SPEC_ENGINE.md` "Zobrist hashing".
+///
+/// Branch-free: each contribution is folded in via a sign-extended mask
+/// derived from the boolean predicate.
+#[inline]
+fn parity_overlay(side: Player, halfmove: u8) -> u128 {
+    let x_mask = u128::from(matches!(side, Player::X)).wrapping_neg();
+    let h_mask = u128::from(halfmove & 1).wrapping_neg();
+    (Z_TURN_X & x_mask) ^ (Z_HALFMOVE & h_mask)
+}
+
+/// Successor of `(side, halfmove)` after one stone is placed.
+///
+/// `post_ply` is the ply count **after** the stone, i.e. `self.ply`
+/// once it has been incremented. The only case that depends on it is
+/// the X-singleton rule: `(X, 0) → (O, 0)` instead of `(X, 1)` after
+/// the opening stone, which is exactly the `post_ply == 1` transition.
+#[inline]
+#[must_use]
+fn next_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
+    match (side, halfmove) {
+        (Player::X, 0) if post_ply == 1 => (Player::O, 0),
+        (Player::X, 0) => (Player::X, 1),
+        (Player::X, _) => (Player::O, 0),
+        (Player::O, 0) => (Player::O, 1),
+        (Player::O, _) => (Player::X, 0),
     }
 }
 

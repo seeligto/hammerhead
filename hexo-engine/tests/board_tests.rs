@@ -14,7 +14,10 @@ fn place_ok(b: &mut Board, c: Coord) {
 fn new_board_state() {
     let b = Board::new();
     assert_eq!(b.ply(), 0);
-    assert_eq!(b.hash(), 0);
+    // Empty-board hash is the X-turn parity overlay, not zero (see
+    // SPEC_ENGINE.md "Zobrist hashing").
+    assert_eq!(b.hash(), hexo_engine::zobrist::Z_TURN_X);
+    assert_eq!(b.halfmove(), 0);
     assert_eq!(b.to_move(), Player::X);
     assert_eq!(b.piece_count(), 0);
     let cands: Vec<_> = b.candidates().collect();
@@ -187,11 +190,13 @@ fn candidates_excludes_occupied() {
 #[test]
 fn reset_returns_initial_state() {
     let mut b = Board::new();
+    let fresh_hash = Board::new().hash();
     place_ok(&mut b, ORIGIN);
     place_ok(&mut b, Coord::new(2, 0));
     b.reset();
     assert_eq!(b.ply(), 0);
-    assert_eq!(b.hash(), 0);
+    assert_eq!(b.hash(), fresh_hash);
+    assert_eq!(b.halfmove(), 0);
     assert_eq!(b.piece_count(), 0);
     let cands: Vec<_> = b.candidates().collect();
     assert_eq!(cands, vec![ORIGIN]);

@@ -25,6 +25,18 @@ const WINDOW_SEED: u64 = 0x5EED_DEAD_BEEF_0BAD;
 /// the windowed stream on the same `u128` values.
 const LAZY_SEED: u64 = 0x0C0F_FEEB_ADF0_0D42;
 
+/// XOR'd into [`crate::board::Board::hash`] whenever it is X's turn at the
+/// start of a turn (halfmove == 0). Toggles each full turn.
+///
+/// Stored as an independent `pub const` literal so adding parity bits does
+/// not consume any draws from `WINDOW_SEED` or `LAZY_SEED` — existing
+/// per-cell keys stay byte-identical to pre-Phase-6 builds.
+pub const Z_TURN_X: u128 = 0xA0B1_C2D3_E4F5_0617_2839_4A5B_6C7D_8E9F;
+
+/// XOR'd into [`crate::board::Board::hash`] whenever the current stone is
+/// the second of a 2-stone turn (halfmove == 1).
+pub const Z_HALFMOVE: u128 = 0x1F2E_3D4C_5B6A_7988_8776_6554_4332_2110;
+
 const W: i16 = ZOBRIST_WINDOW;
 const SIDE: usize = (2 * W as usize) + 1;
 const WINDOW_LEN: usize = SIDE * SIDE * 2;

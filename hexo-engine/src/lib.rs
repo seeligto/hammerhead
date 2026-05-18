@@ -13,7 +13,7 @@ pub mod win;
 pub mod zobrist;
 
 pub use axis_bitmap::{Axis, AxisBitmaps};
-pub use board::{Board, BoardError, Player, player_at_ply};
+pub use board::{Board, BoardError, Player, halfmove_at_ply, player_at_ply};
 pub use config::*;
 pub use coords::{
     AXES, AXIS_Q, AXIS_R, AXIS_S, Coord, ORIGIN, RANGE_OFFSET_COUNT, RANGE_OFFSETS,
@@ -29,4 +29,4 @@ pub use threats::{
 };
 pub use tt::{TTEntry, TTFlag, TranspositionTable};
 pub use win::is_winning_move;
-pub use zobrist::ZobristTable;
+pub use zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
