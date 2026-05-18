@@ -13,3 +13,7 @@ build/
 .mypy_cache/
 .ruff_cache/
 Cargo.lock
+
+# Local-only reference material (PDFs, etc.) — not tracked.
+refs/
+*.pdf

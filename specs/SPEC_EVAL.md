@@ -75,11 +75,21 @@ Detect named threat shapes. Score per WSC tuple `(W, S, C)`.
 Shape detection runs after window scan. Inputs: piece set local to last move, axis lines.
 
 Algorithm:
-1. For each piece of `p` at position `c`, enumerate 3 axes.
-2. Walk line `±5` cells. Find max-length contiguous own run.
-3. Classify endpoints: open / closed / dead.
-4. Match against shape table.
-5. Cross-axis shapes (rhombus, triangle, bone): detect by piece-cluster scan.
+
+1. On `place(c, p)` and `undo(c, p)`, mark `threats_dirty = true` and record
+   `last_change_center = Some(c)`.
+2. On `threats(player)` read, if dirty: recompute within radius
+   `THREAT_RECOMPUTE_RADIUS` (default 5) of `last_change_center`. Threats
+   wholly outside the dirty radius retain prior values.
+3. Linear shapes (open_5, closed_5, open_4, closed_4, open_3, closed_3,
+   open_2): per piece of `player` within the dirty radius, walk each of
+   the 3 axes ±5 cells via `axis_bitmap`. Classify maximal own-run
+   endpoints as open / closed / dead. Match against shape table.
+4. Cross-axis shapes (rhombus, triangle, arch, bone, trapezoid): cluster
+   scan within `THREAT_CLUSTER_RADIUS` (default 2) of the dirty center.
+   Use small pattern matcher (see threats.rs::shape::cross_axis).
+5. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord; 4]>`
+   such that placing any one of these denies completion next stone.
 
 Cache shape counts incrementally per player:
 ```rust
@@ -192,10 +202,24 @@ both Rust and Python see new values.
 
 Future: PyO3 runtime override hook for tuning experiments without rebuild.
 
-## Radius Theory Integration (Hexo Radius Theory.pdf)
+## Radius Theory Integration
 
 - Single stone in C-ring (dist 3) defends colony + open-3 potential
 - Pair in D-ring (dist 4) defends colony + open-3 potential
 - Apply: when opponent makes far colony, eval considers whether own pieces lie within defense radius. Reduce threat weight of colony if defended.
 
 Implementation: for each enemy colony cluster, check if own pieces within C/D ring. Discount threat score accordingly.
+
+## ThreatSet contract
+
+`ThreatSet` exposes per-player S0 threat instances as
+`Vec<ThreatInstance>`, each holding:
+- `kind: ThreatKind` (OpenFive, ClosedFive, OpenFour, ClosedFour)
+- `pieces: SmallVec<[Coord; 5]>` — the stones participating
+- `defense_cells: SmallVec<[Coord; 4]>` — cells whose occupation by
+  opponent denies completion next stone
+
+`defense_cells` is the minimal blocker set, not all blockers. For
+open-four: both extension endpoints (size 2). For closed-four: the
+single open extension (size 1). For open-five: both endpoints (size 2).
+For closed-five: the one open endpoint (size 1).

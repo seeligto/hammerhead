@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Style
+
+Caveman mode. No articles. No filler. No pleasantries.
+Short sentences. Code speaks for itself. Explain only when asked.
+
+## Commits
+
+Atomic. Descriptive. Simple. Short (< 72 char subject).
+**Never include `Co-Authored-By: Claude` or any Claude Code attribution.**
+Each commit does one logical thing.
+
+Examples (good):
+- `threats: add ThreatSet defense_cells extraction`
+- `tt: implement two-bucket replacement policy`
+- `zobrist: add Z_HALFMOVE constant + parity transitions`
+
 ## Repo shape
 
 Two-package workspace, one shared config file:
@@ -9,7 +25,7 @@ Two-package workspace, one shared config file:
 - `hexo-engine/` — Rust crate (edition 2024, rust 1.85+). Core engine + PyO3 bindings. Compiles to a Python extension module named `hexo_engine`.
 - `hexo/` — Python package (3.11+, needs stdlib `tomllib`). Thin wrapper over `hexo_engine`: `Bot`, CLI, benchmarks, notation, config view.
 - `hexo.toml` — single source of truth for engine *tuning* (eval weights, search defaults, board constants). See "Config invariant" below.
-- `specs/SPEC_*.md` — authoritative design docs. Treat as source of truth for behavior; the code is currently scaffolded and mostly `todo!()`. PDFs in `specs/` are background design references (HeXO theory, WSC threats, radius theory).
+- `specs/SPEC_*.md` — authoritative design docs. Treat as source of truth for behavior; the code is currently scaffolded and mostly `todo!()`.
 
 The Python package's `hexo_engine` dependency is satisfied by `maturin develop` installing the Rust build into the active venv — it is not on PyPI.
 
@@ -56,8 +72,74 @@ From `specs/SPEC_ARCHITECTURE.md`:
 - **`pybind.rs` is a thin shim.** No game logic in the PyO3 layer — all logic lives in pure-Rust modules so it can be tested with `cargo test` without a Python interpreter.
 - **No allocation in the search hot path** where avoidable. Pre-allocated move buffers (`SmallVec`), incremental threat/window caches, incremental Zobrist hash updates, fixed-size TT indexed by `hash & MASK`.
 - **GIL handling:** long searches in `pybind.rs` should release the GIL via `py.allow_threads(|| ...)`.
-- **Engine eval sign:** positive = X advantage, negative = O advantage. Search uses negamax with a `to_move_sign` multiplier.
+- **Engine eval sign:** positive = X advantage, negative = O advantage. Search is **minimax form**, not negamax; eval is X-positive globally.
 - **`lib.rs` is `pub use` only** — re-exports the public surface; no logic.
+
+## Hot path discipline
+
+- `FxHashMap` / `FxHashSet` only. Never `std::collections::HashMap`.
+- `#[inline]` on accessors and short helpers in hot loops.
+- `#[cold]` on init / growth branches.
+- No `unwrap` in library code. `Result` + `thiserror`.
+- No `unsafe` without profiling evidence + invariant comment.
+- All numeric tuning lives in `hexo.toml`. Magic numbers in code = bug.
+- No alloc in search inner loop. `SmallVec` for short collections.
+
+## Linting
+
+Must pass:
+
+```
+cargo clippy --all-targets -- -D warnings -W clippy::all -W clippy::pedantic -A clippy::module_name_repetitions
+```
+
+## Architectural decisions (locked)
+
+- Search is **per-stone**, not per-turn.
+- **Minimax form**, not negamax. Eval is X-positive globally.
+- `Board::to_move()` parity rule handles the same-player-twice case.
+- `Engine::best_move()` returns one stone. Python `Bot` calls twice per turn.
+- Zobrist is 128-bit. **Includes a `Z_HALFMOVE` parity flag** to disambiguate
+  "whose second stone is next" — addressed in Phase 6.
+- Per-axis sparse line bitmaps (`axis_bitmap.rs`) shared by win/threats/eval.
+- TT is two-bucket (depth-preferred + always-replace), generation-aged.
+- Null-move pruning **skipped in v1**. Two-stone turn parity is fragile;
+  revisit post-baseline.
+- Threat-only quiescence with hard cap (8 plies).
+- LMR at depth ≥ 3, move index ≥ 6, R = 1. Disabled for TT / killer / S0.
+- Time split: stone 1 = 60% of turn budget, stone 2 = 40% (configurable).
+
+## Verification gate
+
+Every phase ends green:
+
+```
+make check    # cargo clippy + cargo test --release + pytest
+```
+
+## Specs are source of truth
+
+Before writing any code, read the relevant `specs/SPEC_*.md`. If a
+spec is ambiguous, flag it — do not improvise. If a spec needs
+updating, update the spec first, in its own commit, with a clear
+rationale.
+
+When following a Phase prompt: STEP 0 always updates specs. Do not
+skip it.
+
+## Phase plan
+
+See `specs/SPEC_ROADMAP.md`. Do not skip phases. Do not implement
+out of order without flagging the deviation. Each phase has a prompt
+in `prompts/PHASE_N_PROMPT.md`.
+
+When a prompt has a STEP 0 (spec & config updates), do it first, in
+its own commit.
+
+## Reporting
+
+End of each phase: produce the "When Done" report from the prompt
+verbatim. Do not paraphrase. Do not omit ambiguities encountered.
 
 ## Spec → code mapping
 
