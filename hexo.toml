@@ -89,6 +89,7 @@ move_gen_outer_radius = 4     # extended search (anti-colony)
 # Move-ordering tuning. See SPEC_ENGINE.md "Ordering".
 move_gen_cap        = 24            # cap returned/searched moves per node
 killer_slots        = 2             # killer-move slots per ply
+max_ply             = 128           # killer table size: search-tree depth cap
 history_cutoff_max  = 0x00FFFFFF    # 24-bit saturation for history scores
 history_decay_num   = 1             # per-root-search decay numerator
 history_decay_den   = 2             # per-root-search decay denominator (1/2)

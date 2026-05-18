@@ -99,6 +99,7 @@ class SearchConfigDefaults:
 class OrderingConfig:
     move_gen_cap: int
     killer_slots: int
+    max_ply: int
     history_cutoff_max: int
     history_decay_num: int
     history_decay_den: int
@@ -181,6 +182,7 @@ def load() -> HexoConfig:
         ordering=OrderingConfig(
             move_gen_cap=o["move_gen_cap"],
             killer_slots=o["killer_slots"],
+            max_ply=o["max_ply"],
             history_cutoff_max=o["history_cutoff_max"],
             history_decay_num=o["history_decay_num"],
             history_decay_den=o["history_decay_den"],

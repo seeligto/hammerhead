@@ -249,6 +249,7 @@ fn emit_ordering(out: &mut String, cfg: &toml::Value) {
         &["engine", "ordering", "killer_slots"],
         "KILLER_SLOTS",
     );
+    emit_usize(out, cfg, &["engine", "ordering", "max_ply"], "MAX_PLY");
     emit_u32(
         out,
         cfg,
