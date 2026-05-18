@@ -66,10 +66,14 @@ cluster_radius   = 2
 # guard against pathological positions (worst-case all-stones-in-one-cluster)
 max_s0_instances_per_player = 64
 
+[engine.tt]
+# Default size for the transposition table. Two-bucket slots (~64 bytes each);
+# the size is rounded down to a power of two during construction.
+default_size_mb = 64
+
 [engine.search]
 default_max_depth      = 64
 default_time_ms        = 1000
-default_tt_size_mb     = 256
 default_move_radius    = 2
 extended_move_radius   = 4
 full_legality_radius   = 8

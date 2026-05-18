@@ -77,10 +77,14 @@ class ThreatsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TTConfig:
+    default_size_mb: int
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigDefaults:
     default_max_depth: int
     default_time_ms: int
-    default_tt_size_mb: int
     default_move_radius: int
     extended_move_radius: int
     full_legality_radius: int
@@ -102,6 +106,7 @@ class BoardConfig:
 class HexoConfig:
     eval: EvalConfig
     threats: ThreatsConfig
+    tt: TTConfig
     search: SearchConfigDefaults
     board: BoardConfig
     source_path: Path
@@ -117,6 +122,7 @@ def load() -> HexoConfig:
     engine = raw["engine"]
     e = engine["eval"]
     t = engine["threats"]
+    tt = engine["tt"]
     s = engine["search"]
     b = engine["board"]
 
@@ -147,10 +153,12 @@ def load() -> HexoConfig:
             cluster_radius=t["cluster_radius"],
             max_s0_instances_per_player=t["max_s0_instances_per_player"],
         ),
+        tt=TTConfig(
+            default_size_mb=tt["default_size_mb"],
+        ),
         search=SearchConfigDefaults(
             default_max_depth=s["default_max_depth"],
             default_time_ms=s["default_time_ms"],
-            default_tt_size_mb=s["default_tt_size_mb"],
             default_move_radius=s["default_move_radius"],
             extended_move_radius=s["extended_move_radius"],
             full_legality_radius=s["full_legality_radius"],

@@ -29,6 +29,7 @@ fn main() {
 
     emit_eval(&mut out, &cfg);
     emit_threats(&mut out, &cfg);
+    emit_tt(&mut out, &cfg);
     emit_search(&mut out, &cfg);
     emit_board(&mut out, &cfg);
 
@@ -167,6 +168,15 @@ fn emit_threats(out: &mut String, cfg: &toml::Value) {
     );
 }
 
+fn emit_tt(out: &mut String, cfg: &toml::Value) {
+    emit_usize(
+        out,
+        cfg,
+        &["engine", "tt", "default_size_mb"],
+        "DEFAULT_TT_SIZE_MB",
+    );
+}
+
 fn emit_search(out: &mut String, cfg: &toml::Value) {
     emit_usize(
         out,
@@ -179,12 +189,6 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         cfg,
         &["engine", "search", "default_time_ms"],
         "DEFAULT_TIME_MS",
-    );
-    emit_usize(
-        out,
-        cfg,
-        &["engine", "search", "default_tt_size_mb"],
-        "DEFAULT_TT_SIZE_MB",
     );
     emit_i16(
         out,

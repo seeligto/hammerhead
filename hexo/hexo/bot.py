@@ -9,7 +9,7 @@ from .config import CONFIG
 class BotConfig:
     time_per_move_ms: int = CONFIG.search.default_time_ms
     max_depth: int | None = None
-    tt_size_mb: int = CONFIG.search.default_tt_size_mb
+    tt_size_mb: int = CONFIG.tt.default_size_mb
 
 
 class Bot:
