@@ -74,6 +74,9 @@ pub struct Board {
     /// Centre of the most recent change that invalidated the threat caches.
     /// Reserved for the Phase 8 incremental scanner.
     threats_dirty_center: Cell<Option<Coord>>,
+    /// Lazily-filled static-eval result. `None` after every mutation,
+    /// reassigned on the next call to [`Board::cached_eval`].
+    eval_cache: Cell<Option<i32>>,
 }
 
 impl Default for Board {
@@ -116,6 +119,7 @@ impl Board {
             threats_x: RefCell::new(None),
             threats_o: RefCell::new(None),
             threats_dirty_center: Cell::new(None),
+            eval_cache: Cell::new(None),
         }
     }
 
@@ -135,6 +139,7 @@ impl Board {
         self.threats_x.borrow_mut().take();
         self.threats_o.borrow_mut().take();
         self.threats_dirty_center.set(None);
+        self.eval_cache.set(None);
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.
@@ -386,6 +391,20 @@ impl Board {
         self.threats_x.borrow_mut().take();
         self.threats_o.borrow_mut().take();
         self.threats_dirty_center.set(Some(center));
+        self.eval_cache.set(None);
+    }
+
+    /// Static eval, cached on the board. Recomputes lazily after every
+    /// `place` / `undo`. Use this from search leaves rather than calling
+    /// [`crate::eval::eval`] directly.
+    #[must_use]
+    pub fn cached_eval(&self) -> i32 {
+        if let Some(v) = self.eval_cache.get() {
+            return v;
+        }
+        let v = crate::eval::eval(self);
+        self.eval_cache.set(Some(v));
+        v
     }
 
     /// Test-only: place a stone for an arbitrary player, bypassing the
