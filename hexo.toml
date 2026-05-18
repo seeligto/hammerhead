@@ -57,3 +57,7 @@ aspiration_start_depth = 4
 [engine.board]
 # legality: any move must be within this hex-distance of some piece
 max_piece_distance = 8
+
+# zobrist: half-extent of preallocated u128 hash window
+# (2*W + 1)^2 * 2 entries; W = 127 -> ~2 MB
+zobrist_window = 127

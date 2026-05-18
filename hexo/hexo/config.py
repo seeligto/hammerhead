@@ -81,6 +81,7 @@ class SearchConfigDefaults:
 @dataclass(frozen=True, slots=True)
 class BoardConfig:
     max_piece_distance: int
+    zobrist_window: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +135,7 @@ def load() -> HexoConfig:
         ),
         board=BoardConfig(
             max_piece_distance=b["max_piece_distance"],
+            zobrist_window=b["zobrist_window"],
         ),
         source_path=path,
     )

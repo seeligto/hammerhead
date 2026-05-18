@@ -32,10 +32,12 @@ pub fn hex_distance(a: Coord, b: Coord) -> i16 {
 ```rust
 pub struct Board {
     pieces: FxHashMap<Coord, Player>,
-    hash: u64,
-    ply: u32,                      // total stones placed
+    proximity_count: FxHashMap<Coord, u32>,
+    candidate_cells: FxHashSet<Coord>,
     history: Vec<Coord>,
-    candidate_cells: FxHashSet<Coord>,  // empties near pieces
+    hash: u128,             // 128-bit Zobrist; TT bucket = (hash as u64) & MASK
+    ply: u32,
+    zobrist: ZobristTable,
 }
 
 #[repr(u8)]
@@ -57,19 +59,40 @@ fn place(&mut self, c: Coord) -> Result<()>;   // updates hash, candidates, hist
 fn undo(&mut self) -> Result<()>;              // pops last
 fn to_move(&self) -> Player;
 fn is_legal(&self, c: Coord) -> bool;
-fn is_empty(&self, c: Coord) -> bool;
-fn hash(&self) -> u64;
+fn is_empty_cell(&self, c: Coord) -> bool;
+fn hash(&self) -> u128;
 ```
 
 ### Legality
 
-- empty cell
-- if `ply == 0`: must be origin `(0, 0)`
-- else: `min hex_dist to any piece ≤ 8`
+A cell `c` is legal iff:
 
-Maintain candidate set incrementally:
-- on `place(c)`: insert all empties within radius 2 around `c`
-- on `undo`: remove cells no longer adjacent to any piece (use refcount or rebuild lazy)
+- It is empty (`c` not in `pieces`), AND
+- One of:
+  - `ply == 0` and `c == (0, 0)` (forced first move at origin), OR
+  - `ply >= 1` and `min(hex_dist(c, p) for p in pieces) <= MAX_PIECE_DISTANCE`
+    (default 8, from `hexo.toml`).
+
+Framing: the legal region is the **union of `r8` hexes** centred on each
+existing piece. Placing a new piece at `c` extends the region by the `r8` hex
+around `c`. Example: with stones at (0,0) and (8,0), legal cells span up to
+(16,0).
+
+### Candidate maintenance
+
+`candidate_cells` holds the *current* legal empty cells. Maintained
+incrementally:
+
+- `proximity_count: FxHashMap<Coord, u32>` — for each cell within `r8` of any
+  piece, count how many pieces are within `r8`. Cell is in candidate set iff
+  `proximity_count > 0` AND cell is empty.
+- `place(c)`: for every `d` in the `r8` hex around `c`, increment
+  `proximity_count[d]`. If `proximity_count[d]` rose from 0 and `d` is empty,
+  insert into candidates. Remove `c` itself from candidates.
+- `undo(c)`: reverse. Decrement counts; remove from candidates when count hits
+  0. Re-insert `c` if its remaining proximity count > 0 (other pieces still in
+  range).
+- `ply == 0` special case: candidates = `{(0, 0)}` when board empty.
 
 ## Move Generation (`moves.rs`)
 
@@ -104,21 +127,41 @@ Walk back up to 5 along axis (stop at non-`p`), then forward, count consecutive 
 
 ## Zobrist (`zobrist.rs`)
 
-Each `(q, r, player)` → random `u64`. XOR-update on place/undo.
+128-bit hash. Reduces collision probability to negligible across deep search.
 
-Option A (bounded preallocation):
-- Window: q,r in [-127, 127]. 255² × 2 players × 8 bytes ≈ 1 MB. Init once. Outside window: hash on demand.
+Each `(q, r, player)` → random `u128`. XOR-update on place/undo.
 
-Option B (lazy):
-- `FxHashMap<(Coord, Player), u64>`. Populate on first access. Slower but unbounded.
+Strategy: bounded preallocated window + lazy fallback.
 
-Recommendation: Option A with fallback to B for far cells.
+- Window: `q, r ∈ [-WINDOW, WINDOW]`. Default `WINDOW = 127` →
+  255 × 255 × 2 × 16 bytes ≈ 2 MB. Allocated once, seeded from
+  fixed constant (deterministic hashes across runs for reproducibility).
+- Outside window: `FxHashMap<(Coord, Player), u128>`, populated lazily with
+  a second PRNG stream so values are stable per process.
+
+API:
+
+```rust
+pub struct ZobristTable { /* opaque */ }
+
+impl ZobristTable {
+    pub fn new() -> Self;
+    /// Hash key for (coord, player). Cheap for in-window coords (array load).
+    pub fn key(&mut self, c: Coord, p: Player) -> u128;
+}
+```
+
+`Board` holds `hash: u128`. XORs `table.key(c, p)` on place; XORs same key on
+undo (XOR is its own inverse).
+
+TT will derive its bucket index from `hash & ((1 << TT_INDEX_BITS) - 1)` and
+store the full 128-bit hash for collision verification.
 
 ## Transposition Table (`tt.rs`)
 
 ```rust
 pub struct TTEntry {
-    pub hash: u64,
+    pub hash: u128,
     pub depth: i8,
     pub score: i32,
     pub flag: TTFlag,
@@ -128,7 +171,8 @@ pub struct TTEntry {
 pub enum TTFlag { Exact, LowerBound, UpperBound }
 ```
 
-Fixed-size array. Index by `hash & MASK`. Replace-by-depth (prefer deeper entries).
+Fixed-size array. Bucket index is `(hash as u64) & MASK`. Full `u128` stored
+for collision verification on probe. Replace-by-depth (prefer deeper entries).
 
 Size: 2^24 entries × ~24 bytes = ~400 MB. Configurable.
 

@@ -60,6 +60,7 @@ fn main() {
     emit_i8(&mut out, &cfg, &["engine", "search", "aspiration_start_depth"], "ASPIRATION_START_DEPTH");
 
     emit_i16(&mut out, &cfg, &["engine", "board", "max_piece_distance"], "MAX_PIECE_DISTANCE");
+    emit_i16(&mut out, &cfg, &["engine", "board", "zobrist_window"], "ZOBRIST_WINDOW");
 
     fs::write(&out_path, out).expect("write config_generated.rs");
 }
