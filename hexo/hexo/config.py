@@ -76,6 +76,9 @@ class SearchConfigDefaults:
     move_cap: int
     deadline_check_nodes: int
     aspiration_start_depth: int
+    move_gen_inner_radius: int
+    move_gen_outer_radius: int
+    move_gen_cap: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +135,9 @@ def load() -> HexoConfig:
             move_cap=s["move_cap"],
             deadline_check_nodes=s["deadline_check_nodes"],
             aspiration_start_depth=s["aspiration_start_depth"],
+            move_gen_inner_radius=s["move_gen_inner_radius"],
+            move_gen_outer_radius=s["move_gen_outer_radius"],
+            move_gen_cap=s["move_gen_cap"],
         ),
         board=BoardConfig(
             max_piece_distance=b["max_piece_distance"],

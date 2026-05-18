@@ -54,6 +54,11 @@ move_cap               = 30
 deadline_check_nodes   = 4096
 aspiration_start_depth = 4
 
+# Move-generation tuning. See SPEC_ENGINE.md "Move Generation".
+move_gen_inner_radius = 2     # default radius for normal search nodes
+move_gen_outer_radius = 4     # extended search (anti-colony)
+move_gen_cap          = 30    # max moves returned after ordering
+
 [engine.board]
 # legality: any move must be within this hex-distance of some piece
 max_piece_distance = 8

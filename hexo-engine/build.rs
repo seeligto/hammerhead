@@ -116,6 +116,24 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "aspiration_start_depth"],
         "ASPIRATION_START_DEPTH",
     );
+    emit_i16(
+        out,
+        cfg,
+        &["engine", "search", "move_gen_inner_radius"],
+        "MOVE_GEN_INNER_RADIUS",
+    );
+    emit_i16(
+        out,
+        cfg,
+        &["engine", "search", "move_gen_outer_radius"],
+        "MOVE_GEN_OUTER_RADIUS",
+    );
+    emit_usize(
+        out,
+        cfg,
+        &["engine", "search", "move_gen_cap"],
+        "MOVE_GEN_CAP",
+    );
 }
 
 fn emit_board(out: &mut String, cfg: &toml::Value) {
