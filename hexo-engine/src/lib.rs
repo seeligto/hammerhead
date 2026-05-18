@@ -23,7 +23,10 @@ pub use eval::eval;
 pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
 pub use ordering::order_moves;
 pub use search::{SearchConfig, SearchResult, search};
-pub use threats::{ThreatCounts, detect};
+pub use threats::{
+    ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,
+    single_cell_blocks_all,
+};
 pub use tt::{TTEntry, TTFlag, TranspositionTable};
 pub use win::is_winning_move;
 pub use zobrist::ZobristTable;
