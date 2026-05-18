@@ -563,16 +563,63 @@ Positive = X advantage. Negative = O advantage. Search uses negamax form with `t
 
 ## Ordering (`ordering.rs`)
 
-Priority queue:
+Stable bucket sort over candidate moves. Buckets, highest priority first:
 
-1. TT best move
-2. Winning move (creates 6-in-row)
-3. Blocks opponent winning move
-4. Creates open-4 / closed-5
-5. Blocks opponent open-4 / closed-5
-6. Creates open-3 / rhombus
-7. Killer moves at this depth
-8. History heuristic score
-9. Proximity to last move (Chebyshev hex dist)
+  1. TT best move
+  2. Winning move (creates 6-in-row)
+  3. Defensive win (blocks opponent would-be 6-in-row)
+  4. Completes stone-1 S0 (only when current stone is `halfmove == 1`
+     and stone-1 of this turn started an S0 threat; the search driver
+     passes the defense cells of that threat as `stone1_s0_defense`)
+  5. Creates S0 threat (open-4 / closed-5 / open-5)
+  6. Blocks opponent S0 threat
+  7. Creates S1 threat (open-3 / rhombus / arch / bone / trapezoid)
+  8. Killer move at this ply (2 slots, OR over both)
+  9. History heuristic
+ 10. Static delta-eval / proximity tie-break
 
-Implement as bitmask + score tuple for stable sort.
+Encoding: `u32 priority = (bucket << 24) | (history_score & 0x00FF_FFFF)`.
+Buckets 1–8 occupy bucket values 10..3 respectively; bucket 9 has bucket
+value 1; bucket 10 has bucket value 0. Higher `u32` = sorted earlier.
+
+History values are clamped to `HISTORY_CUTOFF_MAX = 0x00FF_FFFF` (24 bits).
+
+After sort, truncate to `MOVE_GEN_CAP` (default 24).
+
+### State
+
+`KillerSlot` holds at most `KILLER_SLOTS` (2) most-recent cutoff moves at a
+ply. `OrderingState` owns `Box<[KillerSlot; MAX_PLY]>` (MAX_PLY = 128) and a
+global `FxHashMap<(Coord, Player), u32>` history. The search driver calls:
+
+- `record_cutoff(ply, m, p, depth)` on a β-cutoff: pushes `m` into the
+  killer slot for `ply` (dedup), and increments
+  `history[(m, p)] += depth² ` (saturating to `HISTORY_CUTOFF_MAX`).
+- `decay_history()` once per root iteration: every entry is multiplied
+  by `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN` (default ½, integer-floor).
+
+### Approximations (v1)
+
+The exact `creates_s0` and `creates_s1` predicates would require a
+make/undo + threat-recompute per candidate move — too expensive in the
+inner loop. v1 uses cheap proxies:
+
+- **creates_s0**: `m` is in `defense_cells` of an own existing S0
+  instance whose `pieces` already span 4–5 cells along the same axis
+  through `m`. Practically: `m` lies on an open-3-or-better neighbour
+  line for `side`. Implemented via `axes().run_length_through` on the
+  three axes around `m` after a virtual placement.
+- **creates_s1**: `m` is adjacent to an own stone AND extends one of
+  the named cross-axis shapes (rhombus / arch / bone / trapezoid) or
+  extends an own open-2 / open-3 along an axis. Coarse — accepted as
+  bucket-7 noise.
+
+Both predicates are O(constant) in the hex neighbourhood of `m`.
+
+### `stone1_s0_defense`
+
+For stone 2 of a HeXO turn (`halfmove == 1`), the search driver passes
+the defense cells of the S0 threat the same side created with stone 1.
+Bucket 7 then matches "play one of the defense cells", which completes
+the threat. For stone 1 of a turn the slice is empty and bucket 7 is
+disabled.
