@@ -78,7 +78,7 @@ fn range_offsets_length() {
 
 #[test]
 fn range_offsets_distance_bounds() {
-    for &d in RANGE_OFFSETS.iter() {
+    for &d in &RANGE_OFFSETS {
         let dist = hex_distance(ORIGIN, d);
         assert!(dist >= 1, "offset {d:?} has distance 0");
         assert!(
@@ -90,7 +90,7 @@ fn range_offsets_distance_bounds() {
 
 #[test]
 fn range_offsets_no_origin() {
-    for &d in RANGE_OFFSETS.iter() {
+    for &d in &RANGE_OFFSETS {
         assert_ne!(d, ORIGIN);
     }
 }

@@ -110,7 +110,7 @@ fn window6_aligned() {
         axes.set(Coord::new(q, 0), Player::X);
     }
     let w = axes.window6(Axis::Q, 0, 0, Player::X);
-    assert_eq!(w, 0b010101);
+    assert_eq!(w, 0b01_0101);
 }
 
 #[test]

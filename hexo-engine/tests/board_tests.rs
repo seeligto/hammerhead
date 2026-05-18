@@ -77,7 +77,7 @@ fn candidates_after_one_piece() {
     assert!(!cands.contains(&ORIGIN));
     assert!(cands.contains(&Coord::new(MAX_PIECE_DISTANCE, 0)));
     assert!(!cands.contains(&Coord::new(MAX_PIECE_DISTANCE + 1, 0)));
-    for d in cands.iter() {
+    for d in &cands {
         assert!(hex_distance(*d, ORIGIN) <= MAX_PIECE_DISTANCE);
         assert!(hex_distance(*d, ORIGIN) >= 1);
     }
