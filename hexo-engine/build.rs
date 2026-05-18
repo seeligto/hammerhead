@@ -5,6 +5,7 @@
 // by src/config.rs. See SPEC_CONFIG.md.
 
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,158 +27,110 @@ fn main() {
     let mut out = String::new();
     out.push_str("// AUTO-GENERATED from hexo.toml — do not edit.\n\n");
 
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "mate_score"],
-        "MATE_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "open_5"],
-        "OPEN_5_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "closed_5"],
-        "CLOSED_5_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "open_4"],
-        "OPEN_4_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "closed_4"],
-        "CLOSED_4_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "open_3"],
-        "OPEN_3_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "rhombus"],
-        "RHOMBUS_SCORE",
-    );
-    emit_i32(&mut out, &cfg, &["engine", "eval", "arch"], "ARCH_SCORE");
-    emit_i32(&mut out, &cfg, &["engine", "eval", "bone"], "BONE_SCORE");
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "trapezoid"],
-        "TRAPEZOID_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "open_2"],
-        "OPEN_2_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "closed_3"],
-        "CLOSED_3_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "triangle"],
-        "TRIANGLE_SCORE",
-    );
-    emit_i32(
-        &mut out,
-        &cfg,
-        &["engine", "eval", "overlap_bonus_x10"],
-        "OVERLAP_BONUS_X10",
-    );
+    emit_eval(&mut out, &cfg);
+    emit_search(&mut out, &cfg);
+    emit_board(&mut out, &cfg);
 
+    fs::write(&out_path, out).expect("write config_generated.rs");
+}
+
+fn emit_eval(out: &mut String, cfg: &toml::Value) {
+    let scalars: &[(&[&str], &str)] = &[
+        (&["engine", "eval", "mate_score"], "MATE_SCORE"),
+        (&["engine", "eval", "open_5"], "OPEN_5_SCORE"),
+        (&["engine", "eval", "closed_5"], "CLOSED_5_SCORE"),
+        (&["engine", "eval", "open_4"], "OPEN_4_SCORE"),
+        (&["engine", "eval", "closed_4"], "CLOSED_4_SCORE"),
+        (&["engine", "eval", "open_3"], "OPEN_3_SCORE"),
+        (&["engine", "eval", "rhombus"], "RHOMBUS_SCORE"),
+        (&["engine", "eval", "arch"], "ARCH_SCORE"),
+        (&["engine", "eval", "bone"], "BONE_SCORE"),
+        (&["engine", "eval", "trapezoid"], "TRAPEZOID_SCORE"),
+        (&["engine", "eval", "open_2"], "OPEN_2_SCORE"),
+        (&["engine", "eval", "closed_3"], "CLOSED_3_SCORE"),
+        (&["engine", "eval", "triangle"], "TRIANGLE_SCORE"),
+        (
+            &["engine", "eval", "overlap_bonus_x10"],
+            "OVERLAP_BONUS_X10",
+        ),
+    ];
+    for (path, name) in scalars {
+        emit_i32(out, cfg, path, name);
+    }
     emit_i32_array(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "eval", "window_k_scores"],
         "WINDOW_K_SCORES",
         7,
     );
+}
 
+fn emit_search(out: &mut String, cfg: &toml::Value) {
     emit_usize(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "default_max_depth"],
         "DEFAULT_MAX_DEPTH",
     );
     emit_u64(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "default_time_ms"],
         "DEFAULT_TIME_MS",
     );
     emit_usize(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "default_tt_size_mb"],
         "DEFAULT_TT_SIZE_MB",
     );
     emit_i16(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "default_move_radius"],
         "DEFAULT_MOVE_RADIUS",
     );
     emit_i16(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "extended_move_radius"],
         "EXTENDED_MOVE_RADIUS",
     );
     emit_i16(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "full_legality_radius"],
         "FULL_LEGALITY_RADIUS",
     );
-    emit_usize(
-        &mut out,
-        &cfg,
-        &["engine", "search", "move_cap"],
-        "MOVE_CAP",
-    );
+    emit_usize(out, cfg, &["engine", "search", "move_cap"], "MOVE_CAP");
     emit_u64(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "deadline_check_nodes"],
         "DEADLINE_CHECK_NODES",
     );
     emit_i8(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "search", "aspiration_start_depth"],
         "ASPIRATION_START_DEPTH",
     );
+}
 
+fn emit_board(out: &mut String, cfg: &toml::Value) {
     emit_i16(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "board", "max_piece_distance"],
         "MAX_PIECE_DISTANCE",
     );
     emit_i16(
-        &mut out,
-        &cfg,
+        out,
+        cfg,
         &["engine", "board", "zobrist_window"],
         "ZOBRIST_WINDOW",
     );
-
-    fs::write(&out_path, out).expect("write config_generated.rs");
 }
 
 fn get<'a>(cfg: &'a toml::Value, path: &[&str]) -> &'a toml::Value {
@@ -197,27 +150,27 @@ fn as_int(v: &toml::Value, path: &[&str]) -> i64 {
 
 fn emit_i32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
-    out.push_str(&format!("pub const {name}: i32 = {v};\n"));
+    writeln!(out, "pub const {name}: i32 = {v};").unwrap();
 }
 
 fn emit_i16(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
-    out.push_str(&format!("pub const {name}: i16 = {v};\n"));
+    writeln!(out, "pub const {name}: i16 = {v};").unwrap();
 }
 
 fn emit_i8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
-    out.push_str(&format!("pub const {name}: i8 = {v};\n"));
+    writeln!(out, "pub const {name}: i8 = {v};").unwrap();
 }
 
 fn emit_u64(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
-    out.push_str(&format!("pub const {name}: u64 = {v};\n"));
+    writeln!(out, "pub const {name}: u64 = {v};").unwrap();
 }
 
 fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
-    out.push_str(&format!("pub const {name}: usize = {v};\n"));
+    writeln!(out, "pub const {name}: usize = {v};").unwrap();
 }
 
 fn emit_i32_array(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str, len: usize) {
@@ -235,5 +188,5 @@ fn emit_i32_array(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str
         .map(|v| v.as_integer().expect("array item not int").to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    out.push_str(&format!("pub const {name}: [i32; {len}] = [{body}];\n"));
+    writeln!(out, "pub const {name}: [i32; {len}] = [{body}];").unwrap();
 }

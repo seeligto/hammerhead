@@ -6,4 +6,9 @@
 // Do not put magic numbers in other modules — add them to hexo.toml and
 // reference them from here.
 
-include!(concat!(env!("OUT_DIR"), "/config_generated.rs"));
+#[allow(clippy::unreadable_literal)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/config_generated.rs"));
+}
+
+pub use generated::*;
