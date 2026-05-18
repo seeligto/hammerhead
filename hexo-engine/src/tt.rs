@@ -37,8 +37,9 @@ pub enum TTFlag {
 /// depth) round-trip without widening.
 #[derive(Copy, Clone, Debug)]
 pub struct TTEntry {
-    /// Full 128-bit position hash. Bucket index is `(hash as u64) & mask`;
-    /// the full value is stored so probes can verify against collisions.
+    /// Full 128-bit position hash. Bucket index is
+    /// `(hash as u64 as usize) & mask`; the full value is stored so
+    /// probes can verify against collisions.
     pub hash: u128,
     /// Best move from this position, or [`ORIGIN`] when none is recorded.
     pub best_move: Coord,
@@ -104,8 +105,8 @@ impl TranspositionTable {
     /// Allocate a TT sized to roughly `size_mb` megabytes.
     ///
     /// The slot count is rounded down to a power of two so the lookup mask
-    /// is a single `AND`. A non-positive request still produces a 1-slot
-    /// table — search code can probe/store unconditionally.
+    /// is a single `AND`. A zero request still produces a 1-slot table —
+    /// search code can probe/store unconditionally.
     #[must_use]
     pub fn new(size_mb: usize) -> Self {
         let slot_bytes = std::mem::size_of::<(TTEntry, TTEntry)>();

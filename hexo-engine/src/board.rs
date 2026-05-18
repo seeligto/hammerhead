@@ -545,8 +545,9 @@ pub fn halfmove_at_ply(p: u32) -> u8 {
 /// Parity overlay XOR'd into `Board::hash` given a `(side, halfmove)`
 /// state. See `SPEC_ENGINE.md` "Zobrist hashing".
 ///
-/// Branch-free: each contribution is folded in via a sign-extended mask
-/// derived from the boolean predicate.
+/// Branch-free: each predicate widens to a `u128` whose two's-complement
+/// negation is either all-zeros or all-ones, then is `AND`-ed against
+/// the corresponding parity constant.
 #[inline]
 fn parity_overlay(side: Player, halfmove: u8) -> u128 {
     let x_mask = u128::from(matches!(side, Player::X)).wrapping_neg();
