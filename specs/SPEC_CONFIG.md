@@ -37,10 +37,12 @@ open_5     = 8000
 # ...
 window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]
 
+[engine.tt]
+default_size_mb = 64
+
 [engine.search]
 default_max_depth      = 64
 default_time_ms        = 1000
-default_tt_size_mb     = 256
 # ...
 
 [engine.board]

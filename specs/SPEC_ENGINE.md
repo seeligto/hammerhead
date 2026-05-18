@@ -404,11 +404,39 @@ HeXO win is "≥ 6 in a row", not "exactly 6". Per spec, 7+ in a row still
 wins. `run_length_through` returns the *actual* length; the check is
 `>= 6`.
 
-## Zobrist (`zobrist.rs`)
+## Zobrist hashing (`zobrist.rs`)
 
-128-bit hash. Reduces collision probability to negligible across deep search.
+128-bit hash. One key per `(Coord, Player)`. Plus two constants:
+- `Z_TURN_X`: XORed into hash whenever the side-to-move is X (regardless
+  of halfmove). Toggles at every turn boundary — twice per full
+  O→X→O cycle.
+- `Z_HALFMOVE`: XORed into hash whenever the current stone is the
+  **second of a 2-stone turn** (halfmove == 1).
 
-Each `(q, r, player)` → random `u128`. XOR-update on place/undo.
+The two contributions are orthogonal: all four `(side, halfmove)`
+combinations (X,0), (X,1), (O,0), (O,1) hash to a distinct
+parity overlay even when occupancy is identical.
+
+Halfmove flag definition:
+- `halfmove = 0`: side-to-move is about to place stone 1 of their turn.
+- `halfmove = 1`: same side-to-move (or X on first stone of game) is
+  about to place stone 2 of their turn.
+
+Special case: X's very first move places only 1 stone. After that move,
+halfmove returns to 0 and side flips to O. The flag tracks "current
+stone is second-of-pair", which is **false** for X's opening singleton.
+
+Hash invariants:
+- After every `place(c, p)` or `undo(c, p)`, hash reflects the new
+  state: occupied cells XOR'd + side-to-move + halfmove.
+- Hash is unique up to true positional equivalence; positions identical
+  in occupancy but differing in (side-to-move OR halfmove) hash
+  differently.
+
+Why: per-stone search recursion enters the same occupancy from
+different halfmove states (e.g. stone-2-of-X vs stone-1-of-O after X
+plays one). Without `Z_HALFMOVE`, both states alias to the same TT
+slot and the engine reads a score evaluated for the wrong side-to-move.
 
 Strategy: bounded preallocated window + lazy fallback.
 
@@ -418,9 +446,15 @@ Strategy: bounded preallocated window + lazy fallback.
 - Outside window: `FxHashMap<(Coord, Player), u128>`, populated lazily with
   a second PRNG stream so values are stable per process.
 
+The two parity constants live in reserved seed slots so existing
+per-cell key values are byte-identical to pre-halfmove builds.
+
 API:
 
 ```rust
+pub const Z_TURN_X: u128;
+pub const Z_HALFMOVE: u128;
+
 pub struct ZobristTable { /* opaque */ }
 
 impl ZobristTable {
@@ -430,30 +464,69 @@ impl ZobristTable {
 }
 ```
 
-`Board` holds `hash: u128`. XORs `table.key(c, p)` on place; XORs same key on
-undo (XOR is its own inverse).
-
-TT will derive its bucket index from `hash & ((1 << TT_INDEX_BITS) - 1)` and
-store the full 128-bit hash for collision verification.
+`Board` holds `hash: u128` and `halfmove: u8`. XORs `table.key(c, p)` on
+place; XORs same key on undo (XOR is its own inverse). Z_TURN_X /
+Z_HALFMOVE are XOR'd in/out on every parity transition.
 
 ## Transposition Table (`tt.rs`)
 
+Two-bucket flat array. Each slot holds `[depth_preferred, always_replace]`.
+
 ```rust
 pub struct TTEntry {
-    pub hash: u128,
-    pub depth: i8,
+    pub hash: u128,        // full key for collision verification
+    pub best_move: Coord,  // ORIGIN sentinel if no best
     pub score: i32,
+    pub depth: i8,         // -1 = empty
     pub flag: TTFlag,
-    pub best_move: Coord,
+    pub generation: u8,
 }
 
-pub enum TTFlag { Exact, LowerBound, UpperBound }
+#[repr(u8)]
+pub enum TTFlag { Empty, Exact, LowerBound, UpperBound }
+
+pub struct TranspositionTable {
+    buckets: Box<[(TTEntry, TTEntry)]>,
+    mask: usize,
+    generation: u8,
+}
+
+impl TranspositionTable {
+    pub fn new(size_mb: usize) -> Self;
+    pub fn probe(&self, hash: u128) -> Option<&TTEntry>;
+    pub fn store(&mut self, hash: u128, depth: i8, score: i32,
+                 flag: TTFlag, best_move: Coord);
+    pub fn new_generation(&mut self);
+    pub fn clear(&mut self);
+    pub fn stats(&self) -> TTStats;
+}
 ```
 
-Fixed-size array. Bucket index is `(hash as u64) & MASK`. Full `u128` stored
-for collision verification on probe. Replace-by-depth (prefer deeper entries).
+Sizing:
+- `slot_size = size_of::<(TTEntry, TTEntry)>()` (~64 bytes after
+  padding).
+- `n_slots = floor_pow2((size_mb * 1024 * 1024) / slot_size)`.
+- `mask = n_slots - 1`.
 
-Size: 2^24 entries × ~24 bytes = ~400 MB. Configurable.
+Index: `(hash as u64 as usize) & mask`. Verification: compare full u128.
+
+Probe:
+- Read both buckets at index. Return first one whose `hash == query`
+  AND `flag != Empty`. Prefer `depth_preferred` over `always_replace`
+  when both match.
+
+Store:
+- If new depth ≥ depth_preferred.depth OR depth_preferred.generation
+  != current_generation: overwrite depth_preferred. Move displaced
+  entry to always_replace (if it had higher depth than current
+  always_replace entry, else discard).
+- Else: overwrite always_replace.
+
+Aging: `new_generation` increments `generation` (wrapping). Aged
+entries are eligible for depth-preferred replacement regardless of
+depth.
+
+Stats: probe / hit / store counts; deferred to Phase 8 instrumentation.
 
 ## Search (`search.rs`)
 
