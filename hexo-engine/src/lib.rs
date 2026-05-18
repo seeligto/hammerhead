@@ -21,7 +21,7 @@ pub use coords::{
 };
 pub use eval::{eval, is_mate_for};
 pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
-pub use ordering::{KillerSlot, MAX_PLY, OrderingContext, OrderingState, order_moves};
+pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 pub use search::{SearchConfig, SearchResult, search};
 pub use threats::{
     ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,

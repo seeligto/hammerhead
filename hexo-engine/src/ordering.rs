@@ -7,47 +7,48 @@
 
 use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
-use crate::config::{HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, MOVE_GEN_CAP};
+use crate::config::{
+    HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY, MOVE_GEN_CAP,
+};
 use crate::coords::Coord;
 use crate::moves::MoveList;
 use fxhash::FxHashMap;
-
-/// Killer-move ply array length. Sized for the deepest search the engine
-/// will ever attempt — well past the LMR / quiescence cap.
-pub const MAX_PLY: usize = 128;
 
 // ────────────────────────────────────────────────────────────────────────
 // Killer-move state
 // ────────────────────────────────────────────────────────────────────────
 
-/// Two most-recent β-cutoff moves at a given ply. Slot 0 is the newest;
-/// pushing dedups against either slot.
+/// Most-recent β-cutoff moves at a given ply. Slot 0 is the newest;
+/// pushing dedups against every slot. Slot count is [`KILLER_SLOTS`].
 #[derive(Clone, Copy, Debug, Default)]
-pub struct KillerSlot([Option<Coord>; 2]);
+pub struct KillerSlot([Option<Coord>; KILLER_SLOTS]);
 
 impl KillerSlot {
-    /// `true` iff `c` already occupies either slot.
+    /// `true` iff `c` already occupies any slot.
     #[inline]
     #[must_use]
     pub fn contains(&self, c: Coord) -> bool {
-        matches!(self.0[0], Some(x) if x == c) || matches!(self.0[1], Some(x) if x == c)
+        self.0.contains(&Some(c))
     }
 
-    /// Insert `c` at the front, displacing the older slot. Dedup: if `c`
-    /// already occupies either slot, leave the array unchanged.
+    /// Insert `c` at the front, shifting older slots one step toward the
+    /// back. Dedup: if `c` already occupies any slot, the array is
+    /// unchanged.
     #[inline]
     pub fn push(&mut self, c: Coord) {
         if self.contains(c) {
             return;
         }
-        self.0.swap(0, 1);
+        for i in (1..KILLER_SLOTS).rev() {
+            self.0[i] = self.0[i - 1];
+        }
         self.0[0] = Some(c);
     }
 
-    /// Borrow the two-slot array. Test/inspection only.
+    /// Borrow the slot array. Test/inspection only.
     #[inline]
     #[must_use]
-    pub fn slots(&self) -> &[Option<Coord>; 2] {
+    pub fn slots(&self) -> &[Option<Coord>; KILLER_SLOTS] {
         &self.0
     }
 }
@@ -84,6 +85,7 @@ impl OrderingState {
     /// and bumps `history[(m, p)] += depth²`, saturating at
     /// [`HISTORY_CUTOFF_MAX`]. `depth <= 0` is a no-op on history.
     pub fn record_cutoff(&mut self, ply: u8, m: Coord, p: Player, depth: i8) {
+        debug_assert!(depth >= 0, "record_cutoff called with negative depth");
         let idx = (ply as usize).min(MAX_PLY - 1);
         self.killers[idx].push(m);
         let Ok(d) = u8::try_from(depth) else {
@@ -99,18 +101,21 @@ impl OrderingState {
     }
 
     /// Age every history entry by `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN`
-    /// (integer floor). Called once per root iteration.
+    /// (integer floor) and drop entries that floor to zero. Called once
+    /// per root iteration; the retain step keeps the map from growing
+    /// monotonically.
     pub fn decay_history(&mut self) {
         if HISTORY_DECAY_DEN == 0 || HISTORY_DECAY_NUM >= HISTORY_DECAY_DEN {
             return;
         }
         let num = u64::from(HISTORY_DECAY_NUM);
         let den = u64::from(HISTORY_DECAY_DEN);
-        for v in self.history.values_mut() {
+        self.history.retain(|_, v| {
             // num < den guarantees the result fits in the original u32.
             let decayed = u64::from(*v) * num / den;
             *v = u32::try_from(decayed).unwrap_or(u32::MAX);
-        }
+            *v > 0
+        });
     }
 
     /// Wipe killers and history. Used between top-level searches when the
@@ -193,13 +198,16 @@ fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if ctx.killers.contains(m) {
         return 3;
     }
-    // Bucket 9 (encoding 1): everything else falls back to history-only.
+    // Spec bucket 9 (history-only). Encoding value 2 is reserved (gap);
+    // encoding value 0 would mean "history below the high-byte fence",
+    // never emitted in v1.
     1
 }
 
 /// Virtual-place predicate: would placing `side` at the empty cell `m`
 /// produce a run of length ≥ 6 on any axis through `m`? Cheap — only
-/// inspects the existing axis bitmap, never mutates the board.
+/// inspects the existing axis bitmap, never mutates the board. The `≥`
+/// (not `==`) matches the `HeXO` rule that overlines also win.
 #[inline]
 fn would_make_six(board: &Board, m: Coord, side: Player) -> bool {
     for axis in Axis::all() {
