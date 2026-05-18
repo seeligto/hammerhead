@@ -421,6 +421,64 @@ fn inner_candidates_excludes_placed_pieces() {
 }
 
 #[test]
+fn inner_refcount_holds_shared_cell_through_partial_undo() {
+    // Cells adjacent to two pieces must stay in inner_candidates when one
+    // of the two is undone (2 -> 1, not 2 -> 0).
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    place_ok(&mut b, Coord::new(1, 0));
+    let shared = Coord::new(2, 0); // inner of both: dist 2 to ORIGIN, dist 1 to (1,0)
+    assert!(b.inner_candidates().any(|c| c == shared));
+
+    // Undo (1,0). `shared` is still inner of ORIGIN.
+    b.undo().unwrap();
+    assert!(b.inner_candidates().any(|c| c == shared));
+}
+
+#[test]
+fn inner_refcount_drops_unshared_cell_after_undo() {
+    // Cells reachable by only one piece must leave inner_candidates when
+    // that piece is undone (1 -> 0).
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    place_ok(&mut b, Coord::new(MOVE_GEN_INNER_RADIUS + 1, 0));
+    let only_far = Coord::new(2 * MOVE_GEN_INNER_RADIUS + 1, 0);
+    assert!(b.inner_candidates().any(|c| c == only_far));
+
+    b.undo().unwrap();
+    assert!(!b.inner_candidates().any(|c| c == only_far));
+}
+
+#[test]
+fn place_undo_idempotence_cycle() {
+    // Repeated place/undo of the same sequence must return to bit-identical
+    // state. Catches refcount leaks in either refcount map.
+    let mut b = Board::new();
+    let seq = [ORIGIN, Coord::new(1, 0), Coord::new(-1, 1)];
+
+    let baseline_hash = b.hash();
+    let baseline_cands: HashSet<Coord> = b.candidates().collect();
+    let baseline_inner: HashSet<Coord> = b.inner_candidates().collect();
+
+    for _ in 0..3 {
+        for &m in &seq {
+            place_ok(&mut b, m);
+        }
+        for _ in 0..seq.len() {
+            b.undo().unwrap();
+        }
+    }
+
+    assert_eq!(b.hash(), baseline_hash);
+    assert_eq!(b.ply(), 0);
+    assert_eq!(b.piece_count(), 0);
+    let cands: HashSet<Coord> = b.candidates().collect();
+    let inner: HashSet<Coord> = b.inner_candidates().collect();
+    assert_eq!(cands, baseline_cands);
+    assert_eq!(inner, baseline_inner);
+}
+
+#[test]
 fn reset_clears_inner_candidates() {
     let mut b = Board::new();
     place_ok(&mut b, ORIGIN);

@@ -213,8 +213,10 @@ impl Board {
         );
 
         if self.ply == 0 {
-            // Board empty: only ORIGIN is legal (outer). Inner stays empty —
-            // move-gen short-circuits on `ply == 0` before consulting it.
+            // ply 0 rule: ORIGIN is the unique legal cell. `remove_proximity`
+            // dropped it when its outer count fell to 0, so reinstate it here.
+            // The inner set stays empty — move-gen short-circuits on
+            // `ply == 0` before consulting it.
             self.candidate_cells.clear();
             self.candidate_cells.insert(ORIGIN);
             self.inner_candidate_cells.clear();
@@ -286,8 +288,9 @@ impl Board {
         self.is_legal_internal(c)
     }
 
-    /// Empty cells within `r8` of some piece. May include cells that fail the
-    /// `ply == 0` rule when called on an empty board — see `is_legal`.
+    /// Currently-legal empty cells. On an empty board this is `{ORIGIN}`;
+    /// otherwise it is every empty cell within `MAX_PIECE_DISTANCE` of some
+    /// piece. Maintained incrementally by `place` / `undo`.
     pub fn candidates(&self) -> impl Iterator<Item = Coord> + '_ {
         self.candidate_cells.iter().copied()
     }
@@ -351,6 +354,7 @@ pub fn player_at_ply(p: u32) -> Player {
 ///
 /// Used to maintain both the outer (`r8`, legality) and inner
 /// (`MOVE_GEN_INNER_RADIUS`, move-gen) refcounts via the exact same algorithm.
+#[inline]
 fn add_proximity(
     counts: &mut FxHashMap<Coord, u32>,
     candidates: &mut FxHashSet<Coord>,
@@ -370,6 +374,7 @@ fn add_proximity(
 
 /// Decrement proximity counts around `center`. When a count reaches 0 the
 /// entry is removed from `counts` and (if present) from `candidates`.
+#[inline]
 fn remove_proximity(
     counts: &mut FxHashMap<Coord, u32>,
     candidates: &mut FxHashSet<Coord>,
