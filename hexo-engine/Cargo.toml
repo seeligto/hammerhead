@@ -1,0 +1,29 @@
+[package]
+name = "hexo_engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+name = "hexo_engine"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
+fxhash = "0.2"
+smallvec = "1"
+rand = "0.9"
+thiserror = "2"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+
+[build-dependencies]
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+
+[dev-dependencies]
+criterion = "0.7"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

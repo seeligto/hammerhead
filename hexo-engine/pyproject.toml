@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "hexo_engine"
+version = "0.1.0"
+description = "HeXO minimax engine (Rust + PyO3)"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+]
+
+[tool.maturin]
+module-name = "hexo_engine"
+features = ["pyo3/extension-module"]

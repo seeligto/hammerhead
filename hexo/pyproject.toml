@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexo"
+version = "0.1.0"
+description = "HeXO minimax bot — Python wrapper"
+requires-python = ">=3.10"
+dependencies = [
+  "hexo_engine",
+]
+
+[project.scripts]
+hexo = "hexo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hexo*"]
