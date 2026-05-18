@@ -24,7 +24,9 @@ pub struct TranspositionTable {
 
 impl TranspositionTable {
     pub fn new(_size_mb: usize) -> Self {
-        Self { _entries: Vec::new() }
+        Self {
+            _entries: Vec::new(),
+        }
     }
 
     pub fn probe(&self, _hash: u128) -> Option<TTEntry> {

@@ -4,7 +4,8 @@ use hexo_engine::coords::{Coord, ORIGIN, RANGE_OFFSETS, hex_distance};
 use std::collections::HashSet;
 
 fn place_ok(b: &mut Board, c: Coord) {
-    b.place(c).unwrap_or_else(|e| panic!("place({c:?}) failed: {e:?}"));
+    b.place(c)
+        .unwrap_or_else(|e| panic!("place({c:?}) failed: {e:?}"));
 }
 
 #[test]
@@ -42,7 +43,14 @@ fn first_move_at_origin() {
 fn parity_sequence() {
     let mut b = Board::new();
     let expected = [
-        Player::X, Player::O, Player::O, Player::X, Player::X, Player::O, Player::O, Player::X,
+        Player::X,
+        Player::O,
+        Player::O,
+        Player::X,
+        Player::X,
+        Player::O,
+        Player::O,
+        Player::X,
     ];
     let moves = [
         Coord::new(0, 0),
@@ -94,11 +102,7 @@ fn undo_restores_state() {
     let initial_hash = b.hash();
     let initial_ply = b.ply();
 
-    let moves = [
-        ORIGIN,
-        Coord::new(2, 0),
-        Coord::new(0, 3),
-    ];
+    let moves = [ORIGIN, Coord::new(2, 0), Coord::new(0, 3)];
     for &m in &moves {
         place_ok(&mut b, m);
     }
@@ -138,7 +142,10 @@ fn out_of_range_rejected_then_in_range_accepted() {
     place_ok(&mut b, ORIGIN);
     let far = Coord::new(MAX_PIECE_DISTANCE + 1, 0);
     let err = b.place(far).unwrap_err();
-    assert_eq!(err, BoardError::OutOfRange(far.q, far.r, MAX_PIECE_DISTANCE));
+    assert_eq!(
+        err,
+        BoardError::OutOfRange(far.q, far.r, MAX_PIECE_DISTANCE)
+    );
     place_ok(&mut b, Coord::new(MAX_PIECE_DISTANCE, 0));
 }
 

@@ -18,7 +18,7 @@ const WINDOW_SEED: u64 = 0x5EED_DEAD_BEEF_0BAD;
 
 /// Distinct seed for the lazy out-of-window stream so it never coincides with
 /// the windowed stream on the same `u128` values.
-const LAZY_SEED: u64 = 0xC0FFEE_BAD_F00D_42;
+const LAZY_SEED: u64 = 0x0C0F_FEEB_ADF0_0D42;
 
 const W: i16 = ZOBRIST_WINDOW;
 const SIDE: usize = (2 * W as usize) + 1;
@@ -31,6 +31,10 @@ pub struct ZobristTable {
     lazy_rng: Xoshiro256PlusPlus,
 }
 
+// Deliberate: ZobristTable owns a non-trivial allocation, so we expose only
+// `new()`. A `Default` impl would invite accidental reconstruction. The
+// owning `Board` reuses one table across its lifetime.
+#[allow(clippy::new_without_default)]
 impl ZobristTable {
     /// Allocate and seed the table.
     pub fn new() -> Self {

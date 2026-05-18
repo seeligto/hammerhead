@@ -34,11 +34,7 @@ impl Engine {
     }
 
     #[pyo3(signature = (time_ms = None, depth = None))]
-    fn best_move(
-        &mut self,
-        time_ms: Option<u64>,
-        depth: Option<i8>,
-    ) -> PyResult<(i16, i16)> {
+    fn best_move(&mut self, time_ms: Option<u64>, depth: Option<i8>) -> PyResult<(i16, i16)> {
         let _ = (time_ms, depth);
         Err(PyValueError::new_err("not implemented"))
     }

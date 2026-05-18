@@ -44,13 +44,19 @@ impl Coord {
     /// Component-wise add.
     #[inline]
     pub const fn add(self, other: Coord) -> Coord {
-        Coord { q: self.q + other.q, r: self.r + other.r }
+        Coord {
+            q: self.q + other.q,
+            r: self.r + other.r,
+        }
     }
 
     /// Component-wise sub.
     #[inline]
     pub const fn sub(self, other: Coord) -> Coord {
-        Coord { q: self.q - other.q, r: self.r - other.r }
+        Coord {
+            q: self.q - other.q,
+            r: self.r - other.r,
+        }
     }
 }
 
@@ -80,7 +86,10 @@ pub fn for_each_in_range<F: FnMut(Coord)>(center: Coord, range: i16, mut f: F) {
         let hi = if -dq + r < r { -dq + r } else { r };
         let mut dr = lo;
         while dr <= hi {
-            f(Coord { q: center.q + dq, r: center.r + dr });
+            f(Coord {
+                q: center.q + dq,
+                r: center.r + dr,
+            });
             dr += 1;
         }
         dq += 1;

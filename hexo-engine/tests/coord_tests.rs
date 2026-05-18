@@ -81,7 +81,10 @@ fn range_offsets_distance_bounds() {
     for &d in RANGE_OFFSETS.iter() {
         let dist = hex_distance(ORIGIN, d);
         assert!(dist >= 1, "offset {d:?} has distance 0");
-        assert!(dist <= MAX_PIECE_DISTANCE, "offset {d:?} has distance {dist}");
+        assert!(
+            dist <= MAX_PIECE_DISTANCE,
+            "offset {d:?} has distance {dist}"
+        );
     }
 }
 
