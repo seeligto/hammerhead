@@ -314,23 +314,38 @@ fn coord_on_axis(axis: Axis, line_id: i16, pos: i16) -> Coord {
 /// truncate to [`MOVE_GEN_CAP`]. Scratch buffer is a `SmallVec` inline up
 /// to `MOVE_GEN_CAP_INLINE` items — no heap allocation in the typical case.
 pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
+    let _ = order_moves_with_buckets(moves, ctx);
+}
+
+/// Like [`order_moves`] but also returns the per-move bucket values, in
+/// the same order as the (truncated) `moves` list. Search reuses these
+/// for LMR and check-extension decisions, avoiding a second
+/// [`bucket_value`] pass per node.
+pub(crate) fn order_moves_with_buckets(
+    moves: &mut MoveList,
+    ctx: &OrderingContext<'_>,
+) -> smallvec::SmallVec<[u8; crate::moves::MOVE_GEN_CAP_INLINE]> {
     if moves.is_empty() {
-        return;
+        return smallvec::SmallVec::new();
     }
 
-    let mut scored: smallvec::SmallVec<[(u32, Coord); crate::moves::MOVE_GEN_CAP_INLINE]> =
+    let mut scored: smallvec::SmallVec<[(u32, u8, Coord); crate::moves::MOVE_GEN_CAP_INLINE]> =
         smallvec::SmallVec::with_capacity(moves.len());
     for &m in moves.iter() {
         let bucket = bucket_value(ctx, m);
         let h = ctx.history.get(&(m, ctx.side)).copied().unwrap_or(0);
-        scored.push((priority(bucket, h), m));
+        scored.push((priority(bucket, h), bucket, m));
     }
 
     // `sort_by` is stable in std; preserves insertion order on ties.
     scored.sort_by(|a, b| b.0.cmp(&a.0));
 
     moves.clear();
-    for (_, m) in scored.iter().take(MOVE_GEN_CAP) {
-        moves.push(*m);
+    let mut buckets: smallvec::SmallVec<[u8; crate::moves::MOVE_GEN_CAP_INLINE]> =
+        smallvec::SmallVec::new();
+    for &(_, bucket, m) in scored.iter().take(MOVE_GEN_CAP) {
+        moves.push(m);
+        buckets.push(bucket);
     }
+    buckets
 }
