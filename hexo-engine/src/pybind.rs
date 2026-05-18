@@ -1,3 +1,13 @@
+// PyO3 stub: every method is a thin shim that takes `&self`/`&mut self`
+// because that's the receiver shape `#[pymethods]` requires. The actual
+// engine logic lives in pure-Rust modules; this layer is a scaffold until
+// those land.
+#![allow(
+    clippy::unused_self,
+    clippy::unnecessary_wraps,
+    clippy::used_underscore_binding
+)]
+
 use crate::board::Board;
 use crate::search::SearchConfig;
 use crate::tt::TranspositionTable;

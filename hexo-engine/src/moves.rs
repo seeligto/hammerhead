@@ -1,3 +1,5 @@
+#![allow(clippy::must_use_candidate)]
+
 use crate::board::Board;
 use crate::coords::Coord;
 use smallvec::SmallVec;

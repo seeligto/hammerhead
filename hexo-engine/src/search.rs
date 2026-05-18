@@ -1,3 +1,5 @@
+#![allow(clippy::must_use_candidate)]
+
 use crate::board::Board;
 use crate::config;
 use crate::coords::Coord;
@@ -11,7 +13,8 @@ pub struct SearchConfig {
 impl Default for SearchConfig {
     fn default() -> Self {
         Self {
-            max_depth: config::DEFAULT_MAX_DEPTH as i8,
+            max_depth: i8::try_from(config::DEFAULT_MAX_DEPTH)
+                .expect("DEFAULT_MAX_DEPTH must fit in i8"),
             time_ms: Some(config::DEFAULT_TIME_MS),
         }
     }

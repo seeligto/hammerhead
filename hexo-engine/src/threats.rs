@@ -1,3 +1,5 @@
+#![allow(clippy::must_use_candidate)]
+
 use crate::board::{Board, Player};
 
 #[derive(Copy, Clone, Debug, Default)]
