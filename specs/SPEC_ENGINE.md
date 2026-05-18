@@ -310,6 +310,68 @@ positions reuse identical bit patterns; only the axis index changes. This
 is exploited later for canonical-hash and self-play augmentation. No work
 required here — design is rotation-friendly by construction.
 
+## Threats (`threats.rs`)
+
+Detects WSC-shape patterns. Produces counts + S0 threat instances with
+defense cells. Cached on board, recomputed incrementally.
+
+### Types
+
+```rust
+pub struct ThreatCounts {
+    pub open_5: u8, pub closed_5: u8,
+    pub open_4: u8, pub closed_4: u8,
+    pub open_3: u8, pub rhombus: u8, pub arch: u8,
+    pub bone: u8, pub trapezoid: u8,
+    pub open_2: u8, pub closed_3: u8, pub triangle: u8,
+}
+
+#[repr(u8)]
+pub enum ThreatKind { OpenFive, ClosedFive, OpenFour, ClosedFour }
+
+pub struct ThreatInstance {
+    pub kind: ThreatKind,
+    pub pieces: SmallVec<[Coord; 5]>,
+    pub defense_cells: SmallVec<[Coord; 4]>,
+}
+
+pub struct ThreatSet {
+    pub counts: ThreatCounts,
+    pub s0_instances: Vec<ThreatInstance>,
+}
+```
+
+### Operations
+
+```rust
+pub fn compute(
+    board: &Board,
+    player: Player,
+    center: Option<Coord>,
+    prior: Option<&ThreatSet>,
+) -> ThreatSet;
+```
+
+`center = None` → full recompute (used on `Board::reset`).
+`center = Some(c)` + `prior = Some(_)` → incremental: drop instances
+within radius 5 of `c`, rescan, merge.
+
+### Cache on Board
+
+`Board` gains:
+```
+threats_x: RefCell<Option<ThreatSet>>,
+threats_o: RefCell<Option<ThreatSet>>,
+threats_dirty_center: Cell<Option<Coord>>,
+```
+
+Public accessor:
+```
+pub fn threats(&self, player: Player) -> Ref<ThreatSet>;
+```
+
+Lazy: recomputes on first read after dirty marking.
+
 ## Win Detection (`win.rs`)
 
 After each `place(c)` by `player`, the move wins iff any of the 3 axes has

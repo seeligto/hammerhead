@@ -43,6 +43,12 @@ window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]
 # Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
 overlap_bonus_x10 = 15  # 1.5x as integer ratio /10
 
+[engine.threats]
+recompute_radius = 5
+cluster_radius   = 2
+# guard against pathological positions (worst-case all-stones-in-one-cluster)
+max_s0_instances_per_player = 64
+
 [engine.search]
 default_max_depth      = 64
 default_time_ms        = 1000

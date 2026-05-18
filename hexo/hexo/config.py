@@ -66,6 +66,13 @@ class EvalConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ThreatsConfig:
+    recompute_radius: int
+    cluster_radius: int
+    max_s0_instances_per_player: int
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigDefaults:
     default_max_depth: int
     default_time_ms: int
@@ -90,6 +97,7 @@ class BoardConfig:
 @dataclass(frozen=True, slots=True)
 class HexoConfig:
     eval: EvalConfig
+    threats: ThreatsConfig
     search: SearchConfigDefaults
     board: BoardConfig
     source_path: Path
@@ -104,6 +112,7 @@ def load() -> HexoConfig:
 
     engine = raw["engine"]
     e = engine["eval"]
+    t = engine["threats"]
     s = engine["search"]
     b = engine["board"]
 
@@ -124,6 +133,11 @@ def load() -> HexoConfig:
             triangle=e["triangle"],
             window_k_scores=tuple(e["window_k_scores"]),
             overlap_bonus_x10=e["overlap_bonus_x10"],
+        ),
+        threats=ThreatsConfig(
+            recompute_radius=t["recompute_radius"],
+            cluster_radius=t["cluster_radius"],
+            max_s0_instances_per_player=t["max_s0_instances_per_player"],
         ),
         search=SearchConfigDefaults(
             default_max_depth=s["default_max_depth"],

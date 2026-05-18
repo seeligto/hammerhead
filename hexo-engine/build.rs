@@ -28,6 +28,7 @@ fn main() {
     out.push_str("// AUTO-GENERATED from hexo.toml — do not edit.\n\n");
 
     emit_eval(&mut out, &cfg);
+    emit_threats(&mut out, &cfg);
     emit_search(&mut out, &cfg);
     emit_board(&mut out, &cfg);
 
@@ -63,6 +64,27 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         &["engine", "eval", "window_k_scores"],
         "WINDOW_K_SCORES",
         7,
+    );
+}
+
+fn emit_threats(out: &mut String, cfg: &toml::Value) {
+    emit_i16(
+        out,
+        cfg,
+        &["engine", "threats", "recompute_radius"],
+        "THREAT_RECOMPUTE_RADIUS",
+    );
+    emit_i16(
+        out,
+        cfg,
+        &["engine", "threats", "cluster_radius"],
+        "THREAT_CLUSTER_RADIUS",
+    );
+    emit_usize(
+        out,
+        cfg,
+        &["engine", "threats", "max_s0_instances_per_player"],
+        "MAX_S0_INSTANCES",
     );
 }
 
