@@ -150,6 +150,29 @@ impl LineBitmap {
         out
     }
 
+    /// `(min_pos, max_pos)` of the bits that are set, or `None` if empty.
+    /// Walks the word array; O(words). Used by Layer 1 to bound the
+    /// window-scan range per line.
+    #[must_use]
+    pub fn populated_range(&self) -> Option<(i16, i16)> {
+        let mut first: Option<i16> = None;
+        let mut last: Option<i16> = None;
+        for (wi, &w) in self.words.iter().enumerate() {
+            if w == 0 {
+                continue;
+            }
+            let wi_i16 = wi as i16;
+            let word_base = self.base_pos.wrapping_add(wi_i16 * 64);
+            if first.is_none() {
+                let bi = w.trailing_zeros() as i16;
+                first = Some(word_base.wrapping_add(bi));
+            }
+            let bi = w.ilog2() as i16;
+            last = Some(word_base.wrapping_add(bi));
+        }
+        first.zip(last)
+    }
+
     #[inline]
     fn in_range(&self, pos: i16) -> bool {
         if self.words.is_empty() {
@@ -263,6 +286,31 @@ impl AxisBitmaps {
             return 0;
         };
         line.window6(pos)
+    }
+
+    /// `true` iff `p` has a stone at `(axis, line_id, pos)`. Cheap single-bit
+    /// probe used by the Layer 1 extension-factor check in eval.
+    #[inline]
+    #[must_use]
+    pub fn is_set(&self, axis: Axis, line_id: i16, pos: i16, p: Player) -> bool {
+        match self.lines[axis as usize][p as usize].get(&line_id) {
+            Some(line) => line.get(pos),
+            None => false,
+        }
+    }
+
+    /// Borrow the underlying [`LineBitmap`] for `(axis, p, line_id)`, if any
+    /// stones have been placed on that line for that player.
+    #[inline]
+    #[must_use]
+    pub fn line(&self, axis: Axis, p: Player, line_id: i16) -> Option<&LineBitmap> {
+        self.lines[axis as usize][p as usize].get(&line_id)
+    }
+
+    /// Iterate the `line_id`s of every populated line for `(axis, p)`.
+    /// Order is non-deterministic (`FxHashMap` iteration order).
+    pub fn line_ids(&self, axis: Axis, p: Player) -> impl Iterator<Item = i16> + '_ {
+        self.lines[axis as usize][p as usize].keys().copied()
     }
 
     /// Endpoints `(start_pos, end_pos)` of the maximal `p`-run on `axis`
