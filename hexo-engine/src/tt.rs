@@ -9,7 +9,9 @@ pub enum TTFlag {
 
 #[derive(Copy, Clone, Debug)]
 pub struct TTEntry {
-    pub hash: u64,
+    /// Full 128-bit Zobrist hash. Bucket index is `(hash as u64) & MASK`;
+    /// the full value is stored so probes can verify against collisions.
+    pub hash: u128,
     pub depth: i8,
     pub score: i32,
     pub flag: TTFlag,
@@ -25,7 +27,7 @@ impl TranspositionTable {
         Self { _entries: Vec::new() }
     }
 
-    pub fn probe(&self, _hash: u64) -> Option<TTEntry> {
+    pub fn probe(&self, _hash: u128) -> Option<TTEntry> {
         todo!()
     }
 

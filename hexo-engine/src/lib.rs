@@ -11,14 +11,17 @@ pub mod tt;
 pub mod win;
 pub mod zobrist;
 
-pub use board::{Board, Player};
+pub use board::{Board, BoardError, Player, player_at_ply};
 pub use config::*;
-pub use coords::{hex_distance, Coord, AXES, AXIS_Q, AXIS_R, AXIS_S};
+pub use coords::{
+    AXES, AXIS_Q, AXIS_R, AXIS_S, Coord, ORIGIN, RANGE_OFFSET_COUNT, RANGE_OFFSETS,
+    for_each_in_range, hex_distance, within_range,
+};
 pub use eval::eval;
 pub use moves::generate;
 pub use ordering::order_moves;
-pub use search::{search, SearchConfig, SearchResult};
-pub use threats::{detect, ThreatCounts};
+pub use search::{SearchConfig, SearchResult, search};
+pub use threats::{ThreatCounts, detect};
 pub use tt::{TTEntry, TTFlag, TranspositionTable};
 pub use win::is_winning_move;
 pub use zobrist::ZobristTable;
