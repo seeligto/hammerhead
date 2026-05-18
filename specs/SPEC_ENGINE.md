@@ -1,5 +1,12 @@
 # HeXO Engine — Internals Spec
 
+## Tuning constants
+
+All numeric tuning lives in `hexo.toml` (workspace root) and is exposed via
+`crate::config::*`. See [SPEC_CONFIG](SPEC_CONFIG.md). When a value appears in
+this spec (e.g. radius 2, time check every 4096 nodes), the canonical source is
+`hexo.toml` — do not duplicate.
+
 ## Coordinates (`coords.rs`)
 
 Axial coords. Drop `s` (implicit: `s = -q - r`).

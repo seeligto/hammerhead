@@ -13,11 +13,15 @@ Minimax engine. Beat SealBot. Fast. Clean.
 ## Crate Layout
 
 ```
+hexo.toml                   single source of truth for engine tuning (SPEC_CONFIG.md)
+
 hexo-engine/                Rust crate
 ├── Cargo.toml
 ├── pyproject.toml          maturin build config
+├── build.rs                reads ../hexo.toml, codegens src/config_generated.rs
 ├── src/
 │   ├── lib.rs              crate root, pub use only
+│   ├── config.rs           include!-s codegen'd consts from hexo.toml
 │   ├── coords.rs           axial coord type, hex math
 │   ├── board.rs            piece storage, place/undo, hash
 │   ├── moves.rs            move gen, legality, candidate cells
@@ -40,6 +44,7 @@ hexo/                       Python package
 ├── pyproject.toml
 ├── hexo/
 │   ├── __init__.py
+│   ├── config.py           reads ../hexo.toml via tomllib (SPEC_CONFIG.md)
 │   ├── bot.py              high-level Bot class
 │   ├── game.py             game state convenience
 │   ├── notation.py         BSN / BKE / HXN parsing
@@ -54,6 +59,7 @@ One job per file. If file does 2 things, split.
 
 | Module | Job |
 |---|---|
+| `config` | re-exports codegen'd consts from `hexo.toml` — no magic numbers elsewhere |
 | `coords` | axial coord type, hex distance, 3 axis vectors |
 | `board` | piece storage, place/undo, occupancy, candidate set |
 | `moves` | generate legal candidates, depth-limited radius |
@@ -85,6 +91,22 @@ board.rs  ──uses──▶  coords.rs, zobrist.rs, moves.rs
 ```
 
 Search never alloc per node. Pre-allocated move buffers, threat caches.
+
+## Configuration
+
+All engine tuning parameters (eval weights, search defaults) live in
+`hexo.toml` at workspace root. Rust ingests via `build.rs` codegen; Python
+reads via `tomllib`. See [SPEC_CONFIG](SPEC_CONFIG.md).
+
+## Toolchain
+
+- Rust 1.85+ (edition 2024)
+- Python 3.11+ (tomllib in stdlib)
+- pyo3 0.28
+- maturin 1.13+
+
+Note: Rust edition 2026 does not exist. The most recent stable edition is
+2024 (Rust 1.85, Feb 2025). Cargo 1.94 accepts only 2015 / 2018 / 2021 / 2024.
 
 ## Build
 

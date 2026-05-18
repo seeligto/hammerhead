@@ -186,7 +186,11 @@ Eval weights start as listed above. Tune via:
 - SealBot benchmark suite
 - Position library (known mate-in-N, known draws)
 
-Store weights in `eval.rs` as `pub const`. Allow runtime override via PyO3 for tuning experiments.
+**Storage:** weights live in `hexo.toml` (see [SPEC_CONFIG](SPEC_CONFIG.md)) and are
+codegen'd into `crate::config` at build time. Edit `hexo.toml`, rebuild,
+both Rust and Python see new values.
+
+Future: PyO3 runtime override hook for tuning experiments without rebuild.
 
 ## Radius Theory Integration (Hexo Radius Theory.pdf)
 
