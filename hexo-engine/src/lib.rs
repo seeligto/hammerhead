@@ -20,7 +20,7 @@ pub use coords::{
     for_each_in_range, hex_distance, within_range,
 };
 pub use eval::eval;
-pub use moves::generate;
+pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
 pub use ordering::order_moves;
 pub use search::{SearchConfig, SearchResult, search};
 pub use threats::{ThreatCounts, detect};
