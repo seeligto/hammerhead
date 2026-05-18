@@ -13,6 +13,7 @@ pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
 fxhash = "0.2"
 smallvec = "1"
 rand = "0.9"
+rand_xoshiro = "0.8"
 thiserror = "2"
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
 
