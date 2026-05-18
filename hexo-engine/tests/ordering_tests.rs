@@ -282,7 +282,28 @@ fn killer_dedup_preserves_first_slot() {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 11. History saturates at HISTORY_CUTOFF_MAX
+// 11. Multi-bucket move: TT supersedes lower-priority predicates
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn multi_bucket_move_uses_highest_priority() {
+    // (3,5) creates an own open-4 (creates_s0, bucket 6) AND is the TT
+    // suggestion (bucket 10). It must rank first, not just "above other
+    // S0 creators" — the TT bucket dominates.
+    let mut b = Board::new();
+    x_at(&mut b, &[(0, 5), (1, 5), (2, 5)]);
+    let state = OrderingState::new();
+    let killer = KillerSlot::default();
+    let dual = mv(3, 5);
+    let other_s0 = mv(-1, 5); // also creates_s0 on the same line, opposite end
+    let c = ctx(&b, Player::X, Some(dual), &killer, &state.history, &[]);
+    let mut moves = list(&[other_s0, dual]);
+    order_moves(&mut moves, &c);
+    assert_eq!(moves[0], dual, "TT move dominates even with creates_s0 alt");
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// 12. History saturates at HISTORY_CUTOFF_MAX
 // ────────────────────────────────────────────────────────────────────────
 
 #[test]
