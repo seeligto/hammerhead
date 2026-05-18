@@ -401,15 +401,18 @@ impl Board {
         self.hash ^= old ^ new;
     }
 
-    /// Reverse of [`advance_parity`]: re-derive `(side, halfmove)` from
-    /// the post-undo ply and XOR the overlay back into `self.hash`.
+    /// Reverse of [`advance_parity`]: back-derive `(side, halfmove)` from
+    /// the CURRENT (post-advance) parity, not from `player_at_ply`. Using
+    /// the natural-parity formula would clobber any state set by
+    /// [`Board::force_parity_for_test`] across a `place`/`undo` cycle.
     ///
-    /// Must be called after `self.ply` has been decremented.
+    /// Must be called after `self.ply` has been decremented; the
+    /// pre-decrement value (`self.ply + 1`) is the `post_ply` that
+    /// `advance_parity` saw.
     #[inline]
     fn retreat_parity(&mut self) {
         let old = parity_overlay(self.side_to_move, self.halfmove);
-        let new_side = player_at_ply(self.ply);
-        let new_half = halfmove_at_ply(self.ply);
+        let (new_side, new_half) = prev_parity(self.side_to_move, self.halfmove, self.ply + 1);
         self.side_to_move = new_side;
         self.halfmove = new_half;
         let new = parity_overlay(new_side, new_half);
@@ -570,6 +573,23 @@ fn next_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
         (Player::X, _) => (Player::O, 0),
         (Player::O, 0) => (Player::O, 1),
         (Player::O, _) => (Player::X, 0),
+    }
+}
+
+/// Inverse of [`next_parity`]. Given the parity *after* an advance and
+/// the `post_ply` value the advance saw, return the parity *before* the
+/// advance. Used by [`Board::retreat_parity`] so a `place`/`undo` pair
+/// round-trips through arbitrary starting parities (in particular,
+/// states set up by [`Board::force_parity_for_test`]).
+#[inline]
+#[must_use]
+fn prev_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
+    match (side, halfmove) {
+        (Player::O, 0) if post_ply == 1 => (Player::X, 0),
+        (Player::X, 0) => (Player::O, 1),
+        (Player::X, _) => (Player::X, 0),
+        (Player::O, 0) => (Player::X, 1),
+        (Player::O, _) => (Player::O, 0),
     }
 }
 
