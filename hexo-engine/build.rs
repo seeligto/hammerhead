@@ -54,6 +54,19 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
             &["engine", "eval", "overlap_bonus_x10"],
             "OVERLAP_BONUS_X10",
         ),
+        (
+            &["engine", "eval", "open_extension_factor"],
+            "OPEN_EXTENSION_FACTOR",
+        ),
+        (
+            &["engine", "eval", "closed_extension_factor"],
+            "CLOSED_EXTENSION_FACTOR",
+        ),
+        (
+            &["engine", "eval", "fork_cover2_bonus"],
+            "FORK_COVER2_BONUS",
+        ),
+        (&["engine", "eval", "tempo_weight"], "TEMPO_WEIGHT"),
     ];
     for (path, name) in scalars {
         emit_i32(out, cfg, path, name);
@@ -65,6 +78,72 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         "WINDOW_K_SCORES",
         7,
     );
+    emit_window_score_table(out, cfg);
+}
+
+/// Emit `WINDOW_SCORE: [i32; 729]` for Layer 1 ternary-encoded windows.
+///
+/// Index = `c0 + 3*c1 + 9*c2 + 27*c3 + 81*c4 + 243*c5` with cell codes
+/// `0=empty, 1=X, 2=O`. Mixed windows → 0. X-only → `+k_scores[k]`.
+/// O-only → `-k_scores[k]`. Empty → 0.
+fn emit_window_score_table(out: &mut String, cfg: &toml::Value) {
+    let path: &[&str] = &["engine", "eval", "window_k_scores"];
+    let arr = get(cfg, path)
+        .as_array()
+        .expect("window_k_scores must be array");
+    assert_eq!(arr.len(), 7, "window_k_scores must have 7 entries");
+    let k_scores: Vec<i32> = arr
+        .iter()
+        .map(|v| {
+            i32::try_from(v.as_integer().expect("k score not int"))
+                .expect("k score does not fit in i32")
+        })
+        .collect();
+
+    // Invariant: a 6-in-window is a win and must match mate_score so
+    // Layer 1 and the terminal-position short-circuit agree.
+    let mate = i32::try_from(as_int(
+        get(cfg, &["engine", "eval", "mate_score"]),
+        &["engine", "eval", "mate_score"],
+    ))
+    .expect("mate_score does not fit in i32");
+    assert_eq!(
+        k_scores[6], mate,
+        "window_k_scores[6] must equal mate_score; got {} vs {}",
+        k_scores[6], mate
+    );
+
+    let mut entries: Vec<i32> = Vec::with_capacity(729);
+    for idx in 0..729u16 {
+        let mut x_count: u8 = 0;
+        let mut o_count: u8 = 0;
+        let mut n = idx;
+        for _ in 0..6 {
+            let cell = n % 3;
+            n /= 3;
+            match cell {
+                1 => x_count += 1,
+                2 => o_count += 1,
+                _ => {}
+            }
+        }
+        let v = if x_count > 0 && o_count > 0 {
+            0
+        } else if x_count > 0 {
+            k_scores[x_count as usize]
+        } else if o_count > 0 {
+            -k_scores[o_count as usize]
+        } else {
+            0
+        };
+        entries.push(v);
+    }
+    let body = entries
+        .iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(out, "pub const WINDOW_SCORE: [i32; 729] = [{body}];").unwrap();
 }
 
 fn emit_threats(out: &mut String, cfg: &toml::Value) {
