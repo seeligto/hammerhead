@@ -38,11 +38,24 @@ pub struct Board {
     hash: u128,             // 128-bit Zobrist; TT bucket = (hash as u64) & MASK
     ply: u32,
     zobrist: ZobristTable,
+    axes: AxisBitmaps,
+    winner: Option<Player>,
 }
 
 #[repr(u8)]
 pub enum Player { X = 0, O = 1 }
 ```
+
+Accessors:
+
+```rust
+#[inline] pub fn axes(&self) -> &AxisBitmaps;
+#[inline] pub fn winner(&self) -> Option<Player>;
+```
+
+`winner` is set by `place` when the just-placed move makes a 6-in-row, and
+cleared by `undo` whenever the undone move was the winning one. See "Win
+Detection" below.
 
 ### Parity rules
 
@@ -88,10 +101,13 @@ incrementally:
   `proximity_count > 0` AND cell is empty.
 - `place(c)`: for every `d` in the `r8` hex around `c`, increment
   `proximity_count[d]`. If `proximity_count[d]` rose from 0 and `d` is empty,
-  insert into candidates. Remove `c` itself from candidates.
-- `undo(c)`: reverse. Decrement counts; remove from candidates when count hits
-  0. Re-insert `c` if its remaining proximity count > 0 (other pieces still in
-  range).
+  insert into candidates. Remove `c` itself from candidates. After proximity
+  / hash / history updates: `axes.set(c, player)`, then set
+  `winner = Some(player)` iff `is_winning_move(self, c, player)`.
+- `undo(c)`: reverse. Before any other rollback: `axes.clear(c, player)`
+  and clear `winner` if the undone move was the winning one. Then decrement
+  counts; remove from candidates when count hits 0. Re-insert `c` if its
+  remaining proximity count > 0 (other pieces still in range).
 - `ply == 0` special case: candidates = `{(0, 0)}` when board empty.
 
 ## Move Generation (`moves.rs`)
@@ -110,20 +126,132 @@ Strategy:
 
 For colony detection: scan piece clusters every N plies. If opponent makes far colony, expand candidates locally near it.
 
-## Win Detection (`win.rs`)
+## Axis Bitmaps (`axis_bitmap.rs`)
 
-After each `place(c)`: scan 3 axes through `c`.
+Sparse, per-axis, per-player line bitmaps. Shared infrastructure for win
+detection, window-scan eval (Layer 1), and shape detection (Layer 2).
+
+### Indexing
+
+Three axes. For each axis, a hex cell `(q, r)` maps to a `(line_id, pos)`
+pair:
+
+| Axis | line_id | pos |
+|---|---|---|
+| Q (horizontal) | `r` | `q` |
+| R (diagonal 1) | `q` | `r` |
+| S (diagonal 2) | `q + r` | `q` |
+
+All values fit in `i16`. The chosen mapping makes adjacent cells on the same
+line have adjacent `pos` values, so they pack into consecutive bits.
+
+### Data structure
 
 ```rust
-pub fn is_winning_move(board: &Board, c: Coord, p: Player) -> bool {
-    for axis in AXES {
-        if line_length_through(board, c, axis, p) >= 6 { return true; }
-    }
-    false
+pub struct LineBitmap {
+    /// Packed bits. bit i corresponds to position `base_pos + i`.
+    words: SmallVec<[u64; 4]>,
+    base_pos: i16,
+}
+
+pub struct AxisBitmaps {
+    /// [axis][player] -> map of line_id -> bitmap
+    lines: [[FxHashMap<i16, LineBitmap>; 2]; 3],
 }
 ```
 
-Walk back up to 5 along axis (stop at non-`p`), then forward, count consecutive `p`. O(1) bounded by 11 cells × 3 axes = 33 lookups.
+`SmallVec<[u64; 4]>` keeps most short lines inline (256 bits, covers ±128
+positions inline). Long lines spill to heap. No allocation in the common
+case once a line is established.
+
+### Operations
+
+```rust
+impl AxisBitmaps {
+    pub fn new() -> Self;
+    pub fn set(&mut self, c: Coord, player: Player);
+    pub fn clear(&mut self, c: Coord, player: Player);
+
+    /// Length of the longest contiguous run of `player`'s stones through `c`
+    /// on `axis`. Returns 0 if `c` is not occupied by `player` on that line.
+    /// Walks at most ±5 positions; bounded O(1).
+    pub fn run_length_through(&self, c: Coord, axis: Axis, player: Player) -> u8;
+
+    /// 6-bit window starting at position `pos` of `axis` line `line_id` for
+    /// `player`. Used by eval window scan (Layer 1) later.
+    pub fn window6(&self, axis: Axis, line_id: i16, pos: i16, player: Player) -> u8;
+}
+```
+
+### Axis enum
+
+```rust
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[repr(u8)]
+pub enum Axis { Q = 0, R = 1, S = 2 }
+
+impl Axis {
+    #[inline] pub const fn all() -> [Axis; 3] { [Axis::Q, Axis::R, Axis::S] }
+    #[inline] pub const fn line_id(self, c: Coord) -> i16 {
+        match self { Axis::Q => c.r, Axis::R => c.q, Axis::S => c.q + c.r }
+    }
+    #[inline] pub const fn pos(self, c: Coord) -> i16 {
+        match self { Axis::Q => c.q, Axis::R => c.r, Axis::S => c.q }
+    }
+}
+```
+
+### Growth policy
+
+`LineBitmap::set(pos)`:
+- If `pos` falls within `[base_pos, base_pos + 64 * words.len())`: set bit.
+- Below `base_pos`: prepend words, adjust `base_pos`. Grow by at least 64
+  bits to amortize.
+- Above range: append words.
+
+Pre-grow on first insert: initialize with one 64-bit word centered around
+`pos`, e.g. `base_pos = pos - 32` so first set sits in bit 32. This leaves
+room on both sides for typical local expansion before realloc.
+
+### Augmentation note
+
+Hex grid 60° rotation `(q, r) → (-r, q + r)` permutes axes cyclically:
+Q → S → R → Q. Reflections analogous. Per-axis bitmap storage means rotated
+positions reuse identical bit patterns; only the axis index changes. This
+is exploited later for canonical-hash and self-play augmentation. No work
+required here — design is rotation-friendly by construction.
+
+## Win Detection (`win.rs`)
+
+After each `place(c)` by `player`, the move wins iff any of the 3 axes has
+a run of length ≥ 6 through `c` of `player`'s stones.
+
+```rust
+pub fn is_winning_move(board: &Board, c: Coord, player: Player) -> bool {
+    Axis::all().iter().any(|&axis| {
+        board.axes().run_length_through(c, axis, player) >= 6
+    })
+}
+```
+
+`run_length_through` is bounded O(1): it walks at most 5 positions backward
+and 5 forward from `c` on the line bitmap. Bit access is a single word load
++ shift + mask.
+
+### Where it's called
+
+- `Board::place(c)` updates a cached `winner: Option<Player>` field after
+  setting the axis bitmap, by calling `is_winning_move(self, c, player)`.
+- `Board::winner()` returns the cached value. O(1).
+
+This caching means search can call `winner()` on every node without
+re-scan.
+
+### Edge case: overlines
+
+HeXO win is "≥ 6 in a row", not "exactly 6". Per spec, 7+ in a row still
+wins. `run_length_through` returns the *actual* length; the check is
+`>= 6`.
 
 ## Zobrist (`zobrist.rs`)
 
