@@ -264,4 +264,22 @@ impl AxisBitmaps {
         };
         line.window6(pos)
     }
+
+    /// Endpoints `(start_pos, end_pos)` of the maximal `p`-run on `axis`
+    /// through `c`. Returns `None` if `c` is not occupied by `p` on the line.
+    /// Inclusive on both sides. The underlying scan walks at most ±5 cells,
+    /// so runs longer than 11 are truncated — fine for threat / win
+    /// classification, where length ≥ 6 already means terminal.
+    #[must_use]
+    pub fn run_endpoints(&self, c: Coord, axis: Axis, p: Player) -> Option<(i16, i16)> {
+        let id = axis.line_id(c);
+        let pos = axis.pos(c);
+        let line = self.lines[axis as usize][p as usize].get(&id)?;
+        if !line.get(pos) {
+            return None;
+        }
+        let back = i16::from(line.run_backward(pos));
+        let fwd = i16::from(line.run_forward(pos));
+        Some((pos - back, pos + fwd))
+    }
 }
