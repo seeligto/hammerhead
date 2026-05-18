@@ -25,13 +25,18 @@ use crate::config::{
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves::{self, MOVE_GEN_CAP_INLINE};
-use crate::ordering::{self, OrderingContext, OrderingState, order_moves};
+use crate::ordering::{self, OrderingContext, OrderingState, order_moves_with_buckets};
 use crate::tt::{TTFlag, TranspositionTable};
 use smallvec::SmallVec;
 
 /// Open window bound. Half of `i32::MAX` so `INF + x` never overflows
 /// inside the search.
 pub const INF: i32 = i32::MAX / 2;
+
+/// Any |score| above this is treated as mate-class. The TT store/probe
+/// path encodes mate distance relative to the current node so a
+/// transposition at a different ply doesn't return an off-by-N mate.
+const MATE_BOUND: i32 = MATE_SCORE - MAX_PLY as i32;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -205,7 +210,10 @@ fn iterate_at_depth(
         _ => (-INF, INF),
     };
 
-    for attempt in 0..4_u8 {
+    // Aspiration loop. Up to 2 narrow widens; on the third failure we
+    // promote to full-window which always returns in-window and exits.
+    let mut attempt = 0_u8;
+    loop {
         let score = pvs_node(
             board,
             tt,
@@ -222,11 +230,12 @@ fn iterate_at_depth(
         )?;
         let fail_low = score <= alpha;
         let fail_high = score >= beta;
-        let at_full_window = alpha <= -INF && beta >= INF;
+        let at_full_window = alpha == -INF && beta == INF;
         if (!fail_low && !fail_high) || at_full_window {
             let best = tt.probe(root_hash).map_or(ORIGIN, |entry| entry.best_move);
             return Ok((score, best));
         }
+        attempt += 1;
         if attempt >= 2 {
             alpha = -INF;
             beta = INF;
@@ -240,23 +249,6 @@ fn iterate_at_depth(
             beta = beta.saturating_add(delta).min(INF);
         }
     }
-    // Final pass at full window — guaranteed to terminate.
-    let score = pvs_node(
-        board,
-        tt,
-        ord,
-        cfg,
-        depth,
-        -INF,
-        INF,
-        0,
-        cfg.max_check_extensions,
-        deadline,
-        &[],
-        node_count,
-    )?;
-    let best = tt.probe(root_hash).map_or(ORIGIN, |entry| entry.best_move);
-    Ok((score, best))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,10 +288,11 @@ fn pvs_node(
     if let Some(entry) = tt.probe(board.hash()) {
         tt_move = Some(entry.best_move);
         if entry.depth >= depth {
+            let adjusted = score_from_tt(entry.score, ply);
             match entry.flag {
-                TTFlag::Exact => return Ok(entry.score),
-                TTFlag::LowerBound if entry.score >= beta => return Ok(entry.score),
-                TTFlag::UpperBound if entry.score <= alpha => return Ok(entry.score),
+                TTFlag::Exact => return Ok(adjusted),
+                TTFlag::LowerBound if adjusted >= beta => return Ok(adjusted),
+                TTFlag::UpperBound if adjusted <= alpha => return Ok(adjusted),
                 _ => {}
             }
         }
@@ -315,8 +308,7 @@ fn pvs_node(
         return Ok(board.cached_eval());
     }
 
-    let mut entries: SmallVec<[(Coord, u8); MOVE_GEN_CAP_INLINE]> = SmallVec::new();
-    {
+    let buckets: SmallVec<[u8; MOVE_GEN_CAP_INLINE]> = {
         let killers_idx = (ply as usize).min(MAX_PLY - 1);
         let killers_snap = ord.killers[killers_idx];
         let ctx = OrderingContext {
@@ -327,17 +319,14 @@ fn pvs_node(
             history: &ord.history,
             stone1_s0_defense: stone1_defense,
         };
-        order_moves(&mut moves_list, &ctx);
-        for &m in &moves_list {
-            entries.push((m, ordering::bucket_value(&ctx, m)));
-        }
-    }
+        order_moves_with_buckets(&mut moves_list, &ctx)
+    };
 
     let mut best_score = if maximize { -INF } else { INF };
-    let mut best_move = entries.first().map_or(ORIGIN, |&(c, _)| c);
+    let mut best_move = moves_list.first().copied().unwrap_or(ORIGIN);
 
     // ── Move loop ───────────────────────────────────────────────────────────
-    for (i, &(m, bucket)) in entries.iter().enumerate() {
+    for (i, (&m, &bucket)) in moves_list.iter().zip(buckets.iter()).enumerate() {
         // Check extension: own move creates a fresh S0 against the
         // opponent and we still have budget.
         let extends_check = bucket == BUCKET_S0_CREATE && extensions_left > 0;
@@ -419,7 +408,13 @@ fn pvs_node(
     } else {
         TTFlag::Exact
     };
-    tt.store(board.hash(), depth, best_score, flag, best_move);
+    tt.store(
+        board.hash(),
+        depth,
+        score_to_tt(best_score, ply),
+        flag,
+        best_move,
+    );
 
     Ok(best_score)
 }
@@ -666,6 +661,37 @@ fn terminal_score(winner: Player, ply: u8) -> i32 {
     match winner {
         Player::X => mag,
         Player::O => -mag,
+    }
+}
+
+/// Encode a node-relative score into a ply-agnostic TT value.
+///
+/// Mate-class scores carry their absolute search ply; storing them as-is
+/// gives the wrong distance back to a transposition reached at a
+/// different ply. We shift mate-class scores so the TT slot represents
+/// "mate at distance `d` from the stored node" and the probe re-anchors
+/// to the current ply.
+#[inline]
+fn score_to_tt(score: i32, ply: u8) -> i32 {
+    if score >= MATE_BOUND {
+        score + i32::from(ply)
+    } else if score <= -MATE_BOUND {
+        score - i32::from(ply)
+    } else {
+        score
+    }
+}
+
+/// Inverse of [`score_to_tt`]. Apply to a probed entry before comparing
+/// against the current node's alpha/beta.
+#[inline]
+fn score_from_tt(score: i32, ply: u8) -> i32 {
+    if score >= MATE_BOUND {
+        score - i32::from(ply)
+    } else if score <= -MATE_BOUND {
+        score + i32::from(ply)
+    } else {
+        score
     }
 }
 
