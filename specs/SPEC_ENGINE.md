@@ -530,36 +530,125 @@ Stats: probe / hit / store counts; deferred to Phase 8 instrumentation.
 
 ## Search (`search.rs`)
 
+Per-stone alpha-beta minimax with iterative deepening. X-positive eval.
+
+### Driver
+
 ```rust
-pub fn search(board: &mut Board, cfg: SearchConfig) -> SearchResult {
-    let mut best = None;
-    for depth in 1..=cfg.max_depth {
-        let score = pvs(board, depth, -INF, INF, cfg);
-        if cfg.deadline_passed() { break; }
-        best = Some((score, tt_best_move));
-    }
-    best.unwrap()
+pub struct SearchConfig {
+    pub max_depth: i8,
+    pub time_ms: Option<u64>,
+    pub deadline_check_nodes: u32,
+    pub stone1_time_pct: f32,  // 0..=1, default 0.6
+    pub asp_window_initial: i32,
+    pub asp_window_widen_factor: u32,
+    pub lmr_min_depth: i8,
+    pub lmr_min_move_index: u8,
+    pub lmr_reduction: i8,
+    pub qsearch_max_plies: u8,
+    pub max_check_extensions: u8,
 }
+
+pub struct SearchResult {
+    pub best_move: Coord,
+    pub score: i32,
+    pub depth_reached: i8,
+    pub nodes: u64,
+    pub time_ms: u64,
+}
+
+pub fn search_root(
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    ordering: &mut OrderingState,
+    cfg: &SearchConfig,
+) -> SearchResult;
 ```
 
-Features:
-- Iterative deepening
-- Principal variation search (PVS) with null-window probes
-- Aspiration windows after depth 4
-- Null move pruning (HeXO non-zugzwang per Nash arg)
-- Late move reductions (LMR) for late ordered moves at high depth
-- Quiescence: only threat moves (open-3+, open-4, closed-5)
-- Check extensions: extend on opponent-creates-S0-threat
+### Algorithm flow
 
-### Eval sign
+1. Bump TT generation; decay ordering history.
+2. Compute `deadline = now + cfg.time_ms` (if `Some`).
+3. For `depth = 1..=max_depth`:
+   a. **Aspiration**: if `depth >= 4` and `prev_score` known, search the
+      narrow window `[prev - delta, prev + delta]`. On a fail-low /
+      fail-high, widen `delta *= factor` and re-search; on third failure
+      go full-window. Each failed attempt counts time against the
+      deadline.
+   b. Run `pvs_root(depth, alpha, beta)`.
+   c. If deadline elapsed during the iteration, discard the partial
+      result and return the last completed iteration's result.
+   d. Save `(depth, score, best_move)` as the current result.
+4. Return the current result.
 
-Positive = X advantage. Negative = O advantage. Search uses negamax form with `to_move_sign`.
+### Recursive nodes (`pvs_max` / `pvs_min`)
+
+Minimax form (X maximizes, O minimizes). Two symmetric entry points; the
+search picks one per ply based on `board.to_move()` at root and alternates
+on recursion. Per node:
+
+1. Check deadline every `cfg.deadline_check_nodes` nodes via a
+   thread-local counter; on timeout propagate `Err(Timeout)` up.
+2. If `board.winner()` is `Some(p)`, return mate-distance score
+   `±(MATE_SCORE - ply)` (sign by `p`).
+3. Probe TT. If a hit at sufficient depth with a compatible bound:
+   return its score.
+4. If `depth == 0`: return `quiescence_*` (see below).
+5. Generate candidates via `moves::generate(board, DEFAULT_MOVE_RADIUS)`;
+   order via `ordering::order_moves(...)`.
+6. Iterate ordered moves:
+   - **First move (i == 0)**: full window `[alpha, beta]`.
+   - **Subsequent (i > 0)**: null-window probe `[alpha, alpha + 1]` at
+     possibly-reduced depth. On `probe > alpha` re-search at full depth
+     (and full window if `probe < beta`). On fail-high we also fall back
+     to the full window.
+   - **LMR**: if `depth >= lmr_min_depth`, `i >= lmr_min_move_index`,
+     and the move's ordering bucket is not in
+     `{TT, win, block-win, stone1-defense, S0-create, S0-block, killer}`,
+     search at `depth - 1 - lmr_reduction`. If LMR raises alpha, re-search
+     at full depth.
+   - **Check extension**: if the placed move creates an S0 threat for the
+     side that just moved and `extensions_left > 0`, search at the new
+     depth (i.e. `+1` over the would-be `depth - 1`) and decrement
+     `extensions_left`.
+7. On `score >= beta` (max) / `score <= alpha` (min): record killer +
+   history, break (β-cutoff).
+8. Store a TT entry with flag `Exact`, `LowerBound`, or `UpperBound`
+   depending on whether alpha was raised / beta was cut.
+
+### Quiescence (`quiescence_max` / `quiescence_min`)
+
+Threat-only, hard-capped at `cfg.qsearch_max_plies`.
+
+1. Check deadline; return early on terminal.
+2. Stand-pat with `board.cached_eval()`. For `max`: if `static >= beta`
+   return `beta`; else `alpha = max(alpha, static)`. Mirror for `min`.
+3. If `q_ply >= cfg.qsearch_max_plies` return alpha.
+4. Generate threat-only moves: a move is included iff it creates own S0,
+   blocks an opponent S0, or makes a 6-in-row. Skip the rest.
+5. If no threat moves remain, return alpha (the position is quiet).
+6. Recurse normally with the threat-only move list.
+
+### Stone-1 threat completion
+
+When the just-placed move turned `halfmove` from 0 → 1 and created an S0,
+the recursive call's `OrderingContext::stone1_s0_defense` carries the new
+S0's `defense_cells` so bucket 7 ("complete the threat") kicks in.
 
 ### Time management
 
-- `cfg.time_ms` is total budget for `best_move` call
-- Check deadline every N nodes (e.g. 4096)
-- Soft-fail iterative deepening on deadline
+- `cfg.time_ms` is the budget for the current `search_root` call.
+- The `Engine::best_move` wrapper splits the per-turn budget across the
+  two stones: stone 1 = `time_stone1_pct * t`, stone 2 = the remainder.
+- Deadline checked every `deadline_check_nodes` via a thread-local
+  counter; on timeout the partial iteration is discarded and the last
+  completed iteration's result is returned.
+
+### Eval sign
+
+Positive = X advantage. Negative = O advantage. **Minimax form**, not
+negamax: `pvs_max` always maximizes for X, `pvs_min` minimizes for O,
+regardless of who moves at the root. Never sign-flip.
 
 ## Ordering (`ordering.rs`)
 

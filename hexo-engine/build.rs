@@ -178,6 +178,7 @@ fn emit_tt(out: &mut String, cfg: &toml::Value) {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn emit_search(out: &mut String, cfg: &toml::Value) {
     emit_usize(
         out,
@@ -233,6 +234,54 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         cfg,
         &["engine", "search", "move_gen_outer_radius"],
         "MOVE_GEN_OUTER_RADIUS",
+    );
+    emit_f32(
+        out,
+        cfg,
+        &["engine", "search", "time_stone1_pct"],
+        "TIME_STONE1_PCT",
+    );
+    emit_i32(
+        out,
+        cfg,
+        &["engine", "search", "asp_window_initial"],
+        "ASP_WINDOW_INITIAL",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["engine", "search", "asp_window_widen_factor"],
+        "ASP_WINDOW_WIDEN_FACTOR",
+    );
+    emit_i8(
+        out,
+        cfg,
+        &["engine", "search", "lmr_min_depth"],
+        "LMR_MIN_DEPTH",
+    );
+    emit_u8(
+        out,
+        cfg,
+        &["engine", "search", "lmr_min_move_index"],
+        "LMR_MIN_MOVE_INDEX",
+    );
+    emit_i8(
+        out,
+        cfg,
+        &["engine", "search", "lmr_reduction"],
+        "LMR_REDUCTION",
+    );
+    emit_u8(
+        out,
+        cfg,
+        &["engine", "search", "qsearch_max_plies"],
+        "QSEARCH_MAX_PLIES",
+    );
+    emit_u8(
+        out,
+        cfg,
+        &["engine", "search", "max_check_extensions"],
+        "MAX_CHECK_EXTENSIONS",
     );
 }
 
@@ -328,6 +377,18 @@ fn emit_u32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: usize = {v};").unwrap();
+}
+
+fn emit_u8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = as_int(get(cfg, path), path);
+    writeln!(out, "pub const {name}: u8 = {v};").unwrap();
+}
+
+fn emit_f32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = get(cfg, path)
+        .as_float()
+        .unwrap_or_else(|| panic!("hexo.toml {} not a float", path.join(".")));
+    writeln!(out, "pub const {name}: f32 = {v}_f32;").unwrap();
 }
 
 fn emit_i32_array(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str, len: usize) {

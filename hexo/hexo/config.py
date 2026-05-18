@@ -93,6 +93,14 @@ class SearchConfigDefaults:
     aspiration_start_depth: int
     move_gen_inner_radius: int
     move_gen_outer_radius: int
+    time_stone1_pct: float
+    asp_window_initial: int
+    asp_window_widen_factor: int
+    lmr_min_depth: int
+    lmr_min_move_index: int
+    lmr_reduction: int
+    qsearch_max_plies: int
+    max_check_extensions: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +186,14 @@ def load() -> HexoConfig:
             aspiration_start_depth=s["aspiration_start_depth"],
             move_gen_inner_radius=s["move_gen_inner_radius"],
             move_gen_outer_radius=s["move_gen_outer_radius"],
+            time_stone1_pct=float(s["time_stone1_pct"]),
+            asp_window_initial=s["asp_window_initial"],
+            asp_window_widen_factor=s["asp_window_widen_factor"],
+            lmr_min_depth=s["lmr_min_depth"],
+            lmr_min_move_index=s["lmr_min_move_index"],
+            lmr_reduction=s["lmr_reduction"],
+            qsearch_max_plies=s["qsearch_max_plies"],
+            max_check_extensions=s["max_check_extensions"],
         ),
         ordering=OrderingConfig(
             move_gen_cap=o["move_gen_cap"],
