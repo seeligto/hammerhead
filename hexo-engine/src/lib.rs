@@ -22,7 +22,7 @@ pub use coords::{
 pub use eval::{eval, is_mate_for};
 pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
 pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
-pub use search::{SearchConfig, SearchResult, search};
+pub use search::{Engine, INF, SearchConfig, SearchResult, search_root};
 pub use threats::{
     ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,
     single_cell_blocks_all,
