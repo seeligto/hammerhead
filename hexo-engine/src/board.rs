@@ -4,6 +4,7 @@
 //! and per-coord proximity counts. `place`/`undo` maintain candidates and hash
 //! incrementally — no full scan.
 
+use crate::axis_bitmap::AxisBitmaps;
 use crate::config::MAX_PIECE_DISTANCE;
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::zobrist::ZobristTable;
@@ -55,6 +56,8 @@ pub struct Board {
     hash: u128,
     ply: u32,
     zobrist: ZobristTable,
+    axes: AxisBitmaps,
+    winner: Option<Player>,
 }
 
 impl Default for Board {
@@ -83,6 +86,8 @@ impl Board {
             hash: 0,
             ply: 0,
             zobrist: ZobristTable::new(),
+            axes: AxisBitmaps::new(),
+            winner: None,
         }
     }
 
@@ -95,6 +100,8 @@ impl Board {
         self.history.clear();
         self.hash = 0;
         self.ply = 0;
+        self.axes = AxisBitmaps::new();
+        self.winner = None;
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.
@@ -132,6 +139,10 @@ impl Board {
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
         self.ply += 1;
+        self.axes.set(c, player);
+        if crate::win::is_winning_move(self, c, player) {
+            self.winner = Some(player);
+        }
         Ok(())
     }
 
@@ -142,6 +153,11 @@ impl Board {
             .pieces
             .remove(&c)
             .expect("invariant: history piece in pieces map");
+
+        self.axes.clear(c, player);
+        if self.winner == Some(player) {
+            self.winner = None;
+        }
 
         self.hash ^= self.zobrist.key(c, player);
         self.ply -= 1;
@@ -234,6 +250,19 @@ impl Board {
     #[inline]
     pub fn history(&self) -> &[Coord] {
         &self.history
+    }
+
+    /// Per-axis per-player line bitmaps. Used by win detection and eval.
+    #[inline]
+    pub fn axes(&self) -> &AxisBitmaps {
+        &self.axes
+    }
+
+    /// Player who just won, if any. `Some(p)` iff the most recent
+    /// non-undone `place` produced a 6-in-row for `p`.
+    #[inline]
+    pub fn winner(&self) -> Option<Player> {
+        self.winner
     }
 
     /// Internal radius check. Assumes ply >= 1.

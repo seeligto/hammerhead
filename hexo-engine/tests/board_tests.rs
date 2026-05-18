@@ -230,3 +230,116 @@ fn player_opponent_round_trip() {
     assert_eq!(Player::O.opponent(), Player::X);
     assert_eq!(Player::X.opponent().opponent(), Player::X);
 }
+
+/// 12-ply sequence putting 6 X stones along a parametric axis. `step` is the
+/// axis unit vector; `pad` is a far O-side coord (different line per axis).
+fn play_six_x_along(b: &mut Board, step: Coord, pad: (Coord, Coord)) {
+    // X plies: 0, 3, 4, 7, 8, 11. O plies: 1, 2, 5, 6, 9, 10.
+    // Win-line points: 0*step, 1*step, ..., 5*step.
+    let line = |k: i16| Coord::new(step.q * k, step.r * k);
+    let (p1, p2) = pad;
+    let p_at = |k: i16, base: Coord| Coord::new(base.q + step.q * k, base.r + step.r * k);
+
+    place_ok(b, line(0)); // ply 0 X
+    place_ok(b, p_at(0, p1)); // ply 1 O
+    place_ok(b, p_at(0, p2)); // ply 2 O
+    place_ok(b, line(1)); // ply 3 X
+    place_ok(b, line(2)); // ply 4 X
+    place_ok(b, p_at(1, p1)); // ply 5 O
+    place_ok(b, p_at(1, p2)); // ply 6 O
+    place_ok(b, line(3)); // ply 7 X
+    place_ok(b, line(4)); // ply 8 X
+    place_ok(b, p_at(2, p1)); // ply 9 O
+    place_ok(b, p_at(2, p2)); // ply 10 O
+    place_ok(b, line(5)); // ply 11 X — winning
+}
+
+#[test]
+fn winner_after_six_in_row_q() {
+    let mut b = Board::new();
+    play_six_x_along(
+        &mut b,
+        Coord::new(1, 0),
+        (Coord::new(0, 4), Coord::new(0, -4)),
+    );
+    assert_eq!(b.winner(), Some(Player::X));
+}
+
+#[test]
+fn winner_unset_after_undo() {
+    let mut b = Board::new();
+    play_six_x_along(
+        &mut b,
+        Coord::new(1, 0),
+        (Coord::new(0, 4), Coord::new(0, -4)),
+    );
+    assert_eq!(b.winner(), Some(Player::X));
+
+    b.undo().unwrap();
+    assert_eq!(b.winner(), None);
+
+    // Re-place the same winning stone (now an X-to-move again).
+    place_ok(&mut b, Coord::new(5, 0));
+    assert_eq!(b.winner(), Some(Player::X));
+}
+
+#[test]
+fn no_winner_in_progress() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    place_ok(&mut b, Coord::new(2, 0));
+    place_ok(&mut b, Coord::new(-1, 1));
+    assert_eq!(b.winner(), None);
+}
+
+#[test]
+fn winner_via_diagonal_r() {
+    let mut b = Board::new();
+    play_six_x_along(
+        &mut b,
+        Coord::new(0, 1),
+        (Coord::new(4, 0), Coord::new(-4, 0)),
+    );
+    assert_eq!(b.winner(), Some(Player::X));
+}
+
+#[test]
+fn winner_via_diagonal_s() {
+    let mut b = Board::new();
+    // Axis S step is (1, -1). Pads on a different line — pick (q=0, r=4) and (q=0, r=-4)
+    // which lie on lines line_id_S = q+r = 4 and -4 respectively (≠ win-line 0).
+    play_six_x_along(
+        &mut b,
+        Coord::new(1, -1),
+        (Coord::new(0, 4), Coord::new(0, -4)),
+    );
+    assert_eq!(b.winner(), Some(Player::X));
+}
+
+#[test]
+fn overline_wins() {
+    // 7 X stones in a row: extend the 6-in-row scenario by one more X ply.
+    // X plies: 0, 3, 4, 7, 8, 11, 12. O plies: 1, 2, 5, 6, 9, 10.
+    let mut b = Board::new();
+    let p1 = Coord::new(0, 4);
+    let p2 = Coord::new(0, -4);
+    let line = |k: i16| Coord::new(k, 0);
+    let pad = |k: i16, base: Coord| Coord::new(base.q + k, base.r);
+
+    place_ok(&mut b, line(0));
+    place_ok(&mut b, pad(0, p1));
+    place_ok(&mut b, pad(0, p2));
+    place_ok(&mut b, line(1));
+    place_ok(&mut b, line(2));
+    place_ok(&mut b, pad(1, p1));
+    place_ok(&mut b, pad(1, p2));
+    place_ok(&mut b, line(3));
+    place_ok(&mut b, line(4));
+    place_ok(&mut b, pad(2, p1));
+    place_ok(&mut b, pad(2, p2));
+    place_ok(&mut b, line(5));
+    // Winner already set after ply 11. Play one more X.
+    assert_eq!(b.winner(), Some(Player::X));
+    place_ok(&mut b, line(6));
+    assert_eq!(b.winner(), Some(Player::X));
+}
