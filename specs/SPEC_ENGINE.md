@@ -32,8 +32,10 @@ pub fn hex_distance(a: Coord, b: Coord) -> i16 {
 ```rust
 pub struct Board {
     pieces: FxHashMap<Coord, Player>,
-    proximity_count: FxHashMap<Coord, u32>,
+    proximity_count: FxHashMap<Coord, u32>,        // for legality (radius 8)
+    inner_proximity_count: FxHashMap<Coord, u32>,  // for move-gen (radius 2)
     candidate_cells: FxHashSet<Coord>,
+    inner_candidate_cells: FxHashSet<Coord>,
     history: Vec<Coord>,
     hash: u128,             // 128-bit Zobrist; TT bucket = (hash as u64) & MASK
     ply: u32,
@@ -45,6 +47,11 @@ pub struct Board {
 #[repr(u8)]
 pub enum Player { X = 0, O = 1 }
 ```
+
+Two proximity refcounts are maintained in parallel. The outer (`r8`) one
+defines legality. The inner (`r2`, value from `MOVE_GEN_INNER_RADIUS`) backs
+move generation at default search radius without a per-node scan over
+every legal cell.
 
 Accessors:
 
@@ -110,21 +117,103 @@ incrementally:
   remaining proximity count > 0 (other pieces still in range).
 - `ply == 0` special case: candidates = `{(0, 0)}` when board empty.
 
-## Move Generation (`moves.rs`)
+The inner refcount (`inner_proximity_count` / `inner_candidate_cells`) is
+maintained with exactly the same algorithm at radius
+`MOVE_GEN_INNER_RADIUS`:
 
-Search uses ply = 1 stone. Branching halved vs. full-turn search.
+```
+place(c):
+    (existing r8 steps...)
+    for each d in for_each_in_range(c, INNER_RADIUS):
+        increment inner_proximity_count[d]
+        if rose from 0 and d not in pieces: add to inner_candidate_cells
+    Remove c from inner_candidate_cells.
 
-```rust
-pub fn generate(board: &Board, radius: i16) -> SmallVec<[Coord; 64]>;
+undo():
+    (existing r8 rollback...)
+    for each d in for_each_in_range(c, INNER_RADIUS):
+        decrement inner_proximity_count[d]
+        if zero: remove from inner_candidate_cells (and from the count map)
+    If c is still inner-adjacent to surviving pieces, re-add to
+    inner_candidate_cells.
+    If pieces now empty: clear inner_candidate_cells (origin re-eligible
+    via the outer candidate logic; `place(ORIGIN)` will repopulate inner).
 ```
 
-Strategy:
-- Default radius: 2 (immediate combat)
-- Extended: 4 (configurable, handles colony spam)
-- Full legality radius: 8 (for explicit legality checks)
-- Cap top ~30 moves after ordering
+## Move Generation (`moves.rs`)
 
-For colony detection: scan piece clusters every N plies. If opponent makes far colony, expand candidates locally near it.
+Per-stone generation. Search calls this once per ply (not once per turn) —
+the two stones of a HeXO turn each get their own ordering and pruning.
+
+```rust
+pub fn generate(board: &Board, radius: i16) -> SmallVec<[Coord; MOVE_GEN_CAP_INLINE]>;
+```
+
+`MOVE_GEN_CAP_INLINE = 32` is the SmallVec inline capacity — slightly above
+the typical `MOVE_GEN_CAP` of 30 so the SmallVec stays on-stack for the
+common case.
+
+### Algorithm
+
+1. **Empty board**: return `{ORIGIN}`. Caller must place at `(0,0)`.
+2. **`radius <= MOVE_GEN_INNER_RADIUS`**: copy `inner_candidate_cells`,
+   `O(|inner|)`. No scanning.
+3. **`MOVE_GEN_INNER_RADIUS < radius <= MAX_PIECE_DISTANCE`**: forward
+   sweep — for each piece, walk its `r`-hex neighbourhood and union empty
+   cells via an `FxHashSet` scratch.
+4. **`radius > MAX_PIECE_DISTANCE`**: clamp to `MAX_PIECE_DISTANCE`, then
+   same as case 3.
+
+### Filtering by radius > INNER
+
+Two implementation options were considered:
+
+**A. Distance test per candidate.** Iterate `candidate_cells`. For each,
+scan pieces; if any piece within `radius`, keep. Complexity
+`O(|cand| × |pieces|)`. For 100 pieces × 200 candidates that's 20k
+distance computations.
+
+**B. Forward sweep.** For each piece, walk its `r`-hex neighbourhood and
+union into a fresh `FxHashSet`. Complexity
+`O(|pieces| × hex_area(r))`. For 100 pieces × 61 cells (r=4) that's 6.1k
+ops with tight cache behaviour.
+
+We pick **B** — fewer ops, no random probes into a large `candidate_cells`
+set, and the scratch hashset is small and short-lived.
+
+Concrete shape:
+
+```rust
+fn gen_in_outer_band(board: &Board, radius: i16, out: &mut MoveList) {
+    let mut seen = FxHashSet::default();
+    for (piece, _) in board.pieces() {
+        for_each_in_range(piece, radius, |d| {
+            if d == piece { return; }
+            if board.is_empty_cell(d) && seen.insert(d) {
+                out.push(d);
+            }
+        });
+    }
+}
+```
+
+The `seen` hashset is recreated per call. Reusing it via a thread-local or
+search-scoped scratch buffer is a future optimisation.
+
+### Ordering hook
+
+`generate` returns moves in **insertion order**, not ordered. Phase 7
+(`ordering`) is responsible for ranking and applying `MOVE_GEN_CAP`.
+`generate` never truncates — capping arbitrary first-N would throw away
+strong moves.
+
+### Hot path notes
+
+- No allocation on the inner-radius path beyond the returned `SmallVec`.
+- Outer path: one `FxHashSet` allocation per call, pre-reserved with a
+  rough estimate of `piece_count * 8`.
+- `SmallVec` inlines up to 32 items. Typical inner-radius candidate sets
+  fit comfortably.
 
 ## Axis Bitmaps (`axis_bitmap.rs`)
 
