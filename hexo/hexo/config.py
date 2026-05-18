@@ -62,6 +62,10 @@ class EvalConfig:
     closed_3: int
     triangle: int
     window_k_scores: tuple[int, ...]
+    open_extension_factor: int
+    closed_extension_factor: int
+    fork_cover2_bonus: int
+    tempo_weight: int
     overlap_bonus_x10: int
 
 
@@ -132,6 +136,10 @@ def load() -> HexoConfig:
             closed_3=e["closed_3"],
             triangle=e["triangle"],
             window_k_scores=tuple(e["window_k_scores"]),
+            open_extension_factor=e["open_extension_factor"],
+            closed_extension_factor=e["closed_extension_factor"],
+            fork_cover2_bonus=e["fork_cover2_bonus"],
+            tempo_weight=e["tempo_weight"],
             overlap_bonus_x10=e["overlap_bonus_x10"],
         ),
         threats=ThreatsConfig(

@@ -18,11 +18,13 @@
 mate_score = 1_000_000
 
 # Layer 2 (WSC shape) scores — see SPEC_EVAL.md
-# S0 (mate-in-one)
-open_5   = 8000
-closed_5 = 5000
-open_4   = 6000
-closed_4 = 2000
+# S0 (mate-in-one). Sized so two non-overlapping open-4s outrank any
+# plausible Layer 2 sum; the fork-mate path in Layer 3 returns
+# MATE_SCORE, so these are the *non-mate* upper bounds.
+open_5   = 800_000
+closed_5 = 500_000
+open_4   = 60_000
+closed_4 = 20_000
 
 # S1 (pre-emptives, mate-in-two if undefended)
 open_3    = 1500
@@ -39,6 +41,21 @@ triangle  = 250
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
 window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]
+
+# Layer 1 extension factor — applied after window lookup based on the
+# two cells immediately outside the 6-window:
+#   both empty       → open_extension_factor
+#   one empty, one O → closed_extension_factor (identity)
+#   both opp/blocked → 0 (dead window)
+open_extension_factor   = 4
+closed_extension_factor = 1
+
+# Layer 3 fork detection — minimum-cover-2 bonus.
+# Cover ≥ 3 returns MATE; cover 2 returns this bonus.
+fork_cover2_bonus = 4000
+
+# Tempo (advisory). Small contribution; tempo emerges from search depth.
+tempo_weight = 50
 
 # Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
 overlap_bonus_x10 = 15  # 1.5x as integer ratio /10
