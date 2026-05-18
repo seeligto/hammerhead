@@ -129,6 +129,35 @@ fn outer_clamps_to_max() {
 }
 
 #[test]
+fn outer_path_many_pieces_dedupes_and_excludes_occupied() {
+    // Pack ~12 stones along the q axis and verify generate(r=4) produces a
+    // dedup'd set of empty cells. Exercises heavy overlap and the
+    // saturating reserve heuristic.
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    let mut placed: HashSet<Coord> = HashSet::from([ORIGIN]);
+    // Place on alternating sides of the origin to spread the cluster.
+    for k in 1..=6 {
+        let pos = Coord::new(k, 0);
+        place_ok(&mut b, pos);
+        placed.insert(pos);
+        let neg = Coord::new(-k, 0);
+        place_ok(&mut b, neg);
+        placed.insert(neg);
+    }
+    let r = 4;
+    let raw = generate(&b, r);
+    let unique: HashSet<Coord> = raw.iter().copied().collect();
+    assert_eq!(raw.len(), unique.len(), "duplicates returned");
+    for m in &unique {
+        assert!(!placed.contains(m), "{m:?} is occupied");
+    }
+    // Sanity: union must equal the reference forward-sweep set.
+    let expected = expected_neighbourhood(&b, r);
+    assert_eq!(unique, expected);
+}
+
+#[test]
 fn radius_below_inner_uses_inner() {
     // Spec: `radius <= MOVE_GEN_INNER_RADIUS` returns the inner candidate set.
     // For a one-piece board, that set is the full inner neighbourhood,

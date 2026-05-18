@@ -30,9 +30,15 @@ pub type MoveList = SmallVec<[Coord; MOVE_GEN_CAP_INLINE]>;
 
 /// Generate candidate moves on `board` within `radius` of any existing piece.
 ///
-/// See module docs for the path dispatch. The returned list is in arbitrary
-/// (insertion) order; the ordering module is responsible for ranking and
-/// applying `MOVE_GEN_CAP`. `generate` never truncates.
+/// `radius` is effectively clamped on both ends:
+/// - Any `radius <= MOVE_GEN_INNER_RADIUS` returns the maintained inner
+///   candidate set (the inner refcount is the smallest grain we maintain).
+/// - Any `radius > MAX_PIECE_DISTANCE` is clamped to `MAX_PIECE_DISTANCE`
+///   since no cell beyond that is ever legal.
+///
+/// See module docs for path dispatch. The returned list is in arbitrary
+/// (insertion) order; ordering and `MOVE_GEN_CAP` truncation are the
+/// ordering module's job — `generate` never truncates.
 #[must_use]
 pub fn generate(board: &Board, radius: i16) -> MoveList {
     let mut out: MoveList = SmallVec::new();
@@ -52,11 +58,23 @@ pub fn generate(board: &Board, radius: i16) -> MoveList {
     out
 }
 
+/// Hex-area excluding center: `3 r (r + 1)`. Used to size the dedup scratch.
+#[inline]
+fn hex_area_excl_center(r: i16) -> usize {
+    let r = usize::try_from(r).unwrap_or(0);
+    3 * r * (r + 1)
+}
+
 /// Forward-sweep the `r`-hex neighbourhood of every piece, deduping into
-/// `out`. One scratch `FxHashSet` allocation per call, pre-reserved.
+/// `out`. One scratch `FxHashSet` allocation per call, pre-reserved with a
+/// loose upper bound. Caller guarantees `r >= 1`.
 fn sweep_neighbourhood(board: &Board, r: i16, out: &mut MoveList) {
+    // Loose upper bound on unique cells visited: `pieces * hex_area(r)`.
+    // Heavy overlap in real games means the set rarely fills this much, but
+    // the cost of over-reserving an FxHashSet briefly is cheaper than the
+    // rehash cascade we get from under-sizing.
     let mut seen: FxHashSet<Coord> = FxHashSet::default();
-    seen.reserve(board.piece_count().saturating_mul(8));
+    seen.reserve(hex_area_excl_center(r) * board.piece_count());
 
     for (piece, _) in board.pieces() {
         for_each_in_range(piece, r, |d| {
