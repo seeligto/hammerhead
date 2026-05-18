@@ -572,20 +572,23 @@ pub fn search_root(
 3. For `depth = 1..=max_depth`:
    a. **Aspiration**: if `depth >= 4` and `prev_score` known, search the
       narrow window `[prev - delta, prev + delta]`. On a fail-low /
-      fail-high, widen `delta *= factor` and re-search; on third failure
-      go full-window. Each failed attempt counts time against the
-      deadline.
-   b. Run `pvs_root(depth, alpha, beta)`.
+      fail-high, widen `delta *= factor` and re-search; on the second
+      failure promote to full window. Each failed attempt counts time
+      against the deadline. The loop is guaranteed to terminate because
+      the full-window pass always returns in-window.
+   b. Run `pvs_node(depth, alpha, beta)` at the root.
    c. If deadline elapsed during the iteration, discard the partial
       result and return the last completed iteration's result.
    d. Save `(depth, score, best_move)` as the current result.
 4. Return the current result.
 
-### Recursive nodes (`pvs_max` / `pvs_min`)
+### Recursive nodes (`pvs_node`)
 
-Minimax form (X maximizes, O minimizes). Two symmetric entry points; the
-search picks one per ply based on `board.to_move()` at root and alternates
-on recursion. Per node:
+Minimax form (X maximizes, O minimizes). A single recursive `pvs_node`
+function dispatches on `board.to_move()` per call — X-nodes maximize, O-
+nodes minimize. We do NOT split into separate `pvs_max` / `pvs_min`
+entry points: the duplicated bookkeeping is dead weight and the
+per-node `maximize` flag is one branch in cold code. Per node:
 
 1. Check deadline every `cfg.deadline_check_nodes` nodes via a
    thread-local counter; on timeout propagate `Err(Timeout)` up.
@@ -605,8 +608,14 @@ on recursion. Per node:
    - **LMR**: if `depth >= lmr_min_depth`, `i >= lmr_min_move_index`,
      and the move's ordering bucket is not in
      `{TT, win, block-win, stone1-defense, S0-create, S0-block, killer}`,
-     search at `depth - 1 - lmr_reduction`. If LMR raises alpha, re-search
-     at full depth.
+     search at `depth - 1 - lmr_reduction`. The PVS dance is therefore
+     three-step:
+     1. Reduced null-window probe (`probe_depth = new_depth - lmr`).
+     2. On `probe > alpha`, re-search at FULL depth, STILL null window.
+     3. On `widened > alpha && widened < beta`, re-search at full depth,
+        FULL window.
+     This saves a full-window pass when the full-depth null also fails
+     low — a real win on hot tactical lines.
    - **Check extension**: if the placed move creates an S0 threat for the
      side that just moved and `extensions_left > 0`, search at the new
      depth (i.e. `+1` over the would-be `depth - 1`) and decrement
@@ -647,8 +656,18 @@ S0's `defense_cells` so bucket 7 ("complete the threat") kicks in.
 ### Eval sign
 
 Positive = X advantage. Negative = O advantage. **Minimax form**, not
-negamax: `pvs_max` always maximizes for X, `pvs_min` minimizes for O,
-regardless of who moves at the root. Never sign-flip.
+negamax: the `pvs_node` function selects max/min by `board.to_move()`,
+not by negation. Never sign-flip.
+
+### TT mate-score adjustment
+
+Mate scores `±(MATE_SCORE - ply)` are absolute-ply at the moment of
+detection. Storing them verbatim in the TT lets a transposition reached
+at a different ply return an off-by-N mate distance. On store we shift
+mate-class scores by `±ply` (sign matches the side winning); on probe we
+shift back relative to the current node's ply. Non-mate scores pass
+through unchanged. The threshold for "mate-class" is
+`|score| >= MATE_SCORE - MAX_PLY`.
 
 ## Ordering (`ordering.rs`)
 
