@@ -168,12 +168,15 @@ fn priority(bucket: u8, history: u32) -> u32 {
     (u32::from(bucket) << 24) | (history & HISTORY_CUTOFF_MAX)
 }
 
-/// Decide the bucket encoding value for `m`. See `SPEC_ENGINE.md`
-/// "Ordering" for the full table. First match wins; encoding values
-/// correspond to spec buckets 1..=9 mapped to 10..=1 (with a gap at
-/// `bucket == 2` and 0 reserved for the unused tie-break term).
+/// Encoding value for `m` per `SPEC_ENGINE.md` "Ordering". First match
+/// wins; values 10..=1 (with a gap at 2, and 0 reserved for the unused
+/// tie-break term). Higher = sorted earlier.
+///
+/// Exposed to the search crate so LMR and check-extension decisions can
+/// reuse the same predicates without recomputing them.
 #[inline]
-fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
+#[must_use]
+pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if ctx.tt_move == Some(m) {
         return 10;
     }
@@ -209,7 +212,8 @@ fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
 /// inspects the existing axis bitmap, never mutates the board. The `≥`
 /// (not `==`) matches the `HeXO` rule that overlines also win.
 #[inline]
-fn would_make_six(board: &Board, m: Coord, side: Player) -> bool {
+#[must_use]
+pub(crate) fn would_make_six(board: &Board, m: Coord, side: Player) -> bool {
     for axis in Axis::all() {
         if axis_run_through_empty(board, m, axis, side) >= 6 {
             return true;
@@ -237,7 +241,8 @@ fn axis_run_through_empty(board: &Board, m: Coord, axis: Axis, side: Player) -> 
 /// least one non-opp end cell (open or partially-open). False for the
 /// 6+ case (handled by the prior `would_make_six` check) and for runs
 /// boxed on both flanks (no completion path to 6).
-fn creates_s0(board: &Board, m: Coord, side: Player) -> bool {
+#[must_use]
+pub(crate) fn creates_s0(board: &Board, m: Coord, side: Player) -> bool {
     let opp = side.opponent();
     let axes = board.axes();
     for axis in Axis::all() {
@@ -265,7 +270,8 @@ fn creates_s0(board: &Board, m: Coord, side: Player) -> bool {
 
 /// `m` is in `defense_cells` of some current opponent S0 instance — see
 /// `SPEC_ENGINE.md` "Ordering". O(opp S0 count); typically ≤ 2 instances.
-fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
+#[must_use]
+pub(crate) fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
     let opp_threats = board.threats(side.opponent());
     opp_threats
         .s0_instances
