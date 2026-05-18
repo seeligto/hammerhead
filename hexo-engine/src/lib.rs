@@ -1,3 +1,4 @@
+pub mod axis_bitmap;
 pub mod board;
 pub mod config;
 pub mod coords;
@@ -11,6 +12,7 @@ pub mod tt;
 pub mod win;
 pub mod zobrist;
 
+pub use axis_bitmap::{Axis, AxisBitmaps};
 pub use board::{Board, BoardError, Player, player_at_ply};
 pub use config::*;
 pub use coords::{
