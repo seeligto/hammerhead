@@ -1,3 +1,5 @@
+#![allow(clippy::cast_sign_loss)]
+
 use hexo_engine::board::{Board, BoardError, Player};
 use hexo_engine::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use hexo_engine::coords::{Coord, ORIGIN, RANGE_OFFSETS, hex_distance};
@@ -327,7 +329,10 @@ fn inner_candidates_after_origin() {
     assert!(!inner.contains(&ORIGIN));
     for d in &inner {
         let dist = hex_distance(*d, ORIGIN);
-        assert!(dist >= 1 && dist <= r, "cell {d:?} dist {dist} outside 1..={r}");
+        assert!(
+            dist >= 1 && dist <= r,
+            "cell {d:?} dist {dist} outside 1..={r}"
+        );
     }
 }
 
@@ -357,7 +362,10 @@ fn inner_candidates_after_two_pieces() {
     // A cell `r + 1` steps past origin in the opposite direction is inner of
     // neither piece.
     let beyond_origin = Coord::new(-(r + 1), 0);
-    assert!(!inner.contains(&beyond_origin), "should not contain {beyond_origin:?}");
+    assert!(
+        !inner.contains(&beyond_origin),
+        "should not contain {beyond_origin:?}"
+    );
 
     // Placed pieces are never candidates.
     assert!(!inner.contains(&ORIGIN));
@@ -367,7 +375,12 @@ fn inner_candidates_after_two_pieces() {
 #[test]
 fn inner_candidates_undo() {
     let mut b = Board::new();
-    let moves = [ORIGIN, Coord::new(2, 0), Coord::new(-1, 1), Coord::new(3, -2)];
+    let moves = [
+        ORIGIN,
+        Coord::new(2, 0),
+        Coord::new(-1, 1),
+        Coord::new(3, -2),
+    ];
     for &m in &moves {
         place_ok(&mut b, m);
     }
@@ -375,7 +388,10 @@ fn inner_candidates_undo() {
         b.undo().unwrap();
     }
     let inner: HashSet<Coord> = b.inner_candidates().collect();
-    assert!(inner.is_empty(), "expected empty inner candidates, got {inner:?}");
+    assert!(
+        inner.is_empty(),
+        "expected empty inner candidates, got {inner:?}"
+    );
 }
 
 #[test]
