@@ -602,19 +602,28 @@ global `FxHashMap<(Coord, Player), u32>` history. The search driver calls:
 
 The exact `creates_s0` and `creates_s1` predicates would require a
 make/undo + threat-recompute per candidate move — too expensive in the
-inner loop. v1 uses cheap proxies:
+inner loop. v1 uses cheap virtual-place axis-run probes:
 
-- **creates_s0**: `m` is in `defense_cells` of an own existing S0
-  instance whose `pieces` already span 4–5 cells along the same axis
-  through `m`. Practically: `m` lies on an open-3-or-better neighbour
-  line for `side`. Implemented via `axes().run_length_through` on the
-  three axes around `m` after a virtual placement.
-- **creates_s1**: `m` is adjacent to an own stone AND extends one of
-  the named cross-axis shapes (rhombus / arch / bone / trapezoid) or
-  extends an own open-2 / open-3 along an axis. Coarse — accepted as
-  bucket-7 noise.
+- **creates_s0**: for each of the three axes, compute the run length
+  `total = 1 + run_backward(pos) + run_forward(pos)` that would result
+  from placing `side` at the empty cell `m`. Bucket fires when
+  `total ∈ {4, 5}` AND at least one of the two cells immediately past
+  the run's endpoints is not occupied by the opponent (i.e. some
+  extension to 6 is reachable). Three axis-bitmap lookups, no `RefCell`
+  borrow, catches new-S0-creators that the threats cache hasn't seen.
+- **creates_s1**: the same virtual-place probe triggers when `total ≥ 3`
+  on any axis. Catches open-3 directly and most rhombus / arch /
+  trapezoid / bone extensions whose added stone is collinear with two
+  existing stones. Pure non-collinear cross-axis shapes are
+  bucket-7 noise per spec.
 
 Both predicates are O(constant) in the hex neighbourhood of `m`.
+
+### Win detection in ordering
+
+`would_make_six` runs the same virtual-place axis-run probe and fires
+on `total ≥ 6`. HeXO treats overlines as wins, so the threshold is `≥`,
+not `==`.
 
 ### `stone1_s0_defense`
 
