@@ -3,6 +3,10 @@
 
 ENGINE    := hexo-engine
 PY        := hexo
+VENV      := .venv
+VPY       := $(VENV)/bin/python
+VPYTEST   := $(VENV)/bin/pytest
+VMATURIN  := $(VENV)/bin/maturin
 
 # Phase 10 (promotion harness) defaults — override on the command line:
 #   make vs N_GAMES=500 TIME_MS=2000 TEST=wilson
@@ -17,9 +21,9 @@ help: ## show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-build: ## maturin develop --release + pip install -e hexo
-	cd $(ENGINE) && maturin develop --release
-	pip install -e $(PY)
+build: ## maturin develop --release + pip install -e hexo (uses .venv)
+	cd $(ENGINE) && $(abspath $(VMATURIN)) develop --release
+	$(VPY) -m pip install -e $(PY)
 
 clean: ## remove all build artifacts (target/, __pycache__, *.so, dist/, egg-info)
 	-cd $(ENGINE) && cargo clean
@@ -33,9 +37,9 @@ clean: ## remove all build artifacts (target/, __pycache__, *.so, dist/, egg-inf
 
 rebuild: clean build ## clean + build
 
-test: ## cargo test --release + pytest
+test: ## cargo test --release + pytest (uses .venv)
 	cd $(ENGINE) && cargo test --release
-	cd $(PY) && pytest
+	cd $(PY) && $(abspath $(VPYTEST))
 
 lint: ## clippy with pedantic lints
 	cd $(ENGINE) && cargo clippy --all-targets -- \
