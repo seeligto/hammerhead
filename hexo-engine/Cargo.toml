@@ -48,6 +48,12 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 
+# Inherit release optimizations for cargo bench, but keep debug symbols
+# so `make flamegraph` produces a meaningful SVG with named frames.
+[profile.bench]
+inherits = "release"
+debug = true
+
 [[bench]]
 name = "bench_board"
 harness = false
