@@ -247,7 +247,8 @@ fn piece_at_via_axis_bitmaps_matches_history() {
         place_ok(&mut b, m);
     }
     for (idx, &c) in b.history().iter().enumerate() {
-        let expected = hexo_engine_core::board::player_at_ply(idx as u32);
+        let expected =
+            hexo_engine_core::board::player_at_ply(u32::try_from(idx).unwrap());
         assert_eq!(b.piece_at(c), Some(expected), "history[{idx}] = {c:?}");
     }
     // Cells not in history are empty.

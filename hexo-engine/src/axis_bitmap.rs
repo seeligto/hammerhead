@@ -261,7 +261,7 @@ pub struct AxisBitmaps {
     populated_ids: [[SmallVec<[i16; 32]>; 2]; 3],
     /// `[axis]` → unified occupancy bitmap (no player dimension). Set
     /// whenever either player places at the cell; cleared on any `clear`
-    /// (HeXO has at most one stone per cell, so the other player can't
+    /// (`HeXO` has at most one stone per cell, so the other player can't
     /// own it). Backs `is_occupied(c)` as a single per-axis probe — the
     /// hot path inside `Board::add_proximity`'s neighbour-occupancy
     /// check fires hundreds of times per place, so a single bitmap load
@@ -322,7 +322,7 @@ impl AxisBitmaps {
     }
 
     /// Clear the bit for `(c, p)` on all three axes. No-op if the line slot
-    /// is empty. Always clears the unified occupancy bit because HeXO
+    /// is empty. Always clears the unified occupancy bit because `HeXO`
     /// permits at most one stone per cell, so the other player cannot
     /// own it.
     #[inline]
@@ -380,7 +380,7 @@ impl AxisBitmaps {
 
     /// Player owning `c`, or `None` if empty. Short-circuits on the
     /// unified occupancy bitmap when the cell is empty (the common case
-    /// for piece_at queries on flank cells in threat detection), then
+    /// for `piece_at` queries on flank cells in threat detection), then
     /// probes one player bitmap to disambiguate. Replaces
     /// `Board::pieces`'s `HashMap` `get` (Phase 13).
     #[inline]
