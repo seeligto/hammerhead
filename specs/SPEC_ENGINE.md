@@ -397,6 +397,20 @@ pub struct ThreatInstance {
     pub kind: ThreatKind,
     pub pieces: SmallVec<[Coord; 5]>,
     pub defense_cells: SmallVec<[Coord; 4]>,
+    /// Phase 15: anchor cell for dirty-radius membership tests.
+    /// For linear shapes: the centroid of `pieces` (`pieces[pieces.len()/2]`
+    /// — deterministic because runs are emitted in fixed axis order, lower
+    /// `pos` first). Used by incremental recompute to decide whether an
+    /// instance falls within a dirty center's radius without iterating
+    /// `pieces` on every check.
+    ///
+    /// Anchor is **illustrative metadata, not part of identity**: two
+    /// `ThreatInstance` values with different `anchor` fields but
+    /// identical `kind` / `pieces` / `defense_cells` are equal under
+    /// the oracle test's `threat_set_equiv` helper. `PartialEq` is not
+    /// derived (defining `PartialEq` to ignore a field would be a
+    /// foot-gun); the helper sorts by `pieces` and ignores `anchor`.
+    pub anchor: Coord,
 }
 
 pub struct ThreatSet {
@@ -426,7 +440,8 @@ within radius 5 of `c`, rescan, merge.
 ```
 threats_x: RefCell<Option<ThreatSet>>,
 threats_o: RefCell<Option<ThreatSet>>,
-threats_dirty_center: Cell<Option<Coord>>,
+threats_dirty: Cell<bool>,
+threats_dirty_centers: RefCell<SmallVec<[Coord; MAX_INCREMENTAL_CENTERS]>>,
 ```
 
 Public accessor:
@@ -434,7 +449,25 @@ Public accessor:
 pub fn threats(&self, player: Player) -> Ref<ThreatSet>;
 ```
 
-Lazy: recomputes on first read after dirty marking.
+Invariants (Phase 15):
+
+- `threats_dirty == false` ⟹ `threats_x` / `threats_o` are current (both
+  `Some`), and `threats_dirty_centers` is empty. The hot path returns the
+  cached `Ref` without touching the dirty vec.
+- `threats_dirty == true` ⟹ the cached threats may be stale and must be
+  reconciled against `threats_dirty_centers` on next read.
+- `threats_dirty_centers` records the just-placed / just-undone coord of
+  every `place` / `undo` since the last `threats()` read. Bounded by
+  `MAX_INCREMENTAL_CENTERS` (default 4 from `hexo.toml`). On overflow
+  further centers are dropped (not grown); the cache simply falls back
+  to a full recompute on next read since the dropped centers may have
+  invalidated regions we no longer know about.
+- The `Cell<bool>` flag short-circuits the cache lookup hot path: when
+  clean, no `RefCell` borrow is needed beyond the final `Ref` returned
+  to the caller.
+- Initial state after `Board::new` / `Board::reset`: both `Some` (empty
+  `ThreatSet`), dirty flag `false`, centers vec empty. This avoids a
+  cold-start `is_none` check on the very first read.
 
 ## Win Detection (`win.rs`)
 

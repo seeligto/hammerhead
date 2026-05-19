@@ -505,6 +505,12 @@ fn emit_threats(out: &mut String, cfg: &toml::Value) {
         &["engine", "threats", "max_s0_instances_per_player"],
         "MAX_S0_INSTANCES",
     );
+    emit_usize(
+        out,
+        cfg,
+        &["engine", "threats", "max_incremental_centers"],
+        "MAX_INCREMENTAL_CENTERS",
+    );
 }
 
 fn emit_tt(out: &mut String, cfg: &toml::Value) {

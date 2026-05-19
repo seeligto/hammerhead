@@ -74,6 +74,7 @@ class ThreatsConfig:
     recompute_radius: int
     cluster_radius: int
     max_s0_instances_per_player: int
+    max_incremental_centers: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +248,7 @@ def load() -> HexoConfig:
             recompute_radius=t["recompute_radius"],
             cluster_radius=t["cluster_radius"],
             max_s0_instances_per_player=t["max_s0_instances_per_player"],
+            max_incremental_centers=t["max_incremental_centers"],
         ),
         tt=TTConfig(
             default_size_mb=tt["default_size_mb"],

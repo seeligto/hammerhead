@@ -114,11 +114,23 @@ Shape detection runs after window scan. Inputs: piece set local to last move, ax
 
 Algorithm:
 
-1. On `place(c, p)` and `undo(c, p)`, mark `threats_dirty = true` and record
-   `last_change_center = Some(c)`.
-2. On `threats(player)` read, if dirty: recompute within radius
-   `THREAT_RECOMPUTE_RADIUS` (default 5) of `last_change_center`. Threats
-   wholly outside the dirty radius retain prior values.
+1. On `place(c, p)` and `undo(c, p)`, mark `threats_dirty = true` and
+   push `c` into `threats_dirty_centers` (Phase 15 — was a single
+   `Option<Coord>` pre-Phase-15). The push is bounded:
+   `MAX_INCREMENTAL_CENTERS` (default 4); further pushes silently drop
+   (the next reconcile falls back to full recompute).
+2. On `threats(player)` read: if dirty, reconcile against
+   `threats_dirty_centers`.
+   - If `dirty_centers.len() > MAX_INCREMENTAL_CENTERS` (the overflow
+     marker) OR `prior` is `None` OR `dirty_centers.is_empty()`: full
+     recompute.
+   - Else: for each `(axis, line)` whose any cell is within radius
+     `THREAT_RECOMPUTE_RADIUS` of any dirty center, drop matching
+     instances from `prior` (anchor-keyed), rescan that line slice,
+     merge. For cross-axis shapes: rescan all `THREAT_CLUSTER_RADIUS`-2
+     neighbourhoods touching any dirty center.
+   - Clear `dirty_centers` after reconciliation; cache the result; set
+     `threats_dirty = false`.
 3. Linear shapes (open_5, closed_5, open_4, closed_4, open_3, closed_3,
    open_2): per piece of `player` within the dirty radius, walk each of
    the 3 axes ±5 cells via `axis_bitmap`. Classify maximal own-run
@@ -128,6 +140,8 @@ Algorithm:
    Use small pattern matcher (see threats.rs::shape::cross_axis).
 5. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord; 4]>`
    such that placing any one of these denies completion next stone.
+   Also compute `anchor: Coord` from `pieces` (Phase 15 — see
+   `SPEC_ENGINE.md § ThreatInstance` for the anchor rule).
 
 Cache shape counts incrementally per player:
 ```rust

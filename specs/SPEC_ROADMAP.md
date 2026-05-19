@@ -20,6 +20,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 12 | stabilization & reference (warning sweep, reference node counts, TT stats, baseline) | ✅ done |
 | 13 | kill hot HashMaps — `AxisBitmaps` flat array, `Board::pieces` removal, bench harness TT amortization | ✅ done |
 | 14 | deep optimization sweep — release profile, target-cpu, allocator, piece_at refactor, inline sweep, LineBitmap micro-opts, incremental threats, SIMD encode_ternary, PGO, bench infra extensions | ✅ done |
+| 15 | incremental threats + RefCell trim + creates_s0 axis-run cache | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -204,18 +205,59 @@ audit.)
   `#[pyclass(unsendable)]` for Board's `RefCell` / `Cell`. Engine
   owns `clear_tt` method (shim stays thin).
 
-## Phase 15 candidates (deferred follow-ups)
+## Phase 15 — Incremental Threats + Companions
 
-- **Incremental threat recompute**: Phase 14 STEP 7 attempted this
-  but the correctness-gated delta requires (1) per-anchor tracking
-  for cross-axis count contributions (`walk_cross_axis` aggregates
-  shapes without storing positions) and (2) a paired place/undo
-  delta cache on `Board` so undo can subtract what place added.
-  Both fit the data-model but exceed the Phase 14 time budget.
-  The API surface (`compute_with_scratch(... , center, prior, ...)`)
-  is already in place; the implementation just falls through to
-  `full_recompute`. Phase 15 should land this with the 10k-position
-  oracle test mandated in `prompts/PHASE_14_PROMPT.md` STEP 7.
+**Goal**: ship the deferred Phase 14 STEP 7 (incremental threat
+recompute) under an oracle correctness gate, trim the residual
+RefCell chain in `Board::threats`, and add a per-call axis-run cache
+to ordering's `creates_s0` predicate.
+
+Three concrete changes, in order of risk × leverage:
+
+1. **Incremental threat recompute** (STEP 2 — biggest leverage,
+   highest correctness risk):
+   - `Board::threats_dirty_center: Cell<Option<Coord>>` →
+     `Board::threats_dirty: Cell<bool>` + `threats_dirty_centers:
+     RefCell<SmallVec<[Coord; MAX_INCREMENTAL_CENTERS]>>`.
+   - `ThreatSet::compute_with_scratch` honours `centers` / `prior`:
+     drops instances anchor-in-dirty-radius, rescans dirty lines and
+     cross-axis cluster neighbourhoods, merges.
+   - `ThreatInstance` gains an `anchor: Coord` field (linear shapes:
+     `pieces[len/2]`; cross-axis: `pieces[0]`) for O(1) dirty-radius
+     membership tests without iterating `pieces` per check.
+   - Oracle test: 10k-position random walk with full-vs-incremental
+     `threat_set_equiv` equality, plus focused tests for round-trip,
+     SmallVec overflow fallback, winning-move correctness, and
+     anchor determinism. If oracle catches drift after STEP 2 lands,
+     **revert STEP 2 entirely**.
+
+2. **RefCell::borrow chain trim** (STEP 3 — Phase 14 HOTSPOTS #5):
+   the `Cell<bool>` fast path eliminates the `is_none` / `is_some`
+   chain. Verify via flamegraph.
+
+3. **`creates_s0` axis-run cache** (STEP 4 — Phase 14 HOTSPOTS #4):
+   per-`order_moves` cache keyed by `(axis_id, line_id, player)` so
+   multiple candidates on the same line share one bitmap probe.
+
+**Reference node counts are the regression net.** Phase 15 is
+behaviourally transparent; `make bench reference` must produce
+identical node counts at every `(fixture, depth)` before and after.
+
+See `prompts/PHASE_15_PROMPT.md`.
+
+## Phase 16 candidates (deferred follow-ups)
+
+- **Proximity HashMap rework** (HOTSPOTS #3,
+  `for_each_in_range<board::add_proximity>`): coord-keyed maps
+  (`Board::proximity_count` / `inner_proximity_count`) don't fit the
+  Phase-13 flat-array playbook cleanly (key space ~65k cells × 4
+  maps ≈ 1 MB; iteration pattern matters). Needs its own design pass.
+- **`extension_factor` SIMD batch**: inline into Layer-1 SIMD path so
+  the per-window extension multiplier runs alongside `encode_ternary`.
+- **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
+  collision rate.
+- **Move-ordering bucket refinement**: split bucket 7 (creates_s1)
+  by shape strength so bone / trapezoid sort ahead of open-3.
 - **`closed_2` shape detector** for full tempo +0 / -1 cases.
 - **BotConfig vs SearchConfig time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
@@ -225,6 +267,23 @@ audit.)
 - **Radius-theory colony discounting** in eval.
 - **Lazy-SMP parallel search**.
 - **Opening book**, **endgame tables**, **WebSocket live integration**.
+
+## Phase 15 resolved follow-ups
+
+- **Incremental threat recompute** (Phase 14 STEP 7 deferral):
+  resolved via `Board::threats_dirty_centers` SmallVec +
+  `ThreatSet::compute_with_scratch` incremental path +
+  `ThreatInstance::anchor`. Oracle test
+  (`tests/threats_oracle.rs`) gates correctness with a fixed-seed
+  10k-position random walk.
+- **`pvs_node;threats;is_none;is_some` RefCell chain**
+  (Phase 14 HOTSPOTS #5): resolved by the `Cell<bool>` dirty flag
+  fast path in `Board::threats`. The `Option` check is now
+  unreachable on the hot path (debug_assert covers the invariant).
+- **`creates_s0;run_backward` axis-run repetition**
+  (Phase 14 HOTSPOTS #4): resolved by the per-`order_moves`
+  `axis_run_cache` in `OrderingContext`, so multiple candidates on
+  the same line share one bitmap snapshot.
 
 ## Phase 14 resolved follow-ups
 
