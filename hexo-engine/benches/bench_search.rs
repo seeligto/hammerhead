@@ -18,9 +18,19 @@
 //!
 //! Runs `Engine::best_move(depth=N)` (no time cap) on `midgame_12` at three
 //! depths. Records nodes via the returned [`SearchResult`].
+//!
+//! The `Engine` (and its 64 MB transposition table) is allocated **once** per
+//! `bench_function` invocation and reused across criterion iterations via
+//! `Engine::reset` + `Engine::clear_tt`. Constructing a fresh `Engine` per
+//! iteration dominated the Phase 12 flamegraph with `from_elem` /
+//! `unmap_region` / kernel zero-fill frames; reusing the allocation removes
+//! that bench-setup artifact so future flamegraphs surface real search work.
+//! Setup (reset + replay) is excluded from the measured time via
+//! `Bencher::iter_custom`.
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
+use std::time::{Duration, Instant};
 use hexo_engine_core::search::Engine;
 
 mod common;
@@ -35,11 +45,13 @@ fn bench_search_root(c: &mut Criterion) {
     for &d in &depths {
         let mut group = c.benchmark_group(format!("search::search_root(depth={d})"));
         group.sample_size(10);
+        let mut e = Engine::new(64);
         group.bench_function(fx.name, |b| {
-            b.iter_batched_ref(
-                || {
-                    let mut e = Engine::new(64);
-                    // Replay fixture into a real Engine. Cheap enough.
+            b.iter_custom(|iters| {
+                let mut total = Duration::ZERO;
+                for _ in 0..iters {
+                    e.reset();
+                    e.clear_tt();
                     let template = (fx.build)();
                     for c in template.history() {
                         e.board.place_for_test(
@@ -47,14 +59,13 @@ fn bench_search_root(c: &mut Criterion) {
                             hexo_engine_core::board::player_at_ply(e.board.ply()),
                         );
                     }
-                    e
-                },
-                |e| {
+                    let start = Instant::now();
                     let r = e.best_move(None, Some(d));
-                    black_box((r.nodes, r.depth_reached, r.best_move))
-                },
-                BatchSize::PerIteration,
-            );
+                    total += start.elapsed();
+                    black_box((r.nodes, r.depth_reached, r.best_move));
+                }
+                total
+            });
         });
         group.finish();
     }
