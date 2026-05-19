@@ -259,6 +259,14 @@ pub struct AxisBitmaps {
     /// retention: a line stays listed even after a `clear` empties it,
     /// matching the old hashmap's "key persists" semantics.
     populated_ids: [[SmallVec<[i16; 32]>; 2]; 3],
+    /// `[axis]` → unified occupancy bitmap (no player dimension). Set
+    /// whenever either player places at the cell; cleared on any `clear`
+    /// (HeXO has at most one stone per cell, so the other player can't
+    /// own it). Backs `is_occupied(c)` as a single per-axis probe — the
+    /// hot path inside `Board::add_proximity`'s neighbour-occupancy
+    /// check fires hundreds of times per place, so a single bitmap load
+    /// beats two per-player probes by ~6% NPS.
+    occupied: [Box<[Option<LineBitmap>]>; 3],
 }
 
 impl Default for AxisBitmaps {
@@ -274,6 +282,7 @@ impl AxisBitmaps {
         Self {
             lines: std::array::from_fn(|_| std::array::from_fn(|_| empty_line_slots())),
             populated_ids: std::array::from_fn(|_| std::array::from_fn(|_| SmallVec::new())),
+            occupied: std::array::from_fn(|_| empty_line_slots()),
         }
     }
 
@@ -291,30 +300,41 @@ impl AxisBitmaps {
         (line_id - LINE_ID_OFFSET) as usize
     }
 
-    /// Set the bit for `(c, p)` on all three axes.
+    /// Set the bit for `(c, p)` on all three axes (and update the unified
+    /// occupancy bitmap so `is_occupied` is a single per-axis probe).
     #[inline]
     pub fn set(&mut self, c: Coord, p: Player) {
         for axis in Axis::all() {
             let id = axis.line_id(c);
             let pos = axis.pos(c);
-            let slot = &mut self.lines[axis as usize][p as usize][Self::idx(id)];
+            let idx = Self::idx(id);
+            let slot = &mut self.lines[axis as usize][p as usize][idx];
             if slot.is_none() {
                 // First touch of this line — register it so `line_ids` can
                 // enumerate populated lines without walking the full array.
                 self.populated_ids[axis as usize][p as usize].push(id);
             }
             slot.get_or_insert_with(LineBitmap::default).set(pos);
+            self.occupied[axis as usize][idx]
+                .get_or_insert_with(LineBitmap::default)
+                .set(pos);
         }
     }
 
     /// Clear the bit for `(c, p)` on all three axes. No-op if the line slot
-    /// is empty.
+    /// is empty. Always clears the unified occupancy bit because HeXO
+    /// permits at most one stone per cell, so the other player cannot
+    /// own it.
     #[inline]
     pub fn clear(&mut self, c: Coord, p: Player) {
         for axis in Axis::all() {
             let id = axis.line_id(c);
             let pos = axis.pos(c);
-            if let Some(line) = &mut self.lines[axis as usize][p as usize][Self::idx(id)] {
+            let idx = Self::idx(id);
+            if let Some(line) = &mut self.lines[axis as usize][p as usize][idx] {
+                line.clear(pos);
+            }
+            if let Some(line) = &mut self.occupied[axis as usize][idx] {
                 line.clear(pos);
             }
         }
@@ -356,6 +376,41 @@ impl AxisBitmaps {
             Some(line) => line.get(pos),
             None => false,
         }
+    }
+
+    /// Player owning `c`, or `None` if empty. Short-circuits on the
+    /// unified occupancy bitmap when the cell is empty (the common case
+    /// for piece_at queries on flank cells in threat detection), then
+    /// probes one player bitmap to disambiguate. Replaces
+    /// `Board::pieces`'s `HashMap` `get` (Phase 13).
+    #[inline]
+    #[must_use]
+    pub fn player_at(&self, c: Coord) -> Option<Player> {
+        if !self.is_occupied(c) {
+            return None;
+        }
+        let id = Axis::Q.line_id(c);
+        let pos = Axis::Q.pos(c);
+        if self.is_set(Axis::Q, id, pos, Player::X) {
+            Some(Player::X)
+        } else {
+            Some(Player::O)
+        }
+    }
+
+    /// `true` iff either player has a stone at `c`. Single-probe lookup
+    /// against the unified per-axis occupancy bitmap maintained by
+    /// `set` / `clear`. Used inside the proximity-maintenance loop
+    /// (`Board::add_proximity`) where this fires ~470 times per
+    /// placement; a single load beats two per-player probes.
+    #[inline]
+    #[must_use]
+    pub fn is_occupied(&self, c: Coord) -> bool {
+        let id = Axis::Q.line_id(c);
+        let pos = Axis::Q.pos(c);
+        self.occupied[Axis::Q as usize][Self::idx(id)]
+            .as_ref()
+            .is_some_and(|l| l.get(pos))
     }
 
     /// Borrow the underlying [`LineBitmap`] for `(axis, p, line_id)`, if any

@@ -52,7 +52,6 @@ const INITIAL_MAP_CAPACITY: usize = 256;
 
 /// `HeXO` board state.
 pub struct Board {
-    pieces: FxHashMap<Coord, Player>,
     /// Per-cell count of pieces within `MAX_PIECE_DISTANCE`. Drives legality.
     proximity_count: FxHashMap<Coord, u32>,
     /// Per-cell count of pieces within `MOVE_GEN_INNER_RADIUS`. Drives the
@@ -61,6 +60,13 @@ pub struct Board {
     candidate_cells: FxHashSet<Coord>,
     inner_candidate_cells: FxHashSet<Coord>,
     history: Vec<Coord>,
+    /// Player parallel to `history`: `history_players[i]` is the player
+    /// whose stone was placed at `history[i]`. Phase 13 replaced the
+    /// per-cell `FxHashMap<Coord, Player>` with this parallel vector so
+    /// `undo` can recover the placed player without a hash probe and
+    /// without depending on `player_at_ply` (which `place_for_test` may
+    /// override).
+    history_players: Vec<Player>,
     hash: u128,
     ply: u32,
     /// 0 = side-to-move is about to place stone 1 of their turn;
@@ -101,10 +107,6 @@ impl Board {
             FxHashSet::with_capacity_and_hasher(INITIAL_MAP_CAPACITY, FxBuildHasher::default());
         candidate_cells.insert(ORIGIN);
         Self {
-            pieces: FxHashMap::with_capacity_and_hasher(
-                INITIAL_MAP_CAPACITY,
-                FxBuildHasher::default(),
-            ),
             proximity_count: FxHashMap::with_capacity_and_hasher(
                 INITIAL_MAP_CAPACITY,
                 FxBuildHasher::default(),
@@ -119,6 +121,7 @@ impl Board {
                 FxBuildHasher::default(),
             ),
             history: Vec::with_capacity(INITIAL_MAP_CAPACITY),
+            history_players: Vec::with_capacity(INITIAL_MAP_CAPACITY),
             hash: Z_TURN_X,
             ply: 0,
             halfmove: 0,
@@ -135,13 +138,13 @@ impl Board {
 
     /// Reset to fresh state. Keeps the Zobrist table allocated.
     pub fn reset(&mut self) {
-        self.pieces.clear();
         self.proximity_count.clear();
         self.inner_proximity_count.clear();
         self.candidate_cells.clear();
         self.candidate_cells.insert(ORIGIN);
         self.inner_candidate_cells.clear();
         self.history.clear();
+        self.history_players.clear();
         self.hash = Z_TURN_X;
         self.ply = 0;
         self.halfmove = 0;
@@ -168,7 +171,7 @@ impl Board {
                 return Err(BoardError::MustStartAtOrigin(c.q, c.r));
             }
         } else {
-            if self.pieces.contains_key(&c) {
+            if self.axes.is_occupied(c) {
                 return Err(BoardError::AlreadyOccupied(c.q, c.r));
             }
             if !self.is_legal_internal(c) {
@@ -180,28 +183,31 @@ impl Board {
 
         self.candidate_cells.remove(&c);
         self.inner_candidate_cells.remove(&c);
-        self.pieces.insert(c, player);
+        // `axes.set` must happen before `add_proximity` so the occupancy
+        // probe inside the proximity loop sees the new stone (replaces the
+        // old `pieces.insert(c, player)` that preceded `add_proximity`).
+        self.axes.set(c, player);
 
         add_proximity(
             &mut self.proximity_count,
             &mut self.candidate_cells,
             c,
             MAX_PIECE_DISTANCE,
-            &self.pieces,
+            &self.axes,
         );
         add_proximity(
             &mut self.inner_proximity_count,
             &mut self.inner_candidate_cells,
             c,
             MOVE_GEN_INNER_RADIUS,
-            &self.pieces,
+            &self.axes,
         );
 
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
+        self.history_players.push(player);
         self.ply += 1;
         self.advance_parity();
-        self.axes.set(c, player);
         self.invalidate_threats(c);
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
@@ -217,14 +223,14 @@ impl Board {
     ///
     /// # Panics
     ///
-    /// Panics if internal invariants are violated (history entry missing
-    /// from the pieces map or proximity map). These should be unreachable.
+    /// Panics if internal invariants are violated (`history_players`
+    /// desync or missing proximity-map entry). These should be unreachable.
     pub fn undo(&mut self) -> Result<(), BoardError> {
         let c = self.history.pop().ok_or(BoardError::NoHistory)?;
         let player = self
-            .pieces
-            .remove(&c)
-            .expect("invariant: history piece in pieces map");
+            .history_players
+            .pop()
+            .expect("invariant: history_players parallel to history");
 
         self.axes.clear(c, player);
         self.invalidate_threats(c);
@@ -309,21 +315,21 @@ impl Board {
     #[inline]
     #[must_use]
     pub fn piece_count(&self) -> usize {
-        self.pieces.len()
+        self.history.len()
     }
 
     /// `true` iff `c` has no stone.
     #[inline]
     #[must_use]
     pub fn is_empty_cell(&self, c: Coord) -> bool {
-        !self.pieces.contains_key(&c)
+        !self.axes.is_occupied(c)
     }
 
     /// Player on `c`, or `None` if empty.
     #[inline]
     #[must_use]
     pub fn piece_at(&self, c: Coord) -> Option<Player> {
-        self.pieces.get(&c).copied()
+        self.axes.player_at(c)
     }
 
     /// `true` iff placing at `c` would succeed.
@@ -353,9 +359,17 @@ impl Board {
         self.inner_candidate_cells.iter().copied()
     }
 
-    /// All placed pieces.
+    /// All placed pieces, in insertion order. Phase 13 replaced the prior
+    /// `FxHashMap<Coord, Player>` random-order iteration with an
+    /// insertion-ordered walk over `history` + `history_players`; the
+    /// pre-Phase-13 callsite scan
+    /// (`subagents/scans/phase13-piece-at-callsites.md`) verified every
+    /// caller is order-insensitive.
     pub fn pieces(&self) -> impl Iterator<Item = (Coord, Player)> + '_ {
-        self.pieces.iter().map(|(&c, &p)| (c, p))
+        self.history
+            .iter()
+            .copied()
+            .zip(self.history_players.iter().copied())
     }
 
     /// Move history in placement order.
@@ -478,28 +492,30 @@ impl Board {
     pub fn place_for_test(&mut self, c: Coord, player: Player) {
         self.candidate_cells.remove(&c);
         self.inner_candidate_cells.remove(&c);
-        self.pieces.insert(c, player);
+        // Mirror `place`: axes.set before add_proximity so the occupancy
+        // probe inside the proximity loop sees the new stone.
+        self.axes.set(c, player);
 
         add_proximity(
             &mut self.proximity_count,
             &mut self.candidate_cells,
             c,
             MAX_PIECE_DISTANCE,
-            &self.pieces,
+            &self.axes,
         );
         add_proximity(
             &mut self.inner_proximity_count,
             &mut self.inner_candidate_cells,
             c,
             MOVE_GEN_INNER_RADIUS,
-            &self.pieces,
+            &self.axes,
         );
 
         self.hash ^= self.zobrist.key(c, player);
         self.history.push(c);
+        self.history_players.push(player);
         self.ply += 1;
         self.advance_parity();
-        self.axes.set(c, player);
         self.invalidate_threats(c);
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
@@ -604,13 +620,13 @@ fn add_proximity(
     candidates: &mut FxHashSet<Coord>,
     center: Coord,
     radius: i16,
-    pieces: &FxHashMap<Coord, Player>,
+    axes: &AxisBitmaps,
 ) {
     for_each_in_range(center, radius, |d| {
         let count = counts.entry(d).or_insert(0);
         let was_zero = *count == 0;
         *count += 1;
-        if d != center && was_zero && !pieces.contains_key(&d) {
+        if d != center && was_zero && !axes.is_occupied(d) {
             candidates.insert(d);
         }
     });

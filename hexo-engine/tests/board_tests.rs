@@ -232,6 +232,52 @@ fn history_records_placements_in_order() {
 }
 
 #[test]
+fn piece_at_via_axis_bitmaps_matches_history() {
+    // Phase 13: piece_at probes AxisBitmaps. Verify it agrees with what
+    // history says was placed.
+    let mut b = Board::new();
+    let moves = [
+        ORIGIN,
+        Coord::new(2, 0),
+        Coord::new(-1, 1),
+        Coord::new(1, -1),
+        Coord::new(0, 2),
+    ];
+    for &m in &moves {
+        place_ok(&mut b, m);
+    }
+    for (idx, &c) in b.history().iter().enumerate() {
+        let expected = hexo_engine_core::board::player_at_ply(idx as u32);
+        assert_eq!(b.piece_at(c), Some(expected), "history[{idx}] = {c:?}");
+    }
+    // Cells not in history are empty.
+    assert_eq!(b.piece_at(Coord::new(5, 5)), None);
+    assert!(b.is_empty_cell(Coord::new(5, 5)));
+}
+
+#[test]
+fn pieces_iteration_yields_insertion_order_after_undo() {
+    // Phase 13: pieces() walks history (insertion order). After undo the
+    // popped record is gone from history — iteration order naturally
+    // reflects current state.
+    let mut b = Board::new();
+    let moves = [ORIGIN, Coord::new(2, 0), Coord::new(-1, 1), Coord::new(0, 2)];
+    for &m in &moves {
+        place_ok(&mut b, m);
+    }
+    let before: Vec<Coord> = b.pieces().map(|(c, _)| c).collect();
+    assert_eq!(before, moves);
+
+    b.undo().unwrap();
+    let after: Vec<Coord> = b.pieces().map(|(c, _)| c).collect();
+    assert_eq!(after, &moves[..3]);
+
+    // Piece count tracks history length.
+    assert_eq!(b.piece_count(), 3);
+    assert!(b.is_empty_cell(moves[3]));
+}
+
+#[test]
 fn player_opponent_round_trip() {
     assert_eq!(Player::X.opponent(), Player::O);
     assert_eq!(Player::O.opponent(), Player::X);
