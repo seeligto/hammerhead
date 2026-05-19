@@ -86,6 +86,25 @@ pub struct ThreatSet {
     pub s0_instances: Vec<ThreatInstance>,
 }
 
+/// Reusable scratch buffers for `compute`. Owned by `Board` and reset
+/// between calls so the `FxHashSet` `seen` dedup and the per-player
+/// pieces `Vec` keep their backing capacity instead of reallocating on
+/// every dirty read. Cleared (not shrunk) at the start of each
+/// `compute_with_scratch`.
+#[derive(Debug, Default)]
+pub struct ThreatScratch {
+    seen: FxHashSet<(Axis, i16, i16)>,
+    pieces: Vec<Coord>,
+}
+
+impl ThreatScratch {
+    #[inline]
+    fn reset(&mut self) {
+        self.seen.clear();
+        self.pieces.clear();
+    }
+}
+
 impl ThreatSet {
     /// `true` iff at least two S0 threats exist and no single cell is in
     /// every threat's `defense_cells`. Conservative: a real fork-mate
@@ -108,27 +127,50 @@ impl ThreatSet {
 /// The current implementation always does a full recompute; the hint is
 /// accepted but ignored. The API is stable for the planned Phase 8
 /// incremental optimisation.
+///
+/// This convenience wrapper allocates a fresh `ThreatScratch` per call.
+/// `Board::threats` uses [`compute_with_scratch`] directly so the
+/// search hot path reuses backing storage across nodes.
 #[must_use]
-#[allow(unused_variables)]
 pub fn compute(
     board: &Board,
     player: Player,
     center: Option<Coord>,
     prior: Option<&ThreatSet>,
 ) -> ThreatSet {
-    full_recompute(board, player)
+    let mut scratch = ThreatScratch::default();
+    compute_with_scratch(board, player, center, prior, &mut scratch)
+}
+
+/// Variant of [`compute`] that reuses caller-provided scratch buffers.
+/// `scratch` is reset on entry, so the caller can freely reuse the same
+/// buffers across many calls — only the buffers' capacities are
+/// retained, eliminating the per-call allocation seen in the
+/// flamegraph's threats compute frame.
+#[must_use]
+#[allow(unused_variables)]
+pub fn compute_with_scratch(
+    board: &Board,
+    player: Player,
+    center: Option<Coord>,
+    prior: Option<&ThreatSet>,
+    scratch: &mut ThreatScratch,
+) -> ThreatSet {
+    full_recompute(board, player, scratch)
 }
 
 #[cold]
-fn full_recompute(board: &Board, player: Player) -> ThreatSet {
+fn full_recompute(board: &Board, player: Player, scratch: &mut ThreatScratch) -> ThreatSet {
     let mut out = ThreatSet::default();
-    let pieces: Vec<Coord> = board
-        .pieces()
-        .filter_map(|(c, p)| (p == player).then_some(c))
-        .collect();
+    scratch.reset();
+    for (c, p) in board.pieces() {
+        if p == player {
+            scratch.pieces.push(c);
+        }
+    }
 
-    walk_linear_runs(board, player, &pieces, &mut out);
-    walk_cross_axis(board, player, &pieces, &mut out.counts);
+    walk_linear_runs(board, player, &scratch.pieces, &mut scratch.seen, &mut out);
+    walk_cross_axis(board, player, &scratch.pieces, &mut out.counts);
 
     out
 }
@@ -137,8 +179,13 @@ fn full_recompute(board: &Board, player: Player) -> ThreatSet {
 // Linear shape detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn walk_linear_runs(board: &Board, player: Player, pieces: &[Coord], out: &mut ThreatSet) {
-    let mut seen: FxHashSet<(Axis, i16, i16)> = FxHashSet::default();
+fn walk_linear_runs(
+    board: &Board,
+    player: Player,
+    pieces: &[Coord],
+    seen: &mut FxHashSet<(Axis, i16, i16)>,
+    out: &mut ThreatSet,
+) {
     let axes = board.axes();
 
     for &c in pieces {

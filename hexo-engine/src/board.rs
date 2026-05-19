@@ -7,7 +7,7 @@
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
-use crate::threats::{self, ThreatSet};
+use crate::threats::{self, ThreatScratch, ThreatSet};
 use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::cell::{Cell, Ref, RefCell};
@@ -83,6 +83,10 @@ pub struct Board {
     /// the cache.
     threats_x: RefCell<Option<ThreatSet>>,
     threats_o: RefCell<Option<ThreatSet>>,
+    /// Reusable scratch buffers for the threat recompute hot path. Reset
+    /// at the top of every `compute_with_scratch` call so capacity is
+    /// retained across nodes.
+    threat_scratch: RefCell<ThreatScratch>,
     /// Centre of the most recent change that invalidated the threat caches.
     /// Reserved for the Phase 8 incremental scanner.
     threats_dirty_center: Cell<Option<Coord>>,
@@ -131,6 +135,7 @@ impl Board {
             winner: None,
             threats_x: RefCell::new(None),
             threats_o: RefCell::new(None),
+            threat_scratch: RefCell::new(ThreatScratch::default()),
             threats_dirty_center: Cell::new(None),
             eval_cache: Cell::new(None),
         }
@@ -452,7 +457,9 @@ impl Board {
         };
         if slot.borrow().is_none() {
             let center = self.threats_dirty_center.get();
-            let fresh = threats::compute(self, player, center, None);
+            let mut scratch = self.threat_scratch.borrow_mut();
+            let fresh = threats::compute_with_scratch(self, player, center, None, &mut scratch);
+            drop(scratch);
             *slot.borrow_mut() = Some(fresh);
         }
         Ref::map(slot.borrow(), |o| {
