@@ -52,14 +52,19 @@ class Engine:
   first TT miss or illegal move, so the returned list may be shorter
   than `depth`. The board is restored to its starting state before
   return.
+- `clear_tt()` wipes the transposition table only. Ordering history
+  (killers / butterfly history) is preserved — TT scales with positions
+  seen, history is per-game move-quality memory and survives a clear.
 - Errors raised: `ValueError` on illegal `place`, illegal `undo`, or
-  `best_move` called with neither budget set; `RuntimeError` reserved
-  for engine-internal panics surfaced to Python.
+  `best_move` called with neither budget set. PyO3's automatic
+  panic-to-`PanicException` machinery handles unexpected engine panics;
+  `pybind.rs` itself raises only `ValueError`.
 
 ### Rust shim (`pybind.rs`)
 
 Thin wrapper. No game logic. Releases the GIL for every `best_move`
-call via `py.allow_threads`. Errors map to `PyValueError`.
+call via `py.detach` (PyO3 0.28 — the post-`allow_threads` API). Errors
+map to `PyValueError`.
 
 ```rust
 #[pyclass(name = "Engine")]
