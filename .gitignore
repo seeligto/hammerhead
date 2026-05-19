@@ -25,3 +25,6 @@ target/criterion/
 
 # Promotion harness (Phase 11) — worktree of the locked best engine.
 .worktree-best/
+
+# ignore data
+data/
