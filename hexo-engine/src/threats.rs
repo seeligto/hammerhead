@@ -119,14 +119,13 @@ impl ThreatSet {
 
 /// Compute the threat set for `player` on `board`.
 ///
-/// `center = Some(c)` and `prior = Some(_)` are an incremental hint — drop
-/// instances inside the dirty radius of `c`, rescan only that neighbourhood,
-/// merge with the prior set. `center = None` forces a full recompute (used
-/// after [`Board::reset`]).
+/// `centers` lists the coords of every `place` / `undo` since the last
+/// [`Board::threats`] read; combined with `prior`, the implementation
+/// reconciles incrementally over the dirty radius. `centers.is_empty()`
+/// OR `prior == None` forces a full recompute.
 ///
-/// The current implementation always does a full recompute; the hint is
-/// accepted but ignored. The API is stable for the planned Phase 8
-/// incremental optimisation.
+/// Until Phase 15 STEP 2.2 lands the incremental path, this body delegates
+/// unconditionally to [`full_recompute`].
 ///
 /// This convenience wrapper allocates a fresh `ThreatScratch` per call.
 /// `Board::threats` uses [`compute_with_scratch`] directly so the
@@ -135,11 +134,11 @@ impl ThreatSet {
 pub fn compute(
     board: &Board,
     player: Player,
-    center: Option<Coord>,
+    centers: &[Coord],
     prior: Option<&ThreatSet>,
 ) -> ThreatSet {
     let mut scratch = ThreatScratch::default();
-    compute_with_scratch(board, player, center, prior, &mut scratch)
+    compute_with_scratch(board, player, &mut scratch, centers, prior)
 }
 
 /// Variant of [`compute`] that reuses caller-provided scratch buffers.
@@ -152,10 +151,13 @@ pub fn compute(
 pub fn compute_with_scratch(
     board: &Board,
     player: Player,
-    center: Option<Coord>,
-    prior: Option<&ThreatSet>,
     scratch: &mut ThreatScratch,
+    centers: &[Coord],
+    prior: Option<&ThreatSet>,
 ) -> ThreatSet {
+    // Phase 15 STEP 2.1: signature only. Behaviour is still full recompute.
+    // STEP 2.2 wires the incremental path here.
+    let _ = (centers, prior);
     full_recompute(board, player, scratch)
 }
 

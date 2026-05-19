@@ -585,3 +585,94 @@ fn overline_wins() {
     place_ok(&mut b, line(6));
     assert_eq!(b.winner(), Some(Player::X));
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 15: threats dirty-tracking (Cell<bool> + SmallVec<Coord>)
+// ─────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn dirty_flag_set_on_place_cleared_on_read() {
+    let mut b = Board::new();
+    // Fresh board: clean, no centers.
+    assert!(!b.threats_dirty_for_test());
+    assert!(b.threats_dirty_centers_for_test().is_empty());
+    assert!(!b.threats_dirty_overflow_for_test());
+
+    // Place flips dirty + records the center.
+    place_ok(&mut b, ORIGIN);
+    assert!(b.threats_dirty_for_test());
+    assert_eq!(b.threats_dirty_centers_for_test(), vec![ORIGIN]);
+
+    // Read reconciles; flag clears, centers drained.
+    let _ = b.threats(Player::X);
+    assert!(!b.threats_dirty_for_test());
+    assert!(b.threats_dirty_centers_for_test().is_empty());
+    assert!(!b.threats_dirty_overflow_for_test());
+
+    // Subsequent place → dirty true, single center.
+    let c1 = Coord::new(1, 0);
+    place_ok(&mut b, c1);
+    assert!(b.threats_dirty_for_test());
+    assert_eq!(b.threats_dirty_centers_for_test(), vec![c1]);
+}
+
+#[test]
+fn dirty_centers_undo_records_center_too() {
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    let c1 = Coord::new(1, 0);
+    place_ok(&mut b, c1);
+    let _ = b.threats(Player::X); // drain.
+
+    b.undo().unwrap();
+    assert!(b.threats_dirty_for_test());
+    // undo records its center too.
+    assert_eq!(b.threats_dirty_centers_for_test(), vec![c1]);
+}
+
+#[test]
+fn dirty_centers_overflow_falls_back_to_full() {
+    use hexo_engine_core::config::MAX_INCREMENTAL_CENTERS;
+    let cap = i16::try_from(MAX_INCREMENTAL_CENTERS).expect("cap fits i16");
+    let mut b = Board::new();
+    // Place enough stones to fill the dirty-centers vec without reading
+    // between them. The first MAX entries are recorded; further pushes
+    // set the overflow flag.
+    let coords: Vec<Coord> = (0..(cap + 2)).map(|k| Coord::new(k, 0)).collect();
+    for c in &coords {
+        place_ok(&mut b, *c);
+    }
+    assert!(b.threats_dirty_for_test());
+    assert!(b.threats_dirty_overflow_for_test());
+    assert_eq!(
+        b.threats_dirty_centers_for_test().len(),
+        MAX_INCREMENTAL_CENTERS
+    );
+
+    // Reading still produces a correct ThreatSet (full-recompute fallback).
+    // We don't assert specific content here — `threats_oracle.rs` covers
+    // equivalence with full recompute exhaustively. We only check the
+    // flag housekeeping.
+    let _ = b.threats(Player::X);
+    let _ = b.threats(Player::O);
+    assert!(!b.threats_dirty_for_test());
+    assert!(!b.threats_dirty_overflow_for_test());
+    assert!(b.threats_dirty_centers_for_test().is_empty());
+}
+
+#[test]
+fn dirty_centers_capped_at_max_incremental() {
+    use hexo_engine_core::config::MAX_INCREMENTAL_CENTERS;
+    let cap = i16::try_from(MAX_INCREMENTAL_CENTERS).expect("cap fits i16");
+    let mut b = Board::new();
+    place_ok(&mut b, ORIGIN);
+    for k in 1..(cap + 3) {
+        place_ok(&mut b, Coord::new(k, 0));
+    }
+    // Length capped — no heap spill.
+    assert_eq!(
+        b.threats_dirty_centers_for_test().len(),
+        MAX_INCREMENTAL_CENTERS
+    );
+    assert!(b.threats_dirty_overflow_for_test());
+}

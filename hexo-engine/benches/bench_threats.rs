@@ -30,8 +30,8 @@ fn bench_compute_full(c: &mut Criterion) {
         let board = (fx.build)();
         group.bench_function(fx.name, |b| {
             b.iter(|| {
-                let tx = threats::compute(&board, Player::X, None, None);
-                let to = threats::compute(&board, Player::O, None, None);
+                let tx = threats::compute(&board, Player::X, &[], None);
+                let to = threats::compute(&board, Player::O, &[], None);
                 black_box((tx.counts.open_4, to.counts.open_4))
             });
         });
@@ -43,8 +43,8 @@ fn bench_single_cell_blocks_all(c: &mut Criterion) {
     let mut group = c.benchmark_group("threats::single_cell_blocks_all");
     for fx in FIXTURES {
         let board = (fx.build)();
-        let tx = threats::compute(&board, Player::X, None, None);
-        let to = threats::compute(&board, Player::O, None, None);
+        let tx = threats::compute(&board, Player::X, &[], None);
+        let to = threats::compute(&board, Player::O, &[], None);
         group.bench_function(fx.name, |b| {
             b.iter(|| {
                 black_box(threats::single_cell_blocks_all(&tx.s0_instances))
@@ -61,7 +61,7 @@ fn bench_defense_cells_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("threats::defense_cells_read");
     for fx in FIXTURES {
         let board = (fx.build)();
-        let tx = threats::compute(&board, Player::X, None, None);
+        let tx = threats::compute(&board, Player::X, &[], None);
         group.bench_function(fx.name, |b| {
             b.iter(|| {
                 let mut n = 0usize;

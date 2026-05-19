@@ -31,8 +31,8 @@ fn fresh() -> Board {
 #[test]
 fn empty_board_no_threats() {
     let b = fresh();
-    let tx = compute(&b, Player::X, None, None);
-    let to = compute(&b, Player::O, None, None);
+    let tx = compute(&b, Player::X, &[], None);
+    let to = compute(&b, Player::O, &[], None);
     assert_eq!(tx.counts, ThreatCounts::default());
     assert_eq!(to.counts, ThreatCounts::default());
     assert!(tx.s0_instances.is_empty());
@@ -43,7 +43,7 @@ fn empty_board_no_threats() {
 fn single_piece_no_threats() {
     let mut b = fresh();
     x(&mut b, &[(0, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts, ThreatCounts::default());
     assert!(t.s0_instances.is_empty());
 }
@@ -56,7 +56,7 @@ fn single_piece_no_threats() {
 fn open_five_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_5, 1);
     assert_eq!(t.s0_instances.len(), 1);
     let i = &t.s0_instances[0];
@@ -71,7 +71,7 @@ fn closed_five_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]);
     o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.closed_5, 1);
     assert_eq!(t.s0_instances.len(), 1);
     let i = &t.s0_instances[0];
@@ -84,7 +84,7 @@ fn closed_five_axis_q() {
 fn open_four_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_4, 1);
     assert_eq!(t.s0_instances.len(), 1);
     let i = &t.s0_instances[0];
@@ -99,7 +99,7 @@ fn closed_four_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
     o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.closed_4, 1);
     assert_eq!(t.s0_instances.len(), 1);
     let i = &t.s0_instances[0];
@@ -115,7 +115,7 @@ fn closed_four_blocked_extension_is_not_threat() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
     o(&mut b, &[(-1, 0), (5, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.closed_4, 0);
     assert!(t.s0_instances.is_empty());
 }
@@ -124,7 +124,7 @@ fn closed_four_blocked_extension_is_not_threat() {
 fn open_three_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_3, 1);
     // open_3 is S1, not S0.
     assert!(t.s0_instances.is_empty());
@@ -135,7 +135,7 @@ fn closed_three_axis_q() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
     o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.closed_3, 1);
     assert_eq!(t.counts.open_3, 0);
 }
@@ -144,7 +144,7 @@ fn closed_three_axis_q() {
 fn open_two_isolated() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_2, 1);
 }
 
@@ -153,7 +153,7 @@ fn open_two_not_isolated_when_opp_nearby_on_axis() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0)]);
     o(&mut b, &[(3, 0)]); // within 2 along axis Q
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_2, 0);
 }
 
@@ -165,7 +165,7 @@ fn open_two_not_isolated_when_opp_nearby_on_axis() {
 fn open_five_axis_r() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_5, 1);
     let i = &t.s0_instances[0];
     assert!(i.defense_cells.contains(&Coord::new(0, -1)));
@@ -176,7 +176,7 @@ fn open_five_axis_r() {
 fn open_five_axis_s() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, -1), (2, -2), (3, -3), (4, -4)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.open_5, 1);
     let i = &t.s0_instances[0];
     assert!(i.defense_cells.contains(&Coord::new(-1, 1)));
@@ -191,8 +191,8 @@ fn rotation_preserves_counts() {
     x(&mut bq, &[(0, 0), (1, 0), (2, 0)]);
     let mut br = fresh();
     x(&mut br, &[(0, 0), (0, 1), (0, 2)]);
-    let tq = compute(&bq, Player::X, None, None);
-    let tr = compute(&br, Player::X, None, None);
+    let tq = compute(&bq, Player::X, &[], None);
+    let tr = compute(&br, Player::X, &[], None);
     assert_eq!(tq.counts, tr.counts);
 }
 
@@ -204,7 +204,7 @@ fn rotation_preserves_counts() {
 fn triangle_upward() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.triangle, 1);
 }
 
@@ -212,7 +212,7 @@ fn triangle_upward() {
 fn triangle_downward() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (1, -1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.triangle, 1);
 }
 
@@ -220,7 +220,7 @@ fn triangle_downward() {
 fn rhombus_qr() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.rhombus, 1);
 }
 
@@ -228,7 +228,7 @@ fn rhombus_qr() {
 fn rhombus_qs() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (1, -1), (2, -1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.rhombus, 1);
 }
 
@@ -237,7 +237,7 @@ fn arch_pattern() {
     let mut b = fresh();
     // {(0,0), (1,0), (2,-1)}: pairwise dists 1, 1, 2 — L-shape.
     x(&mut b, &[(0, 0), (1, 0), (2, -1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.arch, 1);
 }
 
@@ -245,7 +245,7 @@ fn arch_pattern() {
 fn trapezoid_pattern() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (0, 1), (1, 1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.trapezoid, 1);
 }
 
@@ -253,7 +253,7 @@ fn trapezoid_pattern() {
 fn bone_pattern() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (-1, 1), (1, -1)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.bone, 1);
 }
 
@@ -266,12 +266,12 @@ fn defense_cells_actually_block() {
     // After placing opp at the OpenFour defense, recompute drops the threat.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
-    let before = compute(&b, Player::X, None, None);
+    let before = compute(&b, Player::X, &[], None);
     assert_eq!(before.s0_instances.len(), 1);
     let def = before.s0_instances[0].defense_cells[0];
 
     o(&mut b, &[(def.q, def.r)]);
-    let after = compute(&b, Player::X, None, None);
+    let after = compute(&b, Player::X, &[], None);
     // 4-run with one immediate neighbour now opp → closed_4 or dead.
     assert_eq!(after.counts.open_4, 0);
 }
@@ -283,7 +283,7 @@ fn fork_two_open_fours_disjoint_is_mate_pending() {
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
     // Open-4 on axis Q at r=10 (well separated).
     x(&mut b, &[(0, 10), (1, 10), (2, 10), (3, 10)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.s0_instances.len(), 2);
     assert!(t.is_mate_pending());
     assert!(!single_cell_blocks_all(&t.s0_instances));
@@ -299,7 +299,7 @@ fn fork_two_threats_sharing_cell_not_mate_pending() {
     // Closed-5: X at (0..5, 0), O at (-1, 0). Defense = (5,0).
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]);
     o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     assert_eq!(t.counts.closed_5, 1);
     // Single instance — vacuously coverable by one cell.
     assert_eq!(t.s0_instances.len(), 1);
@@ -359,8 +359,8 @@ fn distant_placement_does_not_affect_existing_threat_counts() {
 fn opponent_threats_independent() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]); // X open-4
-    let tx = compute(&b, Player::X, None, None);
-    let to = compute(&b, Player::O, None, None);
+    let tx = compute(&b, Player::X, &[], None);
+    let to = compute(&b, Player::O, &[], None);
     assert_eq!(tx.counts.open_4, 1);
     assert_eq!(to.counts.open_4, 0);
 }
@@ -369,7 +369,7 @@ fn opponent_threats_independent() {
 fn overline_six_in_row_does_not_register_as_threat() {
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0)]);
-    let t = compute(&b, Player::X, None, None);
+    let t = compute(&b, Player::X, &[], None);
     // 6-run is a win, not a "threat"; no S0 instances.
     assert!(t.s0_instances.is_empty());
     assert_eq!(t.counts.open_5, 0);
@@ -380,6 +380,6 @@ fn overline_six_in_row_does_not_register_as_threat() {
 fn opponent_open_four_visible_to_o() {
     let mut b = fresh();
     o(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
-    let to = compute(&b, Player::O, None, None);
+    let to = compute(&b, Player::O, &[], None);
     assert_eq!(to.counts.open_4, 1);
 }

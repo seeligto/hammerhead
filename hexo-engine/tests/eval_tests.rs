@@ -354,7 +354,7 @@ fn five_run_layer1_does_not_double_count_via_same_color_extension() {
     // the Layer 1 effect by subtracting the Layer 2 contribution. Open-5
     // also generates an open-4 shape inside, but the threats module
     // classifies the maximal run, so only `open_5` is set.
-    let tx = compute_threats(&b, Player::X, None, None);
+    let tx = compute_threats(&b, Player::X, &[], None);
     assert_eq!(tx.counts.open_5, 1);
     let layer2_only = OPEN_5_SCORE;
 
@@ -386,7 +386,7 @@ fn tempo_term_moves_eval_per_open_three() {
     let v = eval(&b);
 
     // Verify the open_3 count and that the eval includes the tempo term.
-    let tx = compute_threats(&b, Player::X, None, None);
+    let tx = compute_threats(&b, Player::X, &[], None);
     assert_eq!(tx.counts.open_3, 1);
     // The eval is a sum of Layer 1, Layer 2 (which has no open_3
     // weight — open_3 is an S1 only), Layer 3 (= 0), and tempo. The
