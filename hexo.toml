@@ -127,3 +127,21 @@ zobrist_window = 127
 # search defaults live in [engine.search] / [engine.tt] above.
 default_time_per_move_ms = 1000
 default_tt_size_mb       = 64
+
+[promote]
+# Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.
+# Python-only (subprocess driver). Rust does not consume these.
+default_n_games           = 200
+default_time_ms_per_stone = 1000
+default_test              = "sprt"     # "sprt" | "wilson" | "raw"
+sprt_elo_low              = 0.0
+sprt_elo_high             = 5.0
+sprt_alpha                = 0.05
+sprt_beta                 = 0.05
+wilson_min_lower          = 0.50
+raw_min_winrate           = 0.60
+color_balance             = true
+opening_diversity         = false
+bestref_path              = ".bestref"
+worktree_path             = ".worktree-best"
+default_max_plies         = 400

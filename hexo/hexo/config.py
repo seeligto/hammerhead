@@ -128,6 +128,26 @@ class BotConfigDefaults:
 
 
 @dataclass(frozen=True, slots=True)
+class PromoteConfig:
+    """Promotion harness defaults. See ``specs/SPEC_ROADMAP.md`` § Phase 11."""
+
+    default_n_games: int
+    default_time_ms_per_stone: int
+    default_test: str
+    sprt_elo_low: float
+    sprt_elo_high: float
+    sprt_alpha: float
+    sprt_beta: float
+    wilson_min_lower: float
+    raw_min_winrate: float
+    color_balance: bool
+    opening_diversity: bool
+    bestref_path: str
+    worktree_path: str
+    default_max_plies: int
+
+
+@dataclass(frozen=True, slots=True)
 class HexoConfig:
     eval: EvalConfig
     threats: ThreatsConfig
@@ -136,6 +156,7 @@ class HexoConfig:
     ordering: OrderingConfig
     board: BoardConfig
     bot: BotConfigDefaults
+    promote: PromoteConfig
     source_path: Path
 
 
@@ -154,6 +175,7 @@ def load() -> HexoConfig:
     o = engine["ordering"]
     b = engine["board"]
     bot = raw["bot"]
+    promote = raw["promote"]
 
     return HexoConfig(
         eval=EvalConfig(
@@ -220,6 +242,22 @@ def load() -> HexoConfig:
         bot=BotConfigDefaults(
             default_time_per_move_ms=bot["default_time_per_move_ms"],
             default_tt_size_mb=bot["default_tt_size_mb"],
+        ),
+        promote=PromoteConfig(
+            default_n_games=promote["default_n_games"],
+            default_time_ms_per_stone=promote["default_time_ms_per_stone"],
+            default_test=promote["default_test"],
+            sprt_elo_low=float(promote["sprt_elo_low"]),
+            sprt_elo_high=float(promote["sprt_elo_high"]),
+            sprt_alpha=float(promote["sprt_alpha"]),
+            sprt_beta=float(promote["sprt_beta"]),
+            wilson_min_lower=float(promote["wilson_min_lower"]),
+            raw_min_winrate=float(promote["raw_min_winrate"]),
+            color_balance=bool(promote["color_balance"]),
+            opening_diversity=bool(promote["opening_diversity"]),
+            bestref_path=promote["bestref_path"],
+            worktree_path=promote["worktree_path"],
+            default_max_plies=promote["default_max_plies"],
         ),
         source_path=path,
     )

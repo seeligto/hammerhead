@@ -17,3 +17,6 @@ Cargo.lock
 # Local-only reference material (PDFs, etc.) — not tracked.
 refs/
 *.pdf
+
+# Promotion harness (Phase 11) — worktree of the locked best engine.
+.worktree-best/
