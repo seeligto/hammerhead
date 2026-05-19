@@ -78,22 +78,29 @@ position:
 
 `NULL_STONE` is required so the record layout is fixed-width.
 
-## 5 — Binary record layout (revised)
+## 5 — Binary record layout (v2.1, 28 bytes)
 
 ```
-struct format: '<Qhhhh H H I h'   little-endian, no padding (26 bytes)
+struct format: '<QhhhhHHIhBB'   little-endian, no padding (28 bytes)
 fields:
   hash         u64    canonical position hash (turn-start)
   s1q, s1r     i16,i16  first stone of pair (canonical lex-min)
   s2q, s2r     i16,i16  second stone, or NULL_STONE = (i16::MIN, i16::MIN)
   weight       u16    scaled composite weight (see §6)
-  winrate      u16    winrate * 65535 (high-ELO subset)
+  winrate      u16    high-ELO winrate * 65535
   n_games      u32    total games seen at this (pos, pair)
-  engine_score i16    engine eval placeholder, default 0
+  engine_score i16    engine eval at deepening depth, X-positive (0 if
+                      not deepened)
+  tier         u8     1=SAFE, 2=EXPERT, 3=ENGINE_ONLY, 4=TRAP, 0=DROP
+  flags        u8     bitfield:
+                       bit 0 = engine_agrees_with_humans (mover POV)
+                       bit 1 = wide_opening (turn ≤ 6, stone hex-dist > 5)
+                       bit 2 = kl_junction (KL between ELO bands ≥ 0.3)
+                       bit 3 = blunder_candidate
+                       bits 4-7 reserved
 ```
 
-Total: 8 + 8 + 2 + 2 + 4 + 2 = **26 bytes/record**. (`<Qhhhh H H I h`
-packs to 26 with no padding under `struct`.)
+Total: 8 + 8 + 2 + 2 + 4 + 2 + 1 + 1 = **28 bytes/record**.
 
 `NULL_STONE` constant: `(i16::MIN, i16::MIN) = (-32768, -32768)`. A
 record with this `s2` value is interpreted as the opening Turn 1 single
@@ -102,8 +109,8 @@ stone. A non-NULL `s2` records both stones of a two-stone turn.
 Records are sorted by `(hash, -weight, s1q, s1r, s2q, s2r)` so a binary
 search by hash returns the heaviest pair first.
 
-`Records.sort` key is exactly the same shape as in the deprecated layout
-plus the two extra `(s2q, s2r)` fields appended.
+**v2 → v2.1 migration:** the v2 26-byte format is regenerable, not
+converted. The Rust probe (when built) reads only v2.1.
 
 **Production vs. analysis artefacts.** `data/analysis/opening_book.bin`
 is the *pruned* production artefact: records with `n_games < 2` are
