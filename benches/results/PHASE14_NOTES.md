@@ -16,6 +16,7 @@ measurements unless noted. Host: AMD Ryzen 7 8845HS, rustc 1.94.0.
 | step 4 | piece_at → is_player single-probe (3 runs avg) | 291,375 (+8.1%) | 159,326 (+10.1%) | `AxisBitmaps::is_player`; threats `matches_pattern` + flank-cell checks |
 | step 5 | inline + cold sweep (3 runs avg) | 289,953 (−0.5%) | 160,890 (+1.0%) | trivial; kept for intent / future-proofing terminal paths |
 | step 6 | LineBitmap align + windows6_run (3 runs avg) | 325,133 (+12.1%) | 196,156 (+21.9%) | batched 6-bit window extract from u64 words; #[repr(align(64))] keeps lines off cache-line straddles |
+| step 7 | incremental threats — **deferred to Phase 15** | — | — | full delta requires per-anchor tracking + a prior-snapshot lifecycle on Board (paired place / undo deltas) that didn't fit the phase budget; oracle test would have caught any partial impl, so reverted before any code shipped. `threats::compute_with_scratch` still accepts the `center` / `prior` hints — they just stay unused, matching today's behaviour. |
 
 ## Reference table — Phase 14 truly fixed-depth counts (post step 1.5)
 

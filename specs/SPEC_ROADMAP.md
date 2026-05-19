@@ -206,6 +206,16 @@ audit.)
 
 ## Phase 15 candidates (deferred follow-ups)
 
+- **Incremental threat recompute**: Phase 14 STEP 7 attempted this
+  but the correctness-gated delta requires (1) per-anchor tracking
+  for cross-axis count contributions (`walk_cross_axis` aggregates
+  shapes without storing positions) and (2) a paired place/undo
+  delta cache on `Board` so undo can subtract what place added.
+  Both fit the data-model but exceed the Phase 14 time budget.
+  The API surface (`compute_with_scratch(... , center, prior, ...)`)
+  is already in place; the implementation just falls through to
+  `full_recompute`. Phase 15 should land this with the 10k-position
+  oracle test mandated in `prompts/PHASE_14_PROMPT.md` STEP 7.
 - **`closed_2` shape detector** for full tempo +0 / -1 cases.
 - **BotConfig vs SearchConfig time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
@@ -218,15 +228,20 @@ audit.)
 
 ## Phase 14 resolved follow-ups
 
-- **Incremental threat recompute**: shipped in Phase 14 (STEP 7).
-  `threats::compute` now uses the `center` / `prior` hints to
-  restrict the rescan to a dirty radius around the most-recent
-  placement and merge with the surviving prior set. Oracle test
-  in `tests/threats_incremental.rs` enforces equality with full
-  recompute across 10k random positions.
 - **`piece_at` 2-probe regression** (Phase 13 carry-over): resolved
   via `AxisBitmaps::is_player` and a short-circuit in
   `threats::matches_pattern<N>` (STEP 4).
+- **threats::compute scratch reuse**: `FxHashSet seen` and the
+  player-pieces `Vec` now live in a `ThreatScratch` owned by
+  `Board`; cleared per call to retain capacity (STEP 3).
+- **LineBitmap layout + batched window scan**: `#[repr(align(64))]`
+  plus `LineBitmap::windows6_run` cut the per-line eval cost by
+  emitting 6-bit windows directly from packed `u64` storage
+  (STEP 6).
+- **Reference table determinism**: depth-only `Engine::best_move`
+  calls now skip the default time fallback, so the reference node
+  counts are bit-for-bit reproducible at every depth. Replaces the
+  Phase 13 reference column which was time-truncated at d ≥ 6.
 
 ## Phase 10 — Benchmark Suite
 
