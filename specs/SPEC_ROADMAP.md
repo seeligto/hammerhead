@@ -9,81 +9,125 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 1 | `coords`, `board`, `zobrist` | ✅ done |
 | 2 | `axis_bitmap`, `win` | ✅ done |
 | 3 | `moves` | ✅ done |
-| 4 | `threats` | 🔜 next |
-| 5 | `eval` | pending |
-| 6 | `tt` (incl. zobrist halfmove parity) | pending |
-| 7 | `ordering` | pending |
-| 8 | `search` | pending |
-| 9 | `pybind` + Python `Bot` + CLI | pending |
-| 10 | promotion harness (`vs`/`promote`) | post-baseline |
+| 4 | `threats` | ✅ done |
+| 5 | `eval` (3 layers + tempo) | ✅ done |
+| 6 | `tt` + zobrist halfmove parity | ✅ done |
+| 7 | `ordering` | ✅ done |
+| 8 | `search` | ✅ done |
+| 9 | `pybind` + Python `Bot` + CLI | ✅ done |
+| 10 | benchmark suite | 🔜 next |
+| 11 | promotion harness (`vs` / `promote`) | pending |
 
 Order is fixed. Each phase depends on the previous.
+
+## Universal workflow (applies to every phase prompt)
+
+- **Use `make` commands.** Wire `.venv` paths correctly. Avoid bare
+  `pytest` / `cargo` except for targeted runs.
+- **Previous-phase agent may still be committing.** Proceed.
+- **Commits**: atomic, descriptive, < 72 chars subject, no
+  `Co-Authored-By: Claude` or any Claude attribution.
+- **End every phase with a review pass.** Independent reviewer checks
+  for bugs, missed cases, bad practice, inefficiencies.
+  - **Spec-vs-code discrepancies**: pick the more efficient / optimized
+    side. Update the loser. Test the change is sound.
+  - **Use `make` commands** to verify (uses `.venv`, correct paths).
+  - Fix what the reviewer finds. Report changes in "When Done".
 
 ## Core decisions (locked)
 
 ### Two-stone turn → per-stone minimax
 
-`Board::to_move()` returns the player whose stone goes next, handling the
-double-stone case via the `(p-1)/2 % 2` parity rule. Search is per-stone
-(not per-turn) and uses **minimax form**, not negamax:
+`Board::to_move()` returns the player whose stone goes next, handling
+the double-stone case via the `(p-1)/2 % 2` parity rule. Search is
+per-stone and uses **minimax form**, not negamax.
 
-```rust
-fn search(board, depth, alpha, beta) -> i32 {
-    if depth == 0 || terminal { return eval(board); }
-    match board.to_move() {
-        Player::X => maximize(board, depth, alpha, beta),
-        Player::O => minimize(board, depth, alpha, beta),
-    }
-}
-```
-
-Within-turn continuation is automatic: when X plays stone 1, `to_move()`
-still returns X for stone 2. Search recurses into another `maximize` call.
-No sign flip needed mid-turn.
+**Implementation note (post-Phase 8)**: a single `pvs_node` dispatches
+on `board.to_move()` instead of separate `pvs_max` / `pvs_min` — one
+function body, side-aware comparisons. Avoids code duplication.
+Earlier prompts described two functions; the merged form is correct.
 
 **Eval sign convention**: X-positive globally. Never side-relative.
 
-**Why not negamax?** Negamax assumes side flips every ply. Two-stone turns
-break that assumption. Mixed-flip negamax is possible but error-prone;
-minimax is literal and robust.
-
 ### Engine API granularity
 
-`Engine::best_move()` returns **one stone**. Python `Bot` calls it twice per
-turn. TT entries from stone 1's search warm stone 2's search.
+`Engine::best_move()` returns **one stone**. Python `Bot` calls it
+twice per turn. TT entries from stone 1's search warm stone 2's
+search.
 
-### Zobrist halfmove parity (CRITICAL — addressed in Phase 6)
+### Zobrist halfmove parity (Phase 6 deliverable)
 
-Research-surfaced requirement: two positions identical in stones but
-differing in "whose second stone of the turn is next" must hash to
-different keys, otherwise the TT aliases them and search returns wrong
-values.
+Reserved constants `Z_TURN_X`, `Z_HALFMOVE`. Locked interpretation:
 
-Implementation: reserve a `Z_HALFMOVE` 128-bit constant. XOR into the hash
-whenever the side-to-move is on stone 2 of its turn (i.e. one stone has
-already been placed in the current 2-stone turn). The flag flips on every
-`place` and `undo` exactly when transitioning into/out of the second half
-of a turn.
+- `Z_TURN_X` is XOR'd in **iff side == X**, regardless of halfmove.
+- `Z_HALFMOVE` is XOR'd in **iff halfmove == 1**.
 
-Phase 6 (TT) implements this **before** introducing the TT array; without
-it the TT is unsafe.
+These 4 combinations of (side, halfmove) overlay produce 4 distinct
+hash contributions. Earlier prompt drafts gated `Z_TURN_X` on
+`halfmove == 0`, which collapsed `(X,1)` and `(O,1)`. Phase 6
+corrected this; spec text in `SPEC_ENGINE.md` is now correct.
 
 ### Bitmap representation
 
-Per-axis sparse line bitmaps shared by `win`, `threats`, `eval`. 3 axes
-(Q, R, S=q+r) × 2 players. `LineBitmap = SmallVec<[u64; 4]>` with
-`base_pos: i16`. Hex 60° rotation = axis permutation Q→S→R→Q. Augmentation-
-friendly by construction.
+Per-axis sparse line bitmaps shared by `win`, `threats`, `eval`. 3
+axes (Q, R, S=q+r) × 2 players. Hex 60° rotation = axis permutation.
 
-### Single source of truth
+### TT (Phase 6 deliverable)
 
-All engine tuning (eval weights, search defaults, board constants,
-move-gen radii, time-split ratios, LMR thresholds, TT sizing) lives in
-`hexo.toml`. Rust ingests via `build.rs` codegen → `crate::config::*`.
-Python via `tomllib` → `CONFIG.*` dataclasses. **Magic numbers in code = bug.**
+Two-bucket (depth-preferred + always-replace), generation-aged,
+u128-verified. 64 MB default, power-of-two slot count. Mate scores
+adjusted on store/probe via `score_to_tt` / `score_from_tt`.
 
-Build metadata (dep versions, Rust edition, Python version, Cargo profile
-flags) stays in `Cargo.toml` / `pyproject.toml`.
+### Search (Phase 8 deliverable)
+
+- Iterative deepening + alpha-beta minimax + TT.
+- PVS at depth ≥ 2, **3-step LMR dance** (reduced-null → full-null →
+  full-window). Earlier 2-step description deprecated.
+- Aspiration windows at depth ≥ 4.
+- Threat-only quiescence (cap 8 plies).
+- Check extensions (cap 4 per root path).
+- **No null-move pruning** in v1 (two-stone parity fragile).
+- Time split stone 1 / stone 2 = 60% / 40% of turn budget.
+
+### MAX_PLY clarification
+
+`MAX_PLY` (default 128) is the **total recursion ply ceiling**, not the
+search target depth. Distinct from `max_depth` (default 64):
+
+- `max_depth` — search-target depth from root.
+- `MAX_PLY` — upper bound on ply counter used to size killer / PV
+  arrays. Must cover `max_depth + max_check_extensions +
+  qsearch_max_plies + slack`. For defaults: `64 + 4 + 8 + 52 = 128`.
+
+Killer slots are a fixed-size array indexed by ply; the cap protects
+against unbounded recursion via extensions / quiescence.
+
+### Single source of truth — `hexo.toml`
+
+All engine tuning lives in `hexo.toml`. Sections:
+
+- `[engine.eval]` — weights (incl. 729-table source values)
+- `[engine.search]` — alpha-beta params
+- `[engine.board]` — board constants
+- `[engine.threats]` — recompute radius, cluster radius
+- `[engine.ordering]` — buckets, killer slots, history decay, MAX_PLY
+- `[engine.tt]` — TT sizing
+- `[bot]` — Bot defaults (mirrors search where intentional)
+- `[bench]` — benchmark suite defaults (Phase 10)
+- `[promote]` — promotion harness defaults (Phase 11)
+
+Build metadata stays in `Cargo.toml` / `pyproject.toml`. **Magic
+numbers in code = bug.**
+
+### PyO3 0.28 specifics (Phase 9 deliverable)
+
+- `Python::detach` (not `allow_threads`) for GIL release. Renamed in
+  0.28.
+- `#[pyclass(unsendable)]` on `Engine` — `Board` owns `RefCell` /
+  `Cell` caches, making it `!Sync`. `Send` is still auto-derived,
+  sufficient for `Python::detach`'s `Ungil: T: Send` bound.
+- `pybind.rs` is **strictly type-conversion + GIL handling**. No
+  game logic. Every method delegates to `RustEngine`.
 
 ## Performance targets
 
@@ -93,300 +137,128 @@ flags) stays in `Cargo.toml` / `pyproject.toml`.
 | `undo` | < 500 ns | symmetric |
 | `is_winning_move` | < 100 ns | bitmap line walk |
 | `generate(r=2)` | < 5 μs | < 50 candidates typical |
-| `eval` (full) | < 5 μs | incremental cache |
+| `cached_eval` cold | < 10 μs | 3-layer incremental cache |
+| `cached_eval` warm | < 100 ns | cached |
 | `search` NPS | > 200 k nps | release, single-thread |
 
-Numbers are estimates. Benchmark on phase 8 completion. Adjust if needed.
+Phase 8 measured ~150 k NPS on 12-piece midgame. Profile in Phase 10
+(benchmark suite) to identify bottlenecks.
 
-## Resolved open questions (informed by research output)
+## Resolved open questions
 
-1. **Quiescence depth cap**: hard cap 8 plies + threat-only filter
-   (S0+ moves only). Configurable via `search.qsearch_max_plies`.
-2. **LMR parameters**: enable at depth ≥ 3, move index ≥ 6 (i.e. skip the
-   first 6 ordered moves), `R = 1` initially. Re-search at full window on
-   fail-high. Disable if move is TT-move, killer, S0 threat, or S0-block.
-3. **TT replacement scheme**: two-bucket (always-replace + depth-preferred)
-   from v1. Cheap, more robust than depth-preferred alone. Aging via
-   per-search generation counter.
-4. **TT size**: 64 MB default (~2²² entries × 16 bytes). Configurable in
-   `hexo.toml` via `tt.size_mb`. Power-of-two bucket count.
-5. **Aspiration windows**: initial delta = 50 cp around prior-iteration
-   score. Widen 2× on fail (fail-high → β += 50, 100, 200, then full
-   window). Enable from depth ≥ 4.
-6. **Eval window-scan weights**: keep existing `window_k_scores`
-   `[0, 1, 8, 64, 512, 4096, 1_000_000]`. Use 729-entry ternary lookup
-   built at build time from these weights + open/closed extension rules.
-7. **VCF/VCT proof search**: inline as **threat-only quiescence** in v1.
-   Separate root-time-boxed solver (~10% of turn budget) is post-baseline.
-8. **Stone-2 ordering**: standard ordering plus a "completes-stone-1-S0"
-   bonus bucket. Implemented in Phase 7.
-9. **Per-turn time split**: stone 1 gets 60%, stone 2 gets 40% of the
-   per-turn budget by default. Configurable in `hexo.toml` via
-   `search.time_stone1_pct = 0.6`. Rationale: stone 1 sets up stone 2 and
-   benefits more from depth; stone 2 reuses the warmed TT cheaply.
+1. **Quiescence depth cap**: 8 plies, S0+ move filter.
+2. **LMR parameters**: depth ≥ 3, move index ≥ 6, `R = 1`. Disabled
+   for TT-move / killer / S0 / S0-block.
+3. **TT replacement**: two-bucket from v1.
+4. **TT size**: 64 MB default, power-of-two.
+5. **Aspiration windows**: initial delta 50, widen 2×, depth ≥ 4.
+6. **Eval window weights**: existing `window_k_scores`
+   `[0, 1, 8, 64, 512, 4096, 1_000_000]`.
+7. **VCF/VCT**: inline as threat quiescence in v1.
+8. **Stone-2 ordering**: "completes-stone-1-S0" bucket between
+   defensive-win and creates-S0.
+9. **Per-turn time split**: 60 / 40.
 
 ## Contradictions with research output (decisions retained)
 
-- **Null-move pruning**: research advocates Stage 2 (+150-300 Elo). We
-  **skip in v1**. Two-stone turn parity is fragile; null-move can corrupt
-  the halfmove flag transition. Revisit post-baseline once search is
-  proven correct against SealBot.
-- **Eval table size 729 vs explicit shape detection**: research treats the
-  729-entry ternary table as the dominant eval signal. We use it as
-  **Layer 1 only**; Layers 2 (shape bonuses via WSC) and 3 (fork detection
-  via defense-set vertex cover) carry the threat-arithmetic awareness
-  research-output's flat table cannot express on a hex grid with
-  cross-axis shapes (rhombus, triangle, bone, arch).
+- **Null-move pruning**: research advocates Stage 2 (+150-300 Elo).
+  We skip in v1; two-stone parity fragile. Revisit post-baseline.
+- **Eval 729-table only vs WSC layers**: 729 table is Layer 1;
+  Layers 2/3 capture cross-axis shapes and forks that ternary
+  windows cannot express.
 
-## Phase sketches
+## Spec-vs-code corrections applied during Phases 4–9
 
-### Phase 4 — `threats`
+(Each was caught by the phase reviewer and applied; documented here for
+audit.)
 
-Inputs: `Board`, `axis_bitmap` data, last-placed cell.
-Outputs:
-- `ThreatCounts` per player (open_5, closed_5, open_4, closed_4, open_3,
-  rhombus, arch, bone, trapezoid, open_2, closed_3, triangle)
-- `ThreatSet` per player: list of S0 threat instances with defense cells
-  (sufficient cell set such that occupying any defense cell denies the
-  threat-completion next stone).
+- **Phase 4**: OpenFour defense_cells = `{p-1, p+4}` (immediate empty
+  neighbours), per the explicit contract paragraph. Earlier prompt
+  wording "one beyond each empty neighbour" was contradictory and
+  superseded. ClosedFour viability check added: 2-cells-beyond non-opp.
+- **Phase 5**: "Two disjoint open-4s → fork mate" was incorrect under
+  intersection-based vertex cover. Implementation correctly produces
+  cover-2 (= `FORK_COVER2_BONUS`) for two open-4s; cover-≥3 mate
+  requires three disjoint S0 instances. SPEC_EVAL updated.
+- **Phase 5**: Layer 1 hot-path optimization — switched from
+  piece-driven FxHashSet dedup to per-(axis, line_id) iteration via
+  `populated_range`. Eliminated hash + alloc in hot path.
+- **Phase 6**: `Z_TURN_X` interpretation — XOR'd iff side == X
+  (regardless of halfmove). See "Core decisions" above.
+- **Phase 7**: `creates_s0` uses virtual-place axis run, not
+  `s0_instances` probe. More efficient. SPEC_ENGINE updated.
+- **Phase 7**: `MAX_PLY` moved from `[engine.search]` to
+  `[engine.ordering]` since it's primarily a killer-array dimension.
+- **Phase 7**: `decay_history` retains only non-zero entries to prevent
+  monotonic map growth.
+- **Phase 8**: `pvs_max` / `pvs_min` merged into single `pvs_node`.
+  3-step LMR (was 2-step). TT mate-score adjustment added.
+  `force_parity_for_test` desync fixed via `prev_parity` helper.
+- **Phase 8**: `best_move` primes `SearchResult.best_move` with first
+  legal candidate before iterative deepening to prevent ORIGIN
+  sentinel on tight-budget timeouts.
+- **Phase 9**: `py.detach` (not `allow_threads`) — PyO3 0.28 rename.
+  `#[pyclass(unsendable)]` for Board's `RefCell` / `Cell`. Engine
+  owns `clear_tt` method (shim stays thin).
 
-Algorithm:
-1. For each piece of player P within radius 5 of last move: walk lines on
-   3 axes, classify endpoints (open / closed), match against shape table.
-2. Cross-axis shapes (rhombus, triangle, bone): piece-cluster scan within
-   radius 2 of last move.
-3. Cache `ThreatCounts` + `ThreatSet` on board. Invalidate on each
-   `place(c)` / `undo(c)`; recompute only within radius 5 of `c`.
+## Known follow-ups (deferred, post-baseline)
 
-Forks (mate-via-multi-threat) are computed by `eval`, not `threats`. The
-threats module produces counts and a list of S0 threat instances with
-defense cells.
+- **Incremental threat recompute**: Phase 4 ships full recompute on
+  every dirty read. Spec accepts `center` / `prior` args but ignores
+  them. Implement true incremental in a sub-phase after Phase 10 NPS
+  bench identifies it as a bottleneck.
+- **`closed_2` shape detector** for full tempo +0 / -1 cases.
+- **BotConfig vs SearchConfig time-budget drift**: `[bot]
+  default_time_per_move_ms` and `[engine.search] default_time_ms` are
+  both 1000ms. Fold if Phase 10/11 finds them always coupled.
+- **`find_pv` eviction tolerance**: best-effort; returns shorter PV
+  if TT loses entries between root and walk.
+- **Radius-theory colony discounting** in eval.
+- **Lazy-SMP parallel search**.
+- **Opening book**, **endgame tables**, **WebSocket live integration**.
 
-### Phase 5 — `eval`
+## Phase 10 — Benchmark Suite
 
-Three layers:
+**Goal**: comprehensive bench infrastructure for optimization cycles.
 
-1. **Window scan (Layer 1)**: 729-entry ternary lookup over 6-cell windows
-   per axis. Table built at build time from `window_k_scores` (own k =
-   own-only window) and `[engine.eval.open_extension_bonus]` /
-   `[engine.eval.closed_extension_bonus]` for windows with empty
-   extensions. Mixed windows (both colors) score 0.
-2. **Shape bonus (Layer 2)**: sum `ThreatCounts × weight` from
-   `hexo.toml`.
-3. **Fork detection (Layer 3)**: union of defense cells across S0 threat
-   instances. Minimum vertex cover size:
-   - 1 → normal threat (covered by Layer 2)
-   - 2 → medium bonus (forces full defense turn)
-   - ≥ 3 → MATE (return ±MATE_SCORE − ply)
+Two tiers:
+- **Rust criterion** micro-benches per module (`hexo-engine/benches/`).
+- **Python harness** macro-benches (`hexo/hexo/benchmark.py`).
 
-Tempo: small advisory contribution. Real tempo emerges from search depth.
+Outputs canonical JSON to `benches/results/<isodate>-<sha>.json`. Diff
+tool compares two result sets. `make bench`, `make bench-micro`,
+`make bench-diff`, `make bench-baseline`.
 
-Eval cached per board state. Layer 1 incremental (≤ 18 windows touched per
-stone). Layers 2/3 recompute locally within radius 5 of last move.
+See `specs/SPEC_BENCHMARKS.md` and `prompts/PHASE_10_PROMPT.md`.
 
-**Defer radius-theory colony discounting** until baseline beats SealBot.
+## Phase 11 — Promotion Harness
 
-### Phase 6 — `tt` (and zobrist halfmove parity)
+**Goal**: validate a candidate version against `.bestref` before
+promoting.
 
-Step 1: extend `zobrist.rs` with `Z_HALFMOVE` constant. `Board` XORs it on
-every `place` / `undo` when transitioning the halfmove flag. Tests verify
-hash differs between (X plays stone 1, O to play) and (X plays stone 1,
-X to play stone 2) when the stone configuration is identical but the
-halfmove state differs (which never actually happens — included as a
-*structural* test of the parity logic, not a state-reachability test).
+- Git worktree at `.worktree-best/` checked out at `.bestref` SHA.
+- Per-worktree venv builds the baseline engine.
+- Subprocess protocol via `hexo bot` (Phase 9).
+- `hexo/hexo/promote.py` — SPRT / Wilson / raw tests.
+- `make vs`, `make promote` (replace Phase-9 stubs).
 
-Step 2: TT structure.
-
-```rust
-pub struct TTEntry {
-    pub hash: u128,
-    pub best_move: Coord,
-    pub score: i32,
-    pub depth: i8,
-    pub flag: TTFlag,
-    pub generation: u8,
-}
-
-pub enum TTFlag { Exact, LowerBound, UpperBound }
-```
-
-Two-bucket scheme: each index slot holds `[depth_preferred, always_replace]`.
-Index by low N bits of `hash`. Full `u128` stored for collision verification.
-
-Replacement on store:
-- If new entry depth ≥ depth_preferred.depth OR generation differs (aged):
-  overwrite depth_preferred. Keep old in always_replace.
-- Else: overwrite always_replace.
-
-Aging: increment `current_generation` per root search. Older-generation
-entries replaceable regardless of depth.
-
-Size: `tt.size_mb` from `hexo.toml`, default 64 MB. Power-of-two bucket
-count derived: `buckets = floor_pow2(size_mb * 1024 * 1024 / 32)` (32 = 2
-entries × 16 bytes; tweak if entry layout changes).
-
-### Phase 7 — `ordering`
-
-Stable priority bucket sort. Buckets in priority order:
-
-1. TT best move
-2. Winning move (creates 6-in-row)
-3. Defensive win (blocks opponent would-be 6-in-row)
-4. Completes S0 from stone 1 (only for stone 2 of a turn)
-5. Creates S0 threat (open-4 / closed-5 / open-5)
-6. Blocks opponent S0 threat
-7. Creates S1 threat (open-3 / rhombus / arch / bone)
-8. Killer moves at this ply (2 slots)
-9. History heuristic
-10. Static delta-eval / proximity tie-break
-
-Encoding: `u32 score = (bucket << 24) | history_score`. Sort descending.
-`MOVE_GEN_CAP` (from `hexo.toml`, default 24) applied **after** ordering —
-never truncate before, the high-priority moves may be late in the unordered
-list.
-
-Killers per ply: `[Option<Coord>; 2]`, ring-buffered. Updated on β-cutoff
-for non-S0 moves (S0 moves already dominate via bucket 5).
-
-History: global `FxHashMap<(Coord, Player), u32>`. Increment by `depth²` on
-β-cutoff (Schaeffer 1989). Decay by ½ between root searches to avoid
-runaway accumulation. Read-only during ordering.
-
-### Phase 8 — `search`
-
-Build order:
-
-1. Plain alpha-beta (minimax form) + iterative deepening + TT
-2. PVS (null-window + re-search) at depth ≥ 2
-3. Aspiration windows at depth ≥ 4 (delta = 50, widen 2×)
-4. Killer moves + history heuristic feed `ordering`
-5. Late Move Reductions (LMR) at depth ≥ 3, move index ≥ 6, R = 1.
-   Disable for TT-move / killer / S0 / S0-block.
-6. Threat-only quiescence at depth 0: only S0+ moves considered (creates
-   or blocks S0). Hard cap `qsearch_max_plies = 8`.
-7. Check extensions: opponent creates S0 threat → extend depth by 1.
-   Capped at `max_extensions = 4` per root path.
-
-**Skip in v1**: null-move pruning, MTD(f). Revisit post-baseline.
-
-Time management:
-- Per-turn budget split: stone 1 = 60%, stone 2 = 40% (configurable).
-- Deadline check every `deadline_check_nodes` nodes (default 4096).
-- Soft-fail iterative deepening on timeout: return best move from last
-  completed iteration; if none completed, return TT-best-or-first-candidate.
-- Aspiration re-search counts against the same deadline; on fail, widen
-  before re-searching, do not abort the iteration.
-
-Mate-distance scoring: `MATE_SCORE − ply` for own mate so search prefers
-shorter mates; `−(MATE_SCORE − ply)` for opponent mate.
-
-### Phase 9 — `pybind` + Python `Bot` + CLI
-
-PyO3 surface per `SPEC_API.md`. GIL released around `best_move` via
-`py.allow_threads(|| ...)`. Python `Bot` wraps `Engine` with `BotConfig`
-defaults. Add `Bot.play_turn()` for atomic 2-stone convenience. Add
-`Engine.find_pv()` returning principal variation.
-
-CLI commands:
-- `hexo play` — interactive REPL vs bot
-- `hexo selfplay -n N` — bot vs bot, log games
-- `hexo bench` — NPS benchmark
-- `hexo analyze <bsn>` — show eval + best line
-- `hexo bot` — **subprocess protocol** (needed by Phase 10 harness). Reads
-  line-oriented commands from stdin, writes responses to stdout.
-
-Protocol (one command per line):
-
-```
-> reset                       < ok
-> place Q R                   < ok
-> best_move TIME_MS           < Q R
-> winner                      < X | O | none
-> ply                         < N
-> eval                        < SCORE
-> quit                        < bye
-```
-
-Errors prefix `error: ` and do not terminate the session except for
-`quit`.
-
-### Phase 10 — Promotion harness (post-baseline)
-
-Validates that a candidate version is genuinely stronger than the last
-validated version before promoting `.bestref`.
-
-Components:
-- `.bestref` at repo root: SHA of current `best`
-- Git worktree at `.worktree-best/` checked out at `.bestref`
-- Per-worktree venv, each engine built as `hexo_engine`
-- Subprocess protocol via `hexo bot` (Phase 9)
-- `hexo/hexo/benchmark.py` match harness with SPRT / Wilson / raw tests
-- `make vs N_GAMES=200` — runs match, reports stats
-- `make promote` — advances `.bestref` if threshold met
-
-Default test: SPRT `[0, 5]` Elo, α = β = 0.05. Typically resolves in
-60–300 games.
-
-**Do not implement in baseline phases.** Spec at HEXO_CONTEXT § 9 is the
-reference; this is Phase 10, after Phase 9 is green and the bot plays
-full games via CLI.
+See `prompts/PHASE_11_PROMPT.md`.
 
 ## Out of scope for v1
 
-- Null-move pruning (revisit post-baseline)
+- Null-move pruning
 - MCTS / hybrid
 - Neural net eval
 - Multi-threaded search (lazy-SMP later)
-- Opening book (collect self-play games first)
-- Endgame tables (game theoretically a draw with perfect play)
-- WebSocket / SealBot live integration (separate workstream)
-- Radius-theory colony discounting (post-baseline eval extension)
+- Opening book
+- Endgame tables
+- WebSocket / SealBot live integration
+- Radius-theory colony discounting
 
 ## References
 
 - Connect-6 + Alpha-Beta-TSS: Wu et al., NCKU/NYCU group
-- Yixin engine architecture: TT + PVS + LMR + threat-aware quiescence
-- Stockfish: general alpha-beta best practices
+- Yixin engine: TT + PVS + LMR + threat-aware quiescence
+- Stockfish: alpha-beta best practices
 - Schaeffer, "The History Heuristic," ICCA Journal 6(3), 1983
 - SealBot: github.com/Ramora0/SealBot (closest comparable)
-- Research output: see project knowledge for full citation list
-
-## Phase prompt template
-
-Each Phase 4–9 prompt lives in `prompts/PHASE_N_PROMPT.md` and follows
-the structure used for Phases 2–3:
-
-```
-# Claude Code Prompt — Phase N: <module(s)>
-
-## Response Style
-Caveman mode. No articles, no filler. Short. Direct.
-
-## Scope
-1. Implement <module>.
-2. <Other deliverables>
-Out of scope: <list>.
-
-## STEP 0 — Spec & config updates
-### 0.1 specs/SPEC_*.md — <section>
-### 0.2 hexo.toml — <keys>
-### 0.3 build.rs, config.py
-
-## STEP 1..N — <Module(s)>
-Types. Operations. Tests.
-
-## STEP N+1 — Verify
-make check must pass.
-
-## Hard Rules
-
-## Out of Scope
-
-## When Done
-Report:
-1. Spec diff summary
-2. cargo test --release pass count
-3. pytest output
-4. Spec ambiguities (do NOT improvise)
-5. Phase-specific notes
-```
