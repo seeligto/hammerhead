@@ -102,13 +102,35 @@ def test_clear_tt_keeps_position() -> None:
     eng = Engine(tt_size_mb=4)
     eng.place((0, 0))
     eng.best_move(time_ms=200)
-    pv_before = eng.find_pv(2)
     eng.clear_tt()
     assert eng.ply() == 1
-    pv_after = eng.find_pv(2)
-    # TT empty ⇒ PV walk yields nothing
-    assert pv_after == []
-    # And the cleared TT doesn't break a follow-up search.
+    # TT empty ⇒ PV walk yields nothing.
+    assert eng.find_pv(2) == []
+    # The cleared TT must not break a follow-up search.
     eng.best_move(time_ms=100)
-    # Original PV may or may not match, but post-clear search must succeed.
-    del pv_before
+
+
+def test_halfmove_parity_through_o_pair() -> None:
+    """X singleton, then O places both of their stones; halfmove tracks correctly."""
+    eng = Engine(tt_size_mb=4)
+    eng.place((0, 0))  # X singleton
+    assert eng.to_move() == 1  # O
+    assert eng.halfmove() == 0
+
+    eng.place((1, 0))  # O stone 1
+    assert eng.to_move() == 1  # O continues
+    assert eng.halfmove() == 1
+
+    eng.place((-1, 0))  # O stone 2
+    assert eng.to_move() == 0  # back to X
+    assert eng.halfmove() == 0
+
+
+def test_best_move_returns_legal_move_under_tight_budget() -> None:
+    """A 1ms budget exercises the depth-1 fallback path; the chosen move
+    must still be placeable on a non-empty board."""
+    eng = Engine(tt_size_mb=4)
+    eng.place((0, 0))
+    move = eng.best_move(time_ms=1)
+    assert move != (0, 0), "engine must not return an already-occupied cell"
+    eng.place(move)  # must succeed without raising
