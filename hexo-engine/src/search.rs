@@ -826,7 +826,17 @@ impl Engine {
         if let Some(d) = depth {
             local.max_depth = d.max(1);
         }
-        let provided_time = time_ms.or(self.cfg.time_ms);
+        // A depth-only call is honoured as a fixed-depth search with no
+        // time limit, matching the SPEC_BENCHMARKS reference contract.
+        // The default `cfg.time_ms` only kicks in when the caller passed
+        // neither argument explicitly — and the pybind layer rejects
+        // that case before we get here, so the path is effectively
+        // unreachable outside Rust unit tests.
+        let provided_time = if depth.is_some() {
+            time_ms
+        } else {
+            time_ms.or(self.cfg.time_ms)
+        };
         local.time_ms =
             provided_time.map(|t| split_budget(t, self.board.halfmove(), local.stone1_time_pct));
         search_root(&mut self.board, &mut self.tt, &mut self.ordering, &local)
