@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help build clean rebuild test lint fmt check vs promote install \
-        bench bench-micro bench-diff bench-baseline
+        bench bench-micro bench-diff bench-baseline flamegraph
 
 ENGINE    := hexo-engine
 PY        := hexo
@@ -83,6 +83,9 @@ bench-baseline: ## refresh benches/results/baseline.json from the latest run
 	@latest=$$(ls -t benches/results/*.json | grep -v baseline | head -1); \
 	    cp "$$latest" benches/results/baseline.json; \
 	    echo "baseline updated from $$latest"
+
+flamegraph: ## [Phase 12] capture bench_search flamegraph SVG (requires perf + cargo-flamegraph)
+	@./scripts/flamegraph.sh
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Phase 11 — promotion harness. See specs/SPEC_ROADMAP.md § Phase 11.
