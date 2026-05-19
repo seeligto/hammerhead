@@ -103,7 +103,7 @@ impl PyEngine {
     }
 
     fn clear_tt(&mut self) {
-        self.inner.tt.clear();
+        self.inner.clear_tt();
     }
 }
 

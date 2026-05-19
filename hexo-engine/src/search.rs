@@ -149,6 +149,13 @@ pub fn search_root(
     ordering.decay_history();
 
     let mut result = SearchResult::default();
+    // Prime the fallback so a depth-1 timeout still returns *some* legal
+    // move instead of the ORIGIN sentinel — placing ORIGIN on a non-empty
+    // board would raise from the Python boundary.
+    let fallback_moves = moves::generate(board, DEFAULT_MOVE_RADIUS);
+    if let Some(&m) = fallback_moves.first() {
+        result.best_move = m;
+    }
     let mut prev_score: Option<i32> = None;
     let mut node_count: u64 = 0;
 
@@ -881,17 +888,12 @@ impl Engine {
             let Some(entry) = self.tt.probe(self.board.hash()) else {
                 break;
             };
-            let m = entry.best_move;
-            // ORIGIN is the TT sentinel for "no recorded move" once the
-            // origin is already occupied. If it is still empty, ORIGIN
-            // is a legal first move.
-            if m == ORIGIN && self.board.piece_at(ORIGIN).is_some() {
+            // `place` rejects already-occupied or out-of-range coords,
+            // so it doubles as the sanity gate on the TT-recorded move.
+            if self.board.place(entry.best_move).is_err() {
                 break;
             }
-            if self.board.place(m).is_err() {
-                break;
-            }
-            pv.push(m);
+            pv.push(entry.best_move);
             if self.board.winner().is_some() {
                 break;
             }
@@ -906,6 +908,13 @@ impl Engine {
     /// own clearing methods are available on the public fields).
     pub fn reset(&mut self) {
         self.board.reset();
+    }
+
+    /// Wipe the transposition table. Ordering history is intentionally
+    /// preserved — TT scales with positions seen, history is per-game
+    /// move-quality memory and outlives a single search.
+    pub fn clear_tt(&mut self) {
+        self.tt.clear();
     }
 }
 
