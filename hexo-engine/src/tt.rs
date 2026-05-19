@@ -3,12 +3,21 @@
 //! Indexed by low N bits of position hash. Each index slot holds a
 //! depth-preferred bucket and an always-replace bucket. On probe, the
 //! full `u128` is compared so index collisions cannot cross-contaminate.
+//!
+//! Optional probe/hit/store/collision counters live behind the Cargo
+//! feature `tt_stats`. When the feature is off there are no extra
+//! fields and no extra code paths — the `TTStatsSnapshot` returned by
+//! [`TranspositionTable::stats`] still has those columns, but they
+//! read as zero so callers can branch on `probes == 0`.
 
 // `hash as u64 as usize` deliberately truncates a 128-bit Zobrist key to
 // the index domain. The full hash is still stored in each `TTEntry` so
 // collisions are caught on probe. The `cast_possible_truncation` lint
 // flags this pair of casts despite the truncation being load-bearing.
 #![allow(clippy::cast_possible_truncation)]
+
+#[cfg(feature = "tt_stats")]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::coords::{Coord, ORIGIN};
 
@@ -74,16 +83,48 @@ impl TTEntry {
     }
 }
 
-/// Lightweight occupancy/diagnostic snapshot. Computed on demand by
-/// [`TranspositionTable::stats`] — not maintained incrementally.
+/// Lightweight occupancy/diagnostic snapshot returned by
+/// [`TranspositionTable::stats`]. Occupancy is recounted on demand;
+/// the probe/hit/store/collision columns are populated incrementally
+/// only when the Cargo feature `tt_stats` is enabled. With the
+/// feature off they read as zero, so callers can branch on
+/// `probes == 0` to detect "no stats available".
 #[derive(Default, Clone, Copy, Debug)]
-pub struct TTStats {
+pub struct TTStatsSnapshot {
     /// Power-of-two bucket count (each bucket holds two entries).
     pub n_slots: usize,
     /// Number of buckets with at least one non-empty entry.
     pub occupied: usize,
     /// Current generation tag.
     pub generation: u8,
+    /// Total `probe()` calls since last `clear` / `new_generation`.
+    pub probes: u64,
+    /// Subset of `probes` that hit a matching entry.
+    pub hits: u64,
+    /// Total `store()` calls since last `clear` / `new_generation`.
+    pub stores: u64,
+    /// Probes that missed but landed on a non-empty bucket (hash
+    /// collision in the low bits without a full-hash match).
+    pub collisions: u64,
+}
+
+#[cfg(feature = "tt_stats")]
+#[derive(Default)]
+struct TTStatsCounters {
+    probes: AtomicU64,
+    hits: AtomicU64,
+    stores: AtomicU64,
+    collisions: AtomicU64,
+}
+
+#[cfg(feature = "tt_stats")]
+impl TTStatsCounters {
+    fn reset(&self) {
+        self.probes.store(0, Ordering::Relaxed);
+        self.hits.store(0, Ordering::Relaxed);
+        self.stores.store(0, Ordering::Relaxed);
+        self.collisions.store(0, Ordering::Relaxed);
+    }
 }
 
 /// Two-bucket transposition table.
@@ -99,6 +140,8 @@ pub struct TranspositionTable {
     buckets: Box<[(TTEntry, TTEntry)]>,
     mask: usize,
     generation: u8,
+    #[cfg(feature = "tt_stats")]
+    stats: TTStatsCounters,
 }
 
 impl TranspositionTable {
@@ -119,24 +162,40 @@ impl TranspositionTable {
             buckets,
             mask,
             generation: 0,
+            #[cfg(feature = "tt_stats")]
+            stats: TTStatsCounters::default(),
         }
     }
 
     /// Probe `hash`. Returns the depth-preferred entry when both buckets
     /// match (the deeper or older-but-protected result wins); otherwise the
     /// matching always-replace entry; otherwise `None`.
+    ///
+    /// When built with the `tt_stats` feature, every call bumps
+    /// `probes`; a successful match bumps `hits`; a miss against a
+    /// non-empty bucket bumps `collisions`.
     #[inline]
     #[must_use]
     pub fn probe(&self, hash: u128) -> Option<&TTEntry> {
         let idx = (hash as u64 as usize) & self.mask;
         let (a, b) = &self.buckets[idx];
-        if !a.is_empty() && a.hash == hash {
-            return Some(a);
+        let hit = if !a.is_empty() && a.hash == hash {
+            Some(a)
+        } else if !b.is_empty() && b.hash == hash {
+            Some(b)
+        } else {
+            None
+        };
+        #[cfg(feature = "tt_stats")]
+        {
+            self.stats.probes.fetch_add(1, Ordering::Relaxed);
+            if hit.is_some() {
+                self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            } else if !a.is_empty() || !b.is_empty() {
+                self.stats.collisions.fetch_add(1, Ordering::Relaxed);
+            }
         }
-        if !b.is_empty() && b.hash == hash {
-            return Some(b);
-        }
-        None
+        hit
     }
 
     /// Store an entry. Two-bucket replacement policy:
@@ -168,39 +227,62 @@ impl TranspositionTable {
         } else {
             *b = new;
         }
+        #[cfg(feature = "tt_stats")]
+        self.stats.stores.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Bump the generation tag. Subsequent `store` calls treat entries
     /// from any earlier generation as eligible for depth-preferred
-    /// replacement.
+    /// replacement. Under `tt_stats`, also resets probe/hit/store/
+    /// collision counters so each search reports its own activity.
     #[inline]
     pub fn new_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
+        #[cfg(feature = "tt_stats")]
+        self.stats.reset();
     }
 
-    /// Wipe every slot and reset the generation tag.
+    /// Wipe every slot and reset the generation tag. Under `tt_stats`,
+    /// also resets probe/hit/store/collision counters.
     #[cold]
     pub fn clear(&mut self) {
         for slot in &mut self.buckets {
             *slot = (TTEntry::EMPTY, TTEntry::EMPTY);
         }
         self.generation = 0;
+        #[cfg(feature = "tt_stats")]
+        self.stats.reset();
     }
 
     /// Occupancy snapshot. Iterates the bucket array — acceptable outside
-    /// hot paths but should not be called inside the search loop.
+    /// hot paths but should not be called inside the search loop. Under
+    /// the `tt_stats` feature, the probe/hit/store/collision columns
+    /// are populated; otherwise they read as zero.
     #[must_use]
-    pub fn stats(&self) -> TTStats {
+    pub fn stats(&self) -> TTStatsSnapshot {
         let mut occupied = 0usize;
         for (a, b) in &*self.buckets {
             if !a.is_empty() || !b.is_empty() {
                 occupied += 1;
             }
         }
-        TTStats {
+        #[cfg(feature = "tt_stats")]
+        let (probes, hits, stores, collisions) = (
+            self.stats.probes.load(Ordering::Relaxed),
+            self.stats.hits.load(Ordering::Relaxed),
+            self.stats.stores.load(Ordering::Relaxed),
+            self.stats.collisions.load(Ordering::Relaxed),
+        );
+        #[cfg(not(feature = "tt_stats"))]
+        let (probes, hits, stores, collisions) = (0u64, 0u64, 0u64, 0u64);
+        TTStatsSnapshot {
             n_slots: self.buckets.len(),
             occupied,
             generation: self.generation,
+            probes,
+            hits,
+            stores,
+            collisions,
         }
     }
 

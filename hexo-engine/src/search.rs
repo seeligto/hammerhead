@@ -916,6 +916,15 @@ impl Engine {
     pub fn clear_tt(&mut self) {
         self.tt.clear();
     }
+
+    /// Diagnostic snapshot of the TT (occupancy + probe/hit/store/
+    /// collision counters). Counter fields are populated only when the
+    /// engine is built with Cargo feature `tt_stats`; otherwise they
+    /// read as zero. See [`crate::tt::TTStatsSnapshot`].
+    #[must_use]
+    pub fn tt_stats(&self) -> crate::tt::TTStatsSnapshot {
+        self.tt.stats()
+    }
 }
 
 /// Per-stone time slice. `halfmove == 0` keeps `stone1_time_pct` of the

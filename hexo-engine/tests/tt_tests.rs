@@ -176,3 +176,62 @@ fn stats_track_bucket_occupancy() {
         "occupied count must match distinct-bucket count"
     );
 }
+
+/// 11) Snapshot columns for the optional `tt_stats` feature must
+///     always be present in the struct. Without the feature they read
+///     as zero; with it they reflect actual activity AND get cleared
+///     on both `new_generation` and `clear`.
+#[test]
+fn stats_counters_default_zero_and_reset() {
+    // Tiny TT so we can craft a same-bucket pair without playing
+    // games with `mask`: `new(0)` rounds down to a 1-slot table where
+    // every hash collides on the index.
+    let mut tt = TranspositionTable::new(0);
+    assert_eq!(tt.slot_count(), 1);
+    let h: u128 = 0xAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111;
+    // `other` shares no low-bit relationship with `h`, but with mask=0
+    // both still index slot 0.
+    let other: u128 = 0x5555_4444_3333_2222_1111_0000_FFFF_EEEE;
+    assert_ne!(h, other);
+    tt.store(h, 1, 0, TTFlag::Exact, ORIGIN);
+    let _ = tt.probe(h);
+    let _ = tt.probe(other);
+
+    // Counters are present in the snapshot regardless of feature.
+    let s = tt.stats();
+    #[cfg(not(feature = "tt_stats"))]
+    {
+        assert_eq!(s.probes, 0);
+        assert_eq!(s.hits, 0);
+        assert_eq!(s.stores, 0);
+        assert_eq!(s.collisions, 0);
+    }
+    #[cfg(feature = "tt_stats")]
+    {
+        assert_eq!(s.stores, 1);
+        assert_eq!(s.probes, 2);
+        assert_eq!(s.hits, 1);
+        // Second probe lands on the same bucket (1-slot table) and
+        // finds it non-empty without a hash match → collision.
+        assert_eq!(s.collisions, 1);
+    }
+
+    tt.new_generation();
+    let s2 = tt.stats();
+    assert_eq!(s2.probes, 0);
+    assert_eq!(s2.hits, 0);
+    assert_eq!(s2.stores, 0);
+    assert_eq!(s2.collisions, 0);
+
+    // Re-arm a probe under the new generation, then `clear` and confirm
+    // counters reset again (along with the buckets).
+    let _ = tt.probe(h);
+    tt.clear();
+    let s3 = tt.stats();
+    assert_eq!(s3.probes, 0);
+    assert_eq!(s3.hits, 0);
+    assert_eq!(s3.stores, 0);
+    assert_eq!(s3.collisions, 0);
+    assert_eq!(s3.occupied, 0);
+    assert_eq!(s3.generation, 0);
+}

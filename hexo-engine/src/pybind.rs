@@ -5,6 +5,7 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::board::Player;
 use crate::coords::Coord;
@@ -131,6 +132,25 @@ impl PyEngine {
 
     fn clear_tt(&mut self) {
         self.inner.clear_tt();
+    }
+
+    /// TT diagnostics snapshot as a Python dict. Keys:
+    /// `n_slots`, `occupied`, `generation`, `probes`, `hits`,
+    /// `stores`, `collisions`. The four counter fields are populated
+    /// only when the engine was built with Cargo feature `tt_stats`;
+    /// otherwise they read as `0`. Callers can branch on
+    /// `dict["probes"] == 0` to detect "no stats available".
+    fn tt_stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let s = self.inner.tt_stats();
+        let d = PyDict::new(py);
+        d.set_item("n_slots", s.n_slots)?;
+        d.set_item("occupied", s.occupied)?;
+        d.set_item("generation", s.generation)?;
+        d.set_item("probes", s.probes)?;
+        d.set_item("hits", s.hits)?;
+        d.set_item("stores", s.stores)?;
+        d.set_item("collisions", s.collisions)?;
+        Ok(d)
     }
 }
 
