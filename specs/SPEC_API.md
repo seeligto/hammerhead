@@ -1,31 +1,31 @@
 # HeXO API Spec
 
-## PyO3 Surface
+Authoritative surface for the Rust `hexo_engine` PyO3 module, the Python
+`hexo.bot` wrapper, the `hexo` CLI subcommands, and the line-based
+subprocess protocol consumed by the Phase 10 promotion harness.
 
-Minimal. Only outward exposure. All game logic lives in Rust.
+## PyO3 module (`hexo_engine`)
 
 ```python
-from hexo_engine import Engine, Player
+from hexo_engine import Engine
 
-eng = Engine()
-eng.place((0, 0))                       # X first stone
-eng.place((0, 1))                       # O stone 1
-eng.place((1, 0))                       # O stone 2
-move = eng.best_move(time_ms=1000)      # (q, r)
-move = eng.best_move(depth=8)           # fixed depth
-score = eng.eval()                      # static eval, X-positive
-state = eng.state()                     # dict snapshot
+eng = Engine(tt_size_mb=64)
+eng.place((0, 0))                    # X first stone
+eng.place((1, 0))                    # O stone 1
+eng.place((-1, 0))                   # O stone 2
+move = eng.best_move(time_ms=1000)   # (q, r) — search splits the budget
+pv   = eng.find_pv(depth=4)          # best line walked off the TT
+score = eng.cached_eval()
 eng.undo()
 eng.reset()
-eng.load_bsn("base64string")
-bsn = eng.dump_bsn()
+eng.clear_tt()
 ```
 
-### Engine class
+### `Engine`
 
 ```python
 class Engine:
-    def __init__(self, tt_size_mb: int = 256) -> None: ...
+    def __init__(self, tt_size_mb: int = 64) -> None: ...
     def place(self, pos: tuple[int, int]) -> None: ...
     def undo(self) -> None: ...
     def best_move(
@@ -33,157 +33,123 @@ class Engine:
         time_ms: int | None = None,
         depth: int | None = None,
     ) -> tuple[int, int]: ...
-    def eval(self) -> int: ...
-    def state(self) -> dict: ...
-    def reset(self) -> None: ...
-    def load_bsn(self, s: str) -> None: ...
-    def dump_bsn(self) -> str: ...
-    def to_move(self) -> Player: ...
-    def is_legal(self, pos: tuple[int, int]) -> bool: ...
-    def winner(self) -> Player | None: ...
+    def find_pv(self, depth: int) -> list[tuple[int, int]]: ...
+    def cached_eval(self) -> int: ...
+    def to_move(self) -> int: ...      # 0 = X, 1 = O
+    def winner(self) -> int | None: ...
     def ply(self) -> int: ...
+    def halfmove(self) -> int: ...     # 0 = next stone starts a turn, 1 = same side's 2nd
+    def hash(self) -> int: ...         # 128-bit Zobrist
+    def reset(self) -> None: ...
+    def clear_tt(self) -> None: ...
 ```
 
-### Errors
+- `place` uses the side stored on the board. No player argument.
+- `best_move` must be called with at least one of `time_ms` or `depth`
+  set. Internally splits the per-turn budget by `time_stone1_pct`.
+- `find_pv(depth)` walks the TT from the current position, returning at
+  most `depth` legal moves. The walk is **best-effort**: it stops at the
+  first TT miss or illegal move, so the returned list may be shorter
+  than `depth`. The board is restored to its starting state before
+  return.
+- Errors raised: `ValueError` on illegal `place`, illegal `undo`, or
+  `best_move` called with neither budget set; `RuntimeError` reserved
+  for engine-internal panics surfaced to Python.
 
-- `IllegalMove`: cell occupied, too far, or game ended
-- `InvalidNotation`: BSN parse failure
-- `NoSearchBudget`: best_move called without time_ms or depth
+### Rust shim (`pybind.rs`)
 
-## Rust Side (`pybind.rs`)
-
-Thin wrapper. No logic.
+Thin wrapper. No game logic. Releases the GIL for every `best_move`
+call via `py.allow_threads`. Errors map to `PyValueError`.
 
 ```rust
-use pyo3::prelude::*;
-
-#[pyclass]
-pub struct Engine {
-    board: Board,
-    search: SearchConfig,
-    tt: TranspositionTable,
-}
-
-#[pymethods]
-impl Engine {
-    #[new]
-    #[pyo3(signature = (tt_size_mb = 256))]
-    fn new(tt_size_mb: usize) -> Self { ... }
-    
-    fn place(&mut self, pos: (i16, i16)) -> PyResult<()> { ... }
-    fn undo(&mut self) -> PyResult<()> { ... }
-    
-    #[pyo3(signature = (time_ms = None, depth = None))]
-    fn best_move(
-        &mut self,
-        time_ms: Option<u64>,
-        depth: Option<i8>,
-    ) -> PyResult<(i16, i16)> { ... }
-    
-    fn eval(&self) -> i32 { ... }
-    fn state<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> { ... }
-    fn reset(&mut self) { ... }
-    fn load_bsn(&mut self, s: &str) -> PyResult<()> { ... }
-    fn dump_bsn(&self) -> String { ... }
-    fn to_move(&self) -> u8 { ... }
-    fn is_legal(&self, pos: (i16, i16)) -> bool { ... }
-    fn winner(&self) -> Option<u8> { ... }
-    fn ply(&self) -> u32 { ... }
-}
-
-#[pymodule]
-fn hexo_engine(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Engine>()?;
-    Ok(())
+#[pyclass(name = "Engine")]
+pub struct PyEngine {
+    inner: crate::search::Engine,
 }
 ```
 
-GIL handling: long search releases GIL via `py.allow_threads(|| ...)`.
+## Python `Bot` (`hexo.bot`)
 
-## Python Wrapper (`hexo/bot.py`)
-
-High-level convenience over raw Engine.
+High-level convenience over one `Engine`.
 
 ```python
-from dataclasses import dataclass
-from hexo_engine import Engine
-
-@dataclass
+@dataclass(frozen=True, slots=True)
 class BotConfig:
-    time_per_move_ms: int = 1000
+    time_per_move_ms: int = CONFIG.bot.default_time_per_move_ms
     max_depth: int | None = None
-    tt_size_mb: int = 256
+    tt_size_mb: int = CONFIG.bot.default_tt_size_mb
 
 class Bot:
-    def __init__(self, cfg: BotConfig = BotConfig()):
-        self.engine = Engine(tt_size_mb=cfg.tt_size_mb)
-        self.cfg = cfg
-    
-    def play(self) -> tuple[int, int]:
-        return self.engine.best_move(
-            time_ms=self.cfg.time_per_move_ms,
-            depth=self.cfg.max_depth,
-        )
-    
+    def __init__(self, cfg: BotConfig = BotConfig()) -> None: ...
+    def reset(self) -> None: ...
+    def play_stone(self) -> tuple[int, int]:
+        """Search one stone, place it, return its coord."""
+    def play_turn(self) -> list[tuple[int, int]]:
+        """Play 1 or 2 stones (X's first turn = 1, else 2). Return placed."""
     def observe(self, move: tuple[int, int]) -> None:
-        self.engine.place(move)
-    
-    def reset(self) -> None:
-        self.engine.reset()
+        """Apply an externally-played stone to the local engine."""
+    def winner(self) -> int | None: ...
+    def halfmove(self) -> int: ...
+    def to_move(self) -> int: ...
 ```
 
-## Notation (`hexo/notation.py`)
+The "play 1 or 2" decision is driven by the engine's `halfmove`: after
+the first stone, if `halfmove == 1` the same side continues.
 
-Pure Python. Parse / dump game records.
+## Subprocess protocol (`hexo bot`)
 
-```python
-def parse_bsn(s: str) -> list[tuple[int, int]]: ...
-def dump_bsn(moves: list[tuple[int, int]]) -> str: ...
+One command per line, one line per response. Used by Phase 10's
+promotion harness. Coordinates are integers `q r`, space-separated.
 
-def parse_bke(s: str) -> list[tuple[int, int]]: ...
-def dump_bke(moves: list[tuple[int, int]]) -> str: ...
+| Command       | Response          | Notes                                |
+|---------------|-------------------|--------------------------------------|
+| `reset`       | `ok`              | Fresh game; TT retained.             |
+| `place Q R`   | `ok`              | Place at `(Q, R)` for side-to-move.  |
+| `best_move T` | `Q R`             | Search `T` ms. Engine splits budget. |
+| `winner`      | `X` / `O` / `none`|                                      |
+| `ply`         | `N`               | Stones placed so far.                |
+| `halfmove`    | `0` / `1`         |                                      |
+| `to_move`     | `X` / `O`         |                                      |
+| `eval`        | `SCORE`           | Cached static eval. X-positive.      |
+| `hash`        | `HEX`             | Lowercase, zero-padded to 32 chars.  |
+| `quit`        | `bye`             | Process exits afterwards.            |
 
-# HXN is binary, more complex
-def parse_hxn(data: bytes) -> "GameRecord": ...
-def dump_hxn(record: "GameRecord") -> bytes: ...
-```
+Errors are emitted as `error: <message>` on a single line. The session
+continues unless the offending command was `quit`. Unknown commands
+return `error: unknown command <CMD>`.
 
-## Benchmark Harness (`hexo/benchmark.py`)
+Startup: the process emits `hexo bot ready` to stdout once and flushes
+before reading the first command, so clients can synchronize on it.
 
-```python
-def match(bot_a: Bot, bot_b: Bot, max_plies: int = 200) -> MatchResult: ...
-def tournament(bots: list[Bot], rounds: int) -> Standings: ...
-def vs_sealbot(bot: Bot, num_games: int) -> WinRate: ...
-def perft(engine: Engine, depth: int) -> int: ...   # move-gen sanity
-```
-
-## CLI (`hexo/cli.py`)
+## CLI (`hexo`)
 
 ```bash
-hexo play              # interactive REPL vs bot
-hexo selfplay -n 100   # bot vs bot
-hexo bench             # NPS benchmark
-hexo analyze <bsn>     # show eval + best line
+hexo play                   # human vs bot REPL
+hexo selfplay -n N          # bot vs bot, log winners
+hexo bench [--time-ms T]    # NPS smoke
+hexo analyze <bsn>          # placeholder (notation parsing is Phase 11+)
+hexo bot [--tt-size-mb MB]  # subprocess protocol (above)
 ```
 
 ## Build
 
 ```
-pip install maturin
-cd hexo-engine
-maturin develop --release
-pip install -e ../hexo
+make build    # maturin develop --release + pip install -e ../hexo
+make test     # cargo test --release + pytest
+make check    # lint + test
 ```
 
-## Integration Path (future)
+## Integration path (future)
 
-- WebSocket client for hexo.did.science live play
-- SealBot match harness (HTTP or socket)
+- WebSocket client for live play on hexo.did.science
+- SealBot harness (HTTP or socket)
 - Self-play data export for ML tuning
-- Web UI via simple Flask/FastAPI wrapper
+- Web UI (Flask / FastAPI shim)
 
 ## Versioning
 
-Engine version in `Cargo.toml`. Expose via `hexo_engine.__version__`.
+Engine version in `hexo-engine/Cargo.toml`. Re-exported as
+`hexo_engine.__version__`.
 
-BSN/HXN: tag with format version on dump. Reject unknown versions on parse.
+BSN / HXN / BKE parsers (`hexo.notation`) are deferred to a later
+phase. Until they land, `hexo analyze` is a stub.

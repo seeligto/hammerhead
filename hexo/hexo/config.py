@@ -120,6 +120,14 @@ class BoardConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BotConfigDefaults:
+    """Defaults consumed by ``hexo.bot.BotConfig`` (Python side only)."""
+
+    default_time_per_move_ms: int
+    default_tt_size_mb: int
+
+
+@dataclass(frozen=True, slots=True)
 class HexoConfig:
     eval: EvalConfig
     threats: ThreatsConfig
@@ -127,6 +135,7 @@ class HexoConfig:
     search: SearchConfigDefaults
     ordering: OrderingConfig
     board: BoardConfig
+    bot: BotConfigDefaults
     source_path: Path
 
 
@@ -144,6 +153,7 @@ def load() -> HexoConfig:
     s = engine["search"]
     o = engine["ordering"]
     b = engine["board"]
+    bot = raw["bot"]
 
     return HexoConfig(
         eval=EvalConfig(
@@ -206,6 +216,10 @@ def load() -> HexoConfig:
         board=BoardConfig(
             max_piece_distance=b["max_piece_distance"],
             zobrist_window=b["zobrist_window"],
+        ),
+        bot=BotConfigDefaults(
+            default_time_per_move_ms=bot["default_time_per_move_ms"],
+            default_tt_size_mb=bot["default_tt_size_mb"],
         ),
         source_path=path,
     )
