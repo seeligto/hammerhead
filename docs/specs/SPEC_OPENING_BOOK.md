@@ -81,7 +81,7 @@ position:
 ## 5 — Binary record layout (revised)
 
 ```
-struct format: '<Qhhhh H H I h'   little-endian, no padding (24 bytes)
+struct format: '<Qhhhh H H I h'   little-endian, no padding (26 bytes)
 fields:
   hash         u64    canonical position hash (turn-start)
   s1q, s1r     i16,i16  first stone of pair (canonical lex-min)
