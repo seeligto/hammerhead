@@ -154,6 +154,7 @@ fn layer1_window_scan(board: &Board) -> i32 {
 
 /// Sum the 6-cell window scores for a single `(axis, line_id)` line.
 /// Walks the populated range `[min_pos - 5, max_pos]` exactly once.
+#[inline]
 fn scan_line(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
     let xl = bitmaps.line(axis, Player::X, line_id);
     let ol = bitmaps.line(axis, Player::O, line_id);
@@ -291,6 +292,7 @@ fn layer2_shapes(c: &ThreatCounts) -> i32 {
 /// - `i32::MAX` — cover ≥ 3 (defender's two stones cannot stop every
 ///   threat → forced mate). Caller is responsible for converting this
 ///   sentinel into a mate-distance score.
+#[inline]
 fn layer3_fork_bonus(threats: &ThreatSet) -> i32 {
     let insts = &threats.s0_instances;
     if insts.len() < 2 {
@@ -307,6 +309,7 @@ fn layer3_fork_bonus(threats: &ThreatSet) -> i32 {
 /// `1`, `2`, or `3` — `3` is the saturated answer meaning "≥ 3" and
 /// implies forced mate. Empty / single-instance inputs are filtered by
 /// the caller; calling with `< 2` instances returns `1`.
+#[cold]
 fn min_vertex_cover_size(insts: &[ThreatInstance]) -> u8 {
     if insts.len() < 2 {
         return 1;

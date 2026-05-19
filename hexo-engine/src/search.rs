@@ -662,6 +662,8 @@ fn is_lmr_excluded(bucket: u8) -> bool {
 
 /// Mate score with mate-distance accounting. `ply` is the search ply at
 /// which the terminal position was observed; closer mates score higher.
+/// Cold: terminal positions are rare in the inner search loop.
+#[cold]
 #[inline]
 fn terminal_score(winner: Player, ply: u8) -> i32 {
     let mag = MATE_SCORE - i32::from(ply);
@@ -755,9 +757,15 @@ fn bump_and_check_deadline(
     *node_count = node_count.wrapping_add(1);
     let step = u64::from(cfg.deadline_check_nodes.max(1));
     if *node_count % step == 0 && deadline_reached(deadline) {
-        return Err(SearchError::Timeout);
+        return cold_timeout();
     }
     Ok(())
+}
+
+#[cold]
+#[inline(never)]
+fn cold_timeout() -> Result<(), SearchError> {
+    Err(SearchError::Timeout)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
