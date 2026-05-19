@@ -15,16 +15,17 @@ name = "hexo_engine_core"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# Default: no extra instrumentation. Production cdylib must build with
-# defaults so the PyO3 wrapper stays zero-cost. Enable `tt_stats` in
-# dev / regression builds to surface TT probe/hit/store/collision
-# counters (see specs/SPEC_BENCHMARKS.md § TT statistics).
+# `simd_eval` ships in `default` after the Phase 14 STEP 8 byte-
+# identical certification (`eval::tests::ternary_table_identity_729`
+# matches scalar across every legal 6-cell window) plus the
+# reference node-count regression net. The dispatcher does runtime
+# AVX2 detection and falls back to scalar transparently when the
+# host lacks AVX2, so non-x86 / older-x86 targets are unaffected.
 #
-# `mimalloc` swaps the global allocator. Off by default — Phase 14
-# STEP 3 measured the delta. `simd_eval` gates the AVX2
-# encode_ternary lane; off by default until the 729-table identity
-# test certifies correctness on the build host.
-default   = []
+# `tt_stats` and `mimalloc` stay opt-in: stats are a dev affordance
+# (zero-cost when off), and mimalloc was within noise on this host
+# (Phase 14 STEP 3.2). See specs/SPEC_BENCHMARKS.md.
+default   = ["simd_eval"]
 tt_stats  = []
 mimalloc  = ["dep:mimalloc"]
 simd_eval = []

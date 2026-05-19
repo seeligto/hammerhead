@@ -177,11 +177,12 @@ fn scan_line(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
 
     let start = min_pos - 5;
     let total_count = (max_pos - start + 1).max(0) as usize;
-    // Chunked stack buffers keep the windows6_run output close to the
-    // encode + score lookup loop. 64 windows × 2 players × 1 byte
-    // fits in a single L1 line pair.
+    // Chunked stack buffers keep the windows6_run output + ternary
+    // index buffer close to the score-lookup loop. 64 windows fits
+    // two AVX2 register batches and stays comfortably inside L1.
     let mut x_buf = [0u8; 64];
     let mut o_buf = [0u8; 64];
+    let mut idx_buf = [0u16; 64];
     let mut total: i32 = 0;
     let mut emitted = 0usize;
     while emitted < total_count {
@@ -197,9 +198,9 @@ fn scan_line(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
         } else {
             o_buf[..chunk].fill(0);
         }
+        encode_ternary_batch(&x_buf[..chunk], &o_buf[..chunk], &mut idx_buf[..chunk]);
         for k in 0..chunk {
-            let idx = encode_ternary(x_buf[k], o_buf[k]);
-            let base = WINDOW_SCORE[idx as usize];
+            let base = WINDOW_SCORE[idx_buf[k] as usize];
             if base != 0 {
                 let factor =
                     extension_factor(bitmaps, axis, line_id, chunk_start + k as i16, base);
@@ -230,6 +231,106 @@ fn encode_ternary(x_bits: u8, o_bits: u8) -> u16 {
         idx += cell * pow;
     }
     idx
+}
+
+/// Batch encode `count` (`x_bits`, `o_bits`) pairs into ternary indices.
+/// `x_bits` and `o_bits` are 6-bit windows pulled from the per-player
+/// `LineBitmap`, so on every valid Layer-1 input the two arguments are
+/// disjoint (every cell has at most one stone). The dispatcher routes
+/// to the AVX2 implementation when the `simd_eval` feature is enabled
+/// and the host CPU advertises AVX2; otherwise it falls back to the
+/// scalar reference path.
+#[inline]
+fn encode_ternary_batch(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    debug_assert_eq!(x_bits.len(), o_bits.len());
+    debug_assert_eq!(x_bits.len(), out.len());
+    #[cfg(all(target_arch = "x86_64", feature = "simd_eval"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 verified at runtime above.
+            unsafe { encode_ternary_batch_avx2(x_bits, o_bits, out) };
+            return;
+        }
+    }
+    encode_ternary_batch_scalar(x_bits, o_bits, out);
+}
+
+#[inline]
+fn encode_ternary_batch_scalar(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    for ((x, o), slot) in x_bits.iter().zip(o_bits.iter()).zip(out.iter_mut()) {
+        *slot = encode_ternary(*x, *o);
+    }
+}
+
+/// AVX2 implementation: encodes 16 windows per loop body using
+/// `_mm256_*_epi16` (a single 256-bit register holds 16 u16 lanes).
+/// The tail is folded back into the scalar reference path.
+///
+/// Correctness gate: the 729-table identity test in `tests/eval_simd.rs`
+/// exercises every legal `(x_bits, o_bits)` pair (`x & o == 0`,
+/// i.e. each cell has at most one stone — the precondition the eval
+/// hot path guarantees) and asserts byte-identical output against the
+/// scalar encode.
+// `_mm_loadu_si128` / `_mm256_storeu_si256` are unaligned-safe;
+// the AVX2 lane shifts and multiplies are all in-register. Pedantic
+// clippy can't track the AVX2-target_feature contract, so silence the
+// pointer-alignment / ptr-as-ptr lints locally.
+// `_mm_loadu_si128` / `_mm256_storeu_si256` are unaligned-safe;
+// the AVX2 lane shifts and multiplies are all in-register. Pedantic
+// clippy can't track the AVX2-target_feature contract, so silence the
+// pointer-alignment / ptr-as-ptr lints locally.
+#[cfg(all(target_arch = "x86_64", feature = "simd_eval"))]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::cast_ptr_alignment, clippy::ptr_as_ptr)]
+unsafe fn encode_ternary_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    use std::arch::x86_64::{
+        __m128i, __m256i, _mm_loadu_si128, _mm256_add_epi16, _mm256_and_si256,
+        _mm256_cvtepu8_epi16, _mm256_mullo_epi16, _mm256_or_si256, _mm256_set1_epi16,
+        _mm256_setzero_si256, _mm256_slli_epi16, _mm256_srli_epi16, _mm256_storeu_si256,
+    };
+
+    // SAFETY for the whole function body:
+    // - AVX2 is enabled by `target_feature(enable = "avx2")` so every
+    //   `_mm256_*` / `_mm_*` intrinsic is legal.
+    // - `*_loadu_*` / `*_storeu_*` are documented as alignment-safe.
+    // - `ptr::add` stays within `x_bits` / `o_bits` / `out` because the
+    //   surrounding `while` keeps `i + 16 <= n` and `n` is each slice's
+    //   length (debug_assert checks the equal-length invariant in the
+    //   dispatcher).
+    unsafe {
+        macro_rules! step {
+            ($x:ident, $o:ident, $acc:ident, $one:ident, $shift:literal, $pow:literal) => {{
+                let xi = _mm256_and_si256(_mm256_srli_epi16::<$shift>($x), $one);
+                let oi = _mm256_and_si256(_mm256_srli_epi16::<$shift>($o), $one);
+                let cell = _mm256_or_si256(xi, _mm256_slli_epi16::<1>(oi));
+                let pow_vec = _mm256_set1_epi16($pow);
+                let term = _mm256_mullo_epi16(cell, pow_vec);
+                $acc = _mm256_add_epi16($acc, term);
+            }};
+        }
+
+        let n = x_bits.len();
+        let mut i = 0;
+        while i + 16 <= n {
+            let x_u8 = _mm_loadu_si128(x_bits.as_ptr().add(i).cast::<__m128i>());
+            let o_u8 = _mm_loadu_si128(o_bits.as_ptr().add(i).cast::<__m128i>());
+            let x = _mm256_cvtepu8_epi16(x_u8);
+            let o = _mm256_cvtepu8_epi16(o_u8);
+            let one = _mm256_set1_epi16(1);
+            let mut acc = _mm256_setzero_si256();
+            step!(x, o, acc, one, 0, 1);
+            step!(x, o, acc, one, 1, 3);
+            step!(x, o, acc, one, 2, 9);
+            step!(x, o, acc, one, 3, 27);
+            step!(x, o, acc, one, 4, 81);
+            step!(x, o, acc, one, 5, 243);
+            _mm256_storeu_si256(out.as_mut_ptr().add(i).cast::<__m256i>(), acc);
+            i += 16;
+        }
+        if i < n {
+            encode_ternary_batch_scalar(&x_bits[i..], &o_bits[i..], &mut out[i..]);
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -410,4 +511,58 @@ fn pair_covers_all(insts: &[ThreatInstance], a: Coord, b: Coord) -> bool {
 #[inline]
 fn tempo_score(tx: &ThreatSet, to: &ThreatSet) -> i32 {
     TEMPO_WEIGHT * (i32::from(tx.counts.open_3) - i32::from(to.counts.open_3))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{encode_ternary, encode_ternary_batch, encode_ternary_batch_scalar};
+
+    /// Decode a ternary index `0..=728` into the matching `(x_bits,
+    /// o_bits)` pair. `x_bits` has a 1-bit per X cell; `o_bits` per O
+    /// cell. Empty cells contribute neither. The (x, o) bits are
+    /// always disjoint by construction.
+    fn decode_ternary(mut idx: u16) -> (u8, u8) {
+        let mut x_bits = 0u8;
+        let mut o_bits = 0u8;
+        for i in 0..6 {
+            let cell = idx % 3;
+            idx /= 3;
+            match cell {
+                1 => x_bits |= 1 << i,
+                2 => o_bits |= 1 << i,
+                _ => {}
+            }
+        }
+        (x_bits, o_bits)
+    }
+
+    /// Every legal 6-cell window encodes to the same ternary index via
+    /// `encode_ternary` (scalar reference) and `encode_ternary_batch`
+    /// (dispatch — runs scalar or AVX2 depending on `simd_eval`).
+    #[test]
+    fn ternary_table_identity_729() {
+        let mut x_in = [0u8; 729];
+        let mut o_in = [0u8; 729];
+        let mut expected = [0u16; 729];
+        for idx in 0..729u16 {
+            let (x, o) = decode_ternary(idx);
+            x_in[idx as usize] = x;
+            o_in[idx as usize] = o;
+            let scalar = encode_ternary(x, o);
+            assert_eq!(scalar, idx, "scalar round-trip broke at {idx}");
+            expected[idx as usize] = scalar;
+        }
+        // Batch dispatch matches scalar over the full table.
+        let mut got = [0u16; 729];
+        encode_ternary_batch(&x_in, &o_in, &mut got);
+        assert_eq!(got, expected, "encode_ternary_batch diverges from scalar");
+
+        // Scalar batch wrapper also matches.
+        let mut got_scalar = [0u16; 729];
+        encode_ternary_batch_scalar(&x_in, &o_in, &mut got_scalar);
+        assert_eq!(
+            got_scalar, expected,
+            "encode_ternary_batch_scalar diverges from scalar"
+        );
+    }
 }
