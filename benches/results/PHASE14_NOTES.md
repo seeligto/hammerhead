@@ -18,6 +18,7 @@ measurements unless noted. Host: AMD Ryzen 7 8845HS, rustc 1.94.0.
 | step 6 | LineBitmap align + windows6_run (3 runs avg) | 325,133 (+12.1%) | 196,156 (+21.9%) | batched 6-bit window extract from u64 words; #[repr(align(64))] keeps lines off cache-line straddles |
 | step 7 | incremental threats — **deferred to Phase 15** | — | — | full delta requires per-anchor tracking + a prior-snapshot lifecycle on Board (paired place / undo deltas) that didn't fit the phase budget; oracle test would have caught any partial impl, so reverted before any code shipped. `threats::compute_with_scratch` still accepts the `center` / `prior` hints — they just stay unused, matching today's behaviour. |
 | step 8 | SIMD encode_ternary (default `simd_eval`, 3 runs avg) | 343,297 (+5.6%) | 208,103 (+6.1%) | AVX2 16-window batch + scalar fallback; 729-table identity test certifies byte-equality with scalar; default-on after correctness gate |
+| step 9 | PGO build (one training run, 3-fixture × depth-6, 3 runs avg) | 334,641 (−2.5%) | 202,105 (−2.9%) | within noise; reverted to non-PGO build for the final baseline. `scripts/pgo_build.sh` + `scripts/pgo_training.py` ship for future runs (richer training workload should help); `rustup component add llvm-tools-preview` is the prerequisite |
 
 ## Reference table — Phase 14 truly fixed-depth counts (post step 1.5)
 
