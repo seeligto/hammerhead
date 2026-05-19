@@ -19,6 +19,38 @@ measurements unless noted. Host: AMD Ryzen 7 8845HS, rustc 1.94.0.
 | step 7 | incremental threats — **deferred to Phase 15** | — | — | full delta requires per-anchor tracking + a prior-snapshot lifecycle on Board (paired place / undo deltas) that didn't fit the phase budget; oracle test would have caught any partial impl, so reverted before any code shipped. `threats::compute_with_scratch` still accepts the `center` / `prior` hints — they just stay unused, matching today's behaviour. |
 | step 8 | SIMD encode_ternary (default `simd_eval`, 3 runs avg) | 343,297 (+5.6%) | 208,103 (+6.1%) | AVX2 16-window batch + scalar fallback; 729-table identity test certifies byte-equality with scalar; default-on after correctness gate |
 | step 9 | PGO build (one training run, 3-fixture × depth-6, 3 runs avg) | 334,641 (−2.5%) | 202,105 (−2.9%) | within noise; reverted to non-PGO build for the final baseline. `scripts/pgo_build.sh` + `scripts/pgo_training.py` ship for future runs (richer training workload should help); `rustup component add llvm-tools-preview` is the prerequisite |
+| step 10 | bench harness — hoist fixture history out of inner loop | — | — | criterion `search::search_root(depth=6)/midgame_12` micro improves 3-3.8%; macro NPS unaffected (production path doesn't use the bench harness). `strip = "none"` on `[profile.bench]` restored symbol names on the flamegraph. |
+| step 11 | Phase 14 baseline (1 cold-cache run, tt_stats build) | **337,077 (+42.0%)** | **209,285 (+63.1%)** | midgame_30 depth-at-1s = 7 (was 6); `cached_eval_cold` midgame_12 4.08 µs (−53%); `threats::compute_full` midgame_30 2.68 µs (−23%); TT hit rate midgame_12 d=6 16.7% (was 15.6%) |
+
+## Cumulative cumulative deltas
+
+Phase 13 → Phase 14, headline:
+
+- midgame_12 NPS: 237,449 → 337,077 — **+42.0 %**
+- midgame_30 NPS: 128,308 → 209,285 — **+63.1 %**
+- midgame_12 depth @ 1 s: 5 → 5 (no change; STEP 7's incremental
+  threats was the depth-cliff lever, deferred to Phase 15)
+- midgame_30 depth @ 1 s: 6 → **7**
+- ms-time scaling midgame_12 @ 50 ms: **depth 3** (new metric)
+- ms-time scaling midgame_30 @ 500 ms: **depth 6** (new metric)
+
+vs Phase 14 prompt targets:
+
+| Target | Phase 14 result | Met? |
+|---|---|---|
+| midgame_12 NPS ≥ 350k | 337k | ✗ marginal (−3.7%) |
+| midgame_30 NPS ≥ 200k | 209k | ✓ +4.6% over target |
+| midgame_12 depth @ 1 s ≥ 7 | 5 | ✗ |
+| midgame_30 depth @ 1 s ≥ 7 | 7 | ✓ |
+| midgame_12 @ 50 ms ≥ depth 3 | depth 3 | ✓ |
+| midgame_30 @ 500 ms ≥ depth 5 | depth 6 | ✓ exceeded |
+
+Four of six targets met; the two misses both tie back to the
+deferred STEP 7 incremental threats. The depth-cliff at midgame_12
+isn't a per-node NPS problem — it's that midgame_12 starts at d=5
+and the depth-6 search ~doubles the tree. STEP 7's per-node speedup
+(avoiding `walk_cross_axis` repeats) would have unlocked it; that's
+the Phase 15 entry point.
 
 ## Reference table — Phase 14 truly fixed-depth counts (post step 1.5)
 
