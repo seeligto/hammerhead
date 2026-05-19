@@ -105,6 +105,14 @@ search by hash returns the heaviest pair first.
 `Records.sort` key is exactly the same shape as in the deprecated layout
 plus the two extra `(s2q, s2r)` fields appended.
 
+**Production vs. analysis artefacts.** `data/analysis/opening_book.bin`
+is the *pruned* production artefact: records with `n_games < 2` are
+dropped at write time (default; toggle with `--no-prune-singletons` on
+the build CLI). The full enumeration — including every singleton — is
+kept in `data/analysis/opening_tree.json` so offline analysis can still
+walk the long tail. The pruned book is what the Rust probe binary-
+searches; the full tree is for tooling only.
+
 ## 6 — Weighting
 
 Per (position, pair):
