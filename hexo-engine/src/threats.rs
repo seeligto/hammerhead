@@ -85,16 +85,6 @@ pub struct ThreatInstance {
     /// Cells whose occupation by the opponent denies completion. Size 1 for
     /// closed shapes, size 2 for open shapes.
     pub defense_cells: SmallVec<[Coord; 4]>,
-    /// Phase 15: deterministic anchor cell for dirty-radius membership
-    /// checks. `pieces[pieces.len() / 2]` — median by insertion order.
-    /// Two instances with the same `kind` / `pieces` / `defense_cells`
-    /// always have the same `anchor` (the pieces order is canonical
-    /// per [`walk_linear_runs`]).
-    ///
-    /// Anchor is **illustrative metadata, not part of identity**. The
-    /// oracle test (`tests/threats_oracle.rs`) compares instances via
-    /// the `threat_set_equiv` helper, which ignores `anchor`.
-    pub anchor: Coord,
 }
 
 /// Phase 15: per-anchor cross-axis contribution. Records how many shapes
@@ -470,12 +460,10 @@ fn push_s0(
         return;
     }
     bump(&mut out.counts);
-    let anchor = pieces[pieces.len() / 2];
     out.s0_instances.push(ThreatInstance {
         kind,
         pieces,
         defense_cells,
-        anchor,
     });
 }
 

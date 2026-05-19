@@ -116,32 +116,39 @@ Algorithm:
 
 1. On `place(c, p)` and `undo(c, p)`, mark `threats_dirty = true` and
    push `c` into `threats_dirty_centers` (Phase 15 — was a single
-   `Option<Coord>` pre-Phase-15). The push is bounded:
-   `MAX_INCREMENTAL_CENTERS` (default 4); further pushes silently drop
-   (the next reconcile falls back to full recompute).
-2. On `threats(player)` read: if dirty, reconcile against
-   `threats_dirty_centers`.
-   - If `dirty_centers.len() > MAX_INCREMENTAL_CENTERS` (the overflow
-     marker) OR `prior` is `None` OR `dirty_centers.is_empty()`: full
-     recompute.
-   - Else: for each `(axis, line)` whose any cell is within radius
-     `THREAT_RECOMPUTE_RADIUS` of any dirty center, drop matching
-     instances from `prior` (anchor-keyed), rescan that line slice,
-     merge. For cross-axis shapes: rescan all `THREAT_CLUSTER_RADIUS`-2
-     neighbourhoods touching any dirty center.
-   - Clear `dirty_centers` after reconciliation; cache the result; set
-     `threats_dirty = false`.
-3. Linear shapes (open_5, closed_5, open_4, closed_4, open_3, closed_3,
-   open_2): per piece of `player` within the dirty radius, walk each of
-   the 3 axes ±5 cells via `axis_bitmap`. Classify maximal own-run
+   `Option<Coord>` pre-Phase-15). The push is bounded by
+   `MAX_INCREMENTAL_CENTERS` (default 4); further pushes set
+   `threats_dirty_overflow` and the next reconcile falls back to full
+   recompute.
+2. On `threats(player)` read: if dirty, reconcile.
+   - **Full path** (`centers.is_empty()` from the overflow fallback,
+     OR `prior` is `None` from the initial read, OR the scratch
+     breakdown for this player is empty): re-walk every piece's
+     linear runs AND every piece's cross-axis pattern matches.
+     Repopulates `scratch.cross_axis_<player>` for the next call.
+   - **Incremental path** (otherwise): re-walk every piece's linear
+     runs (so `s0_instances` iteration order is preserved
+     bit-for-bit vs `full_recompute`; this is load-bearing for
+     `search.rs` `collect_stone1_defense`). Cross-axis pattern
+     matching runs only for anchors within
+     `THREAT_CLUSTER_RADIUS` (default 2) of any dirty center;
+     other anchors inherit their contribution from the scratch
+     breakdown via a linear scan.
+   - Clear `dirty_centers` and `dirty_overflow` after reconciliation;
+     set `threats_dirty = false`.
+3. Linear shapes (open_5, closed_5, open_4, closed_4, open_3,
+   closed_3, open_2): per piece of `player`, walk each of the 3
+   axes ±5 cells via `axis_bitmap`. Classify maximal own-run
    endpoints as open / closed / dead. Match against shape table.
-4. Cross-axis shapes (rhombus, triangle, arch, bone, trapezoid): cluster
-   scan within `THREAT_CLUSTER_RADIUS` (default 2) of the dirty center.
-   Use small pattern matcher (see threats.rs::shape::cross_axis).
-5. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord; 4]>`
-   such that placing any one of these denies completion next stone.
-   Also compute `anchor: Coord` from `pieces` (Phase 15 — see
-   `SPEC_ENGINE.md § ThreatInstance` for the anchor rule).
+   (Same in full and incremental paths.)
+4. Cross-axis shapes (rhombus, triangle, arch, bone, trapezoid):
+   per piece (anchor), pattern-match against the static template
+   set. Full path runs this for every piece; incremental skips
+   pieces > `THREAT_CLUSTER_RADIUS` from every dirty center and
+   inherits their contribution from the scratch breakdown.
+5. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord;
+   4]>` such that placing any one of these denies completion next
+   stone.
 
 Cache shape counts incrementally per player:
 ```rust

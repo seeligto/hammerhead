@@ -6,7 +6,8 @@
 //! and compares the result against a fresh full-recompute oracle. Any
 //! drift fails the test with the dirty centers logged for replay.
 //!
-//! Seed is fixed (`0xHEX0_F00D`) — failures replay byte-identically.
+//! Seed is fixed (`0xDEAD_F00D_CAFE_BEEF`) — failures replay
+//! byte-identically.
 
 // Test fixtures intentionally use a long string-building style for the
 // drift report. The pedantic lints below add noise but no value here.
@@ -172,9 +173,11 @@ fn build_midgame_30() -> Board {
 }
 
 #[test]
-fn anchor_is_deterministic_for_open_four() {
+fn instance_pieces_are_deterministic_for_open_four() {
     // Two computations of the same shape on the same pieces produce
-    // identical anchor coords. The anchor is `pieces[len/2]` per spec.
+    // identical instance pieces. (Phase 15 originally stored a derived
+    // `anchor: Coord` field too, but it was unused metadata and was
+    // dropped; this test still guards instance determinism.)
     let mut b = Board::new();
     let mvs = [(0, 0), (4, 4), (-4, 4), (1, 0), (2, 0), (4, 3), (-4, 3), (3, 0)];
     play_moves(&mut b, &mvs.map(|(q, r)| Coord::new(q, r)));
@@ -184,9 +187,9 @@ fn anchor_is_deterministic_for_open_four() {
     assert_eq!(a.s0_instances.len(), bset.s0_instances.len());
     for (ia, ib) in a.s0_instances.iter().zip(bset.s0_instances.iter()) {
         assert_eq!(ia.kind, ib.kind);
-        assert_eq!(ia.anchor, ib.anchor, "anchor mismatch across recomputes");
-        // Sanity: anchor is in pieces.
-        assert!(ia.pieces.contains(&ia.anchor));
+        let pa: Vec<_> = ia.pieces.iter().map(|c| (c.q, c.r)).collect();
+        let pb: Vec<_> = ib.pieces.iter().map(|c| (c.q, c.r)).collect();
+        assert_eq!(pa, pb, "pieces mismatch across recomputes");
     }
 }
 

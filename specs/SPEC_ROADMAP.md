@@ -252,6 +252,13 @@ See `prompts/PHASE_15_PROMPT.md`.
   (`Board::proximity_count` / `inner_proximity_count`) don't fit the
   Phase-13 flat-array playbook cleanly (key space ~65k cells × 4
   maps ≈ 1 MB; iteration pattern matters). Needs its own design pass.
+- **Persist breakdown capacity across `incremental` calls**
+  (Phase-15 reviewer finding): the current
+  `std::mem::take(breakdown_slot)` in `threats::incremental` leaves
+  `Vec::new()` (cap 0) in the scratch slot; the subsequent
+  `walk_cross_axis_incremental` reallocates capacity for ~N entries
+  on every call. Two-buffer alternation (current / prior) preserves
+  the allocation. ~50-100 ns per incremental reconcile.
 - **`extension_factor` SIMD batch**: inline into Layer-1 SIMD path so
   the per-window extension multiplier runs alongside `encode_ternary`.
 - **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
@@ -267,6 +274,24 @@ See `prompts/PHASE_15_PROMPT.md`.
 - **Radius-theory colony discounting** in eval.
 - **Lazy-SMP parallel search**.
 - **Opening book**, **endgame tables**, **WebSocket live integration**.
+
+## Phase 15 reviewer-pass fixes
+
+After the STEP 5 baseline landed, an independent reviewer flagged:
+
+- **`ThreatInstance::anchor` was dead metadata** — populated by
+  `push_s0` but never read by the incremental path (which uses piece
+  coords directly for the dirty-cluster check). Removed per "pick the
+  more efficient side" rule; spec text in `SPEC_ENGINE.md
+  § ThreatInstance` aligned.
+- **Spec drift on `RefCell<Option<ThreatSet>>`** — STEP 3 dropped the
+  `Option` wrapper; spec text updated to match.
+- **`SPEC_EVAL.md § Detection method`** — described "drop matching
+  instances from prior, rescan that line slice, merge" for linear
+  shapes; shipped impl does a full linear re-walk (only cross-axis
+  is selective). Spec text updated to describe the shipped algorithm.
+- **Oracle test seed comment** — referenced `0xHEX0_F00D`; actual
+  seed is `0xDEAD_F00D_CAFE_BEEF`. Comment fixed.
 
 ## Phase 15 resolved follow-ups
 
