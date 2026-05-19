@@ -105,6 +105,15 @@ After Phase 10:
 make bench all --time-ms 50    # smoke must pass
 ```
 
+After Phase 11:
+
+```
+make vs N_GAMES=4 TIME_MS=50 TEST=raw    # current vs .bestref worktree
+                                          # bootstraps .bestref to HEAD on
+                                          # first run; non-zero exit on
+                                          # REJECT is by design
+```
+
 ## Phase plan
 
 See `specs/SPEC_ROADMAP.md`. Do not skip phases. Do not implement

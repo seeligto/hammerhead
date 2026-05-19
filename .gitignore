@@ -18,5 +18,10 @@ Cargo.lock
 refs/
 *.pdf
 
+# Benchmark output (Phase 10) — only baseline.json is committed.
+benches/results/*.json
+!benches/results/baseline.json
+target/criterion/
+
 # Promotion harness (Phase 11) — worktree of the locked best engine.
 .worktree-best/

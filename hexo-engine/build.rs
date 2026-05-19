@@ -4,6 +4,18 @@
 // $OUT_DIR/config_generated.rs containing `pub const` definitions referenced
 // by src/config.rs. See SPEC_CONFIG.md.
 
+// Build script is dev tooling; pedantic style lints add noise without value.
+#![allow(
+    clippy::needless_continue,
+    clippy::manual_assert,
+    clippy::cast_possible_truncation,
+    clippy::map_unwrap_or,
+    clippy::needless_lifetimes,
+    clippy::elidable_lifetime_names,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
@@ -33,8 +45,321 @@ fn main() {
     emit_search(&mut out, &cfg);
     emit_ordering(&mut out, &cfg);
     emit_board(&mut out, &cfg);
+    emit_bench(&mut out, &cfg);
 
     fs::write(&out_path, out).expect("write config_generated.rs");
+
+    // Codegen fixture builders from benches/fixtures/positions.json. Emits a
+    // second file consumed by benches/common/positions.rs.
+    let fx_rel = cfg
+        .get("bench")
+        .and_then(|b| b.get("fixtures_path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("benches/fixtures/positions.json");
+    let fx_path = workspace_root.join(fx_rel);
+    println!("cargo:rerun-if-changed={}", fx_path.display());
+    emit_fixtures(&fx_path, &out_dir);
+}
+
+fn emit_bench(out: &mut String, cfg: &toml::Value) {
+    emit_u64(
+        out,
+        cfg,
+        &["bench", "default_time_ms"],
+        "BENCH_DEFAULT_TIME_MS",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["bench", "schema_version"],
+        "BENCH_SCHEMA_VERSION",
+    );
+}
+
+/// Codegen fixture builders from `positions.json` → `$OUT_DIR/fixtures_generated.rs`.
+///
+/// The JSON maps fixture name → `{ "moves": [[q,r], ...] }`. We emit:
+/// - one `pub(crate) fn build_<name>() -> Board` per entry, applying each
+///   move via `Board::place_for_test` with X/O alternating by ply parity.
+/// - `pub(crate) static FIXTURE_TABLE: &[(name, fn() -> Board)]` for iteration.
+/// Emits `$OUT_DIR/fixtures_generated.rs` for inclusion by
+/// `benches/common/positions.rs`. The including module must define a
+/// `Fixture` type with `name: &'static str` and `build: fn() -> Board`
+/// fields and have `Board`, `Coord`, and `player_at_ply` in scope.
+fn emit_fixtures(fx_path: &Path, out_dir: &std::ffi::OsStr) {
+    let mut out = String::new();
+    out.push_str("// AUTO-GENERATED from benches/fixtures/positions.json — do not edit.\n\n");
+
+    let entries: Vec<(String, Vec<(i16, i16)>)> = if fx_path.is_file() {
+        let txt = fs::read_to_string(fx_path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", fx_path.display()));
+        parse_fixtures_json(&parse_json(&txt))
+    } else {
+        Vec::new()
+    };
+
+    let mut names: Vec<String> = Vec::new();
+    for (name, moves) in &entries {
+        if !is_snake_ident(name) {
+            panic!("fixture name {name:?} must be lowercase_snake");
+        }
+        names.push(name.clone());
+        writeln!(out, "pub fn build_{name}() -> Board {{").unwrap();
+        let binding = if moves.is_empty() { "let b" } else { "let mut b" };
+        writeln!(out, "    {binding} = Board::new();").unwrap();
+        for (i, (q, r)) in moves.iter().enumerate() {
+            writeln!(
+                out,
+                "    b.place_for_test(Coord::new({q}, {r}), player_at_ply({i}));",
+            )
+            .unwrap();
+        }
+        out.push_str("    b\n");
+        out.push_str("}\n\n");
+    }
+
+    out.push_str("pub static FIXTURES: &[Fixture] = &[\n");
+    for name in &names {
+        writeln!(
+            out,
+            "    Fixture {{ name: \"{name}\", build: build_{name} }},",
+        )
+        .unwrap();
+    }
+    out.push_str("];\n");
+
+    let out_path: PathBuf = Path::new(out_dir).join("fixtures_generated.rs");
+    fs::write(&out_path, out).expect("write fixtures_generated.rs");
+}
+
+/// Tiny JSON parser via `toml::Value`. Avoids pulling in `serde_json` as a
+/// build-dep when we only need `{string -> {moves -> [[int,int]]}}`. The
+/// fixtures file is hand-written and small.
+fn parse_json(s: &str) -> JsonValue {
+    let mut p = JsonParser { s: s.as_bytes(), pos: 0 };
+    p.skip_ws();
+    let v = p.parse_value();
+    p.skip_ws();
+    if p.pos != p.s.len() {
+        panic!("fixtures JSON: trailing junk at byte {}", p.pos);
+    }
+    v
+}
+
+#[derive(Debug)]
+#[allow(dead_code)] // Bool / Null appear in the grammar but the schema never reads them.
+enum JsonValue {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Array(Vec<JsonValue>),
+    Object(Vec<(String, JsonValue)>),
+}
+
+struct JsonParser<'a> {
+    s: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> JsonParser<'a> {
+    fn peek(&self) -> u8 {
+        if self.pos >= self.s.len() {
+            panic!("fixtures JSON: unexpected EOF");
+        }
+        self.s[self.pos]
+    }
+    fn bump(&mut self) -> u8 {
+        let b = self.peek();
+        self.pos += 1;
+        b
+    }
+    fn skip_ws(&mut self) {
+        while self.pos < self.s.len()
+            && matches!(self.s[self.pos], b' ' | b'\t' | b'\n' | b'\r')
+        {
+            self.pos += 1;
+        }
+    }
+    fn expect(&mut self, c: u8) {
+        let b = self.bump();
+        if b != c {
+            panic!(
+                "fixtures JSON: expected {:?} got {:?} at byte {}",
+                c as char, b as char, self.pos - 1
+            );
+        }
+    }
+    fn parse_value(&mut self) -> JsonValue {
+        self.skip_ws();
+        match self.peek() {
+            b'{' => self.parse_object(),
+            b'[' => self.parse_array(),
+            b'"' => JsonValue::String(self.parse_string()),
+            b't' | b'f' => self.parse_bool(),
+            b'n' => self.parse_null(),
+            b'-' | b'0'..=b'9' => self.parse_number(),
+            c => panic!("fixtures JSON: unexpected byte {:?} at {}", c as char, self.pos),
+        }
+    }
+    fn parse_object(&mut self) -> JsonValue {
+        self.expect(b'{');
+        let mut entries = Vec::new();
+        self.skip_ws();
+        if self.peek() == b'}' {
+            self.pos += 1;
+            return JsonValue::Object(entries);
+        }
+        loop {
+            self.skip_ws();
+            let k = self.parse_string();
+            self.skip_ws();
+            self.expect(b':');
+            let v = self.parse_value();
+            entries.push((k, v));
+            self.skip_ws();
+            match self.bump() {
+                b',' => continue,
+                b'}' => break,
+                c => panic!("fixtures JSON: expected ',' or '}}' got {:?}", c as char),
+            }
+        }
+        JsonValue::Object(entries)
+    }
+    fn parse_array(&mut self) -> JsonValue {
+        self.expect(b'[');
+        let mut items = Vec::new();
+        self.skip_ws();
+        if self.peek() == b']' {
+            self.pos += 1;
+            return JsonValue::Array(items);
+        }
+        loop {
+            items.push(self.parse_value());
+            self.skip_ws();
+            match self.bump() {
+                b',' => continue,
+                b']' => break,
+                c => panic!("fixtures JSON: expected ',' or ']' got {:?}", c as char),
+            }
+        }
+        JsonValue::Array(items)
+    }
+    fn parse_string(&mut self) -> String {
+        self.expect(b'"');
+        let mut out = String::new();
+        loop {
+            let b = self.bump();
+            match b {
+                b'"' => return out,
+                b'\\' => {
+                    let e = self.bump();
+                    match e {
+                        b'"' => out.push('"'),
+                        b'\\' => out.push('\\'),
+                        b'/' => out.push('/'),
+                        b'n' => out.push('\n'),
+                        b't' => out.push('\t'),
+                        b'r' => out.push('\r'),
+                        c => panic!("fixtures JSON: unsupported escape \\{}", c as char),
+                    }
+                }
+                c => out.push(c as char),
+            }
+        }
+    }
+    fn parse_number(&mut self) -> JsonValue {
+        let start = self.pos;
+        if self.peek() == b'-' {
+            self.pos += 1;
+        }
+        while self.pos < self.s.len()
+            && matches!(self.s[self.pos], b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-')
+        {
+            self.pos += 1;
+        }
+        let txt = std::str::from_utf8(&self.s[start..self.pos]).unwrap();
+        let n: f64 = txt.parse().expect("fixtures JSON: bad number");
+        JsonValue::Number(n)
+    }
+    fn parse_bool(&mut self) -> JsonValue {
+        if self.s[self.pos..].starts_with(b"true") {
+            self.pos += 4;
+            JsonValue::Bool(true)
+        } else if self.s[self.pos..].starts_with(b"false") {
+            self.pos += 5;
+            JsonValue::Bool(false)
+        } else {
+            panic!("fixtures JSON: bad bool at {}", self.pos);
+        }
+    }
+    fn parse_null(&mut self) -> JsonValue {
+        if self.s[self.pos..].starts_with(b"null") {
+            self.pos += 4;
+            JsonValue::Null
+        } else {
+            panic!("fixtures JSON: bad null at {}", self.pos);
+        }
+    }
+}
+
+impl JsonValue {
+    fn as_object(&self) -> &[(String, JsonValue)] {
+        match self {
+            JsonValue::Object(v) => v,
+            _ => panic!("fixtures JSON: expected object"),
+        }
+    }
+    fn as_array(&self) -> &[JsonValue] {
+        match self {
+            JsonValue::Array(v) => v,
+            _ => panic!("fixtures JSON: expected array"),
+        }
+    }
+    fn as_int(&self) -> i64 {
+        match self {
+            JsonValue::Number(n) => *n as i64,
+            _ => panic!("fixtures JSON: expected number"),
+        }
+    }
+    fn get<'a>(&'a self, key: &str) -> &'a JsonValue {
+        match self {
+            JsonValue::Object(v) => v
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| panic!("fixtures JSON: missing key {key}")),
+            _ => panic!("fixtures JSON: expected object"),
+        }
+    }
+}
+
+fn parse_fixtures_json(v: &JsonValue) -> Vec<(String, Vec<(i16, i16)>)> {
+    let mut out = Vec::new();
+    for (name, body) in v.as_object() {
+        let moves_v = body.get("moves").as_array();
+        let mut moves = Vec::with_capacity(moves_v.len());
+        for m in moves_v {
+            let pair = m.as_array();
+            if pair.len() != 2 {
+                panic!("fixture {name}: move must be [q, r]");
+            }
+            let q = i16::try_from(pair[0].as_int())
+                .unwrap_or_else(|_| panic!("fixture {name}: q out of i16"));
+            let r = i16::try_from(pair[1].as_int())
+                .unwrap_or_else(|_| panic!("fixture {name}: r out of i16"));
+            moves.push((q, r));
+        }
+        out.push((name.clone(), moves));
+    }
+    out
+}
+
+fn is_snake_ident(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !s.starts_with(|c: char| c.is_ascii_digit())
 }
 
 fn emit_eval(out: &mut String, cfg: &toml::Value) {

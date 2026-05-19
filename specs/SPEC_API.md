@@ -2,7 +2,7 @@
 
 Authoritative surface for the Rust `hexo_engine` PyO3 module, the Python
 `hexo.bot` wrapper, the `hexo` CLI subcommands, and the line-based
-subprocess protocol consumed by the Phase 10 promotion harness.
+subprocess protocol consumed by the Phase 11 promotion harness.
 
 ## PyO3 module (`hexo_engine`)
 
@@ -103,7 +103,7 @@ the first stone, if `halfmove == 1` the same side continues.
 
 ## Subprocess protocol (`hexo bot`)
 
-One command per line, one line per response. Used by Phase 10's
+One command per line, one line per response. Used by the Phase 11
 promotion harness. Coordinates are integers `q r`, space-separated.
 
 | Command       | Response          | Notes                                |
@@ -129,12 +129,20 @@ before reading the first command, so clients can synchronize on it.
 ## CLI (`hexo`)
 
 ```bash
-hexo play                   # human vs bot REPL
-hexo selfplay -n N          # bot vs bot, log winners
-hexo bench [--time-ms T]    # NPS smoke
-hexo analyze <bsn>          # placeholder (notation parsing is Phase 11+)
-hexo bot [--tt-size-mb MB]  # subprocess protocol (above)
+hexo play                            # human vs bot REPL
+hexo selfplay -n N                   # bot vs bot, log winners
+hexo bench [--time-ms T]             # NPS smoke
+hexo analyze <bsn>                   # placeholder (BSN parsing is Phase 12+)
+hexo bot [--tt-size-mb MB]           # subprocess protocol (above)
+hexo match CURRENT BEST              # generic two-binary match (Phase 11)
+hexo promote [--dry-run]             # current vs .bestref worktree (Phase 11)
 ```
+
+The match commands accept ``--n N --time-ms T --test sprt|wilson|raw``.
+Exit codes: ``0`` if the final verdict is ``PROMOTE``; ``1`` otherwise
+(``REJECT`` or ``INCONCLUSIVE``). ``hexo promote`` rewrites and commits
+``.bestref`` atomically on ``PROMOTE`` unless ``--dry-run`` is set; on
+commit failure the file is rolled back to its prior contents.
 
 ## Build
 

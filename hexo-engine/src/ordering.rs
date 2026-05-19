@@ -174,6 +174,17 @@ fn priority(bucket: u8, history: u32) -> u32 {
 ///
 /// Exposed to the search crate so LMR and check-extension decisions can
 /// reuse the same predicates without recomputing them.
+///
+/// Doubles as the bench entry point for ordering micro-benches — they
+/// can call this directly to time bucket classification independently
+/// of `order_moves`.
+#[doc(hidden)]
+#[inline]
+#[must_use]
+pub fn bench_bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
+    bucket_value(ctx, m)
+}
+
 #[inline]
 #[must_use]
 pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {

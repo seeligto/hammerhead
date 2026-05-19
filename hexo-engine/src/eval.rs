@@ -83,6 +83,32 @@ pub fn is_mate_for(board: &Board, player: Player) -> bool {
     layer3_fork_bonus(&threats) == i32::MAX
 }
 
+/// Bench-only: isolated Layer-1 window scan. Hidden from rustdoc; exposed
+/// only so criterion micro-benches in a sibling crate can time each layer
+/// without re-implementing it.
+#[doc(hidden)]
+#[must_use]
+pub fn bench_layer1_window_scan(board: &Board) -> i32 {
+    layer1_window_scan(board)
+}
+
+/// Bench-only: isolated Layer-2 weighted shape sum (X minus O).
+#[doc(hidden)]
+#[must_use]
+pub fn bench_layer2_shapes(board: &Board) -> i32 {
+    let tx = board.threats(Player::X);
+    let to = board.threats(Player::O);
+    layer2_shapes(&tx.counts) - layer2_shapes(&to.counts)
+}
+
+/// Bench-only: isolated Layer-3 fork bonus for `player`.
+#[doc(hidden)]
+#[must_use]
+pub fn bench_layer3_fork_bonus(board: &Board, player: Player) -> i32 {
+    let threats = board.threats(player);
+    layer3_fork_bonus(&threats)
+}
+
 /// Signed mate score with mate-distance accounting.
 #[inline]
 fn mate_score_for(winner: Player, ply: u32) -> i32 {

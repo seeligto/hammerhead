@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
-.PHONY: help build clean rebuild test lint fmt check vs promote install
+.PHONY: help build clean rebuild test lint fmt check vs promote install \
+        bench bench-micro bench-diff bench-baseline
 
 ENGINE    := hexo-engine
 PY        := hexo
@@ -15,6 +16,13 @@ TIME_MS   ?= 1000
 TEST      ?= sprt
 ELO_LOW   ?= 0
 ELO_HIGH  ?= 5
+
+# Phase 10 (benchmark suite) defaults — override on the command line:
+#   make bench BENCH_TIME_MS=2000
+#   make bench-micro TARGET=board
+#   make bench-diff A=baseline B=20260519-103022-abc1234
+BENCH_TIME_MS ?= 1000
+TARGET        ?= all
 
 help: ## show available targets
 	@echo "HeXO bot — Makefile targets:"
@@ -52,6 +60,29 @@ fmt: ## cargo fmt
 	cd $(ENGINE) && cargo fmt
 
 check: lint test ## lint + test (CI gate)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 10 — benchmark suite (criterion + Python macro-benches).
+# See specs/SPEC_BENCHMARKS.md.
+# ──────────────────────────────────────────────────────────────────────────────
+
+bench: ## full sweep, write canonical JSON to benches/results/
+	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS)
+
+bench-micro: ## criterion benches for one TARGET (default: all) + drain
+	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET)
+	@cd $(ENGINE) && cargo build --release --example bench_drain
+	@$(ENGINE)/target/release/examples/bench_drain \
+	    --criterion-dir $(ENGINE)/target/criterion
+
+bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/results/)
+	@$(VPY) -m hexo.cli bench diff $(A) $(B)
+
+bench-baseline: ## refresh benches/results/baseline.json from the latest run
+	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS)
+	@latest=$$(ls -t benches/results/*.json | grep -v baseline | head -1); \
+	    cp "$$latest" benches/results/baseline.json; \
+	    echo "baseline updated from $$latest"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Phase 11 — promotion harness. See specs/SPEC_ROADMAP.md § Phase 11.

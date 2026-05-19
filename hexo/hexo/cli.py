@@ -4,23 +4,27 @@ Subcommands:
 
 * ``play``     — human vs bot REPL
 * ``selfplay`` — bot vs bot, log winners
-* ``bench``    — single-search NPS smoke
+* ``bench``    — benchmark suite (micro/nps/depth/threats/selfplay/all/diff)
 * ``analyze``  — placeholder until BSN parser ships
-* ``bot``      — line-based subprocess protocol (Phase 10 harness)
+* ``bot``      — line-based subprocess protocol (Phase 11 harness)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
 import time
+from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from hexo_engine import Engine
 
+from . import benchmark as bench
 from . import promote as promote_mod
 from .bot import Bot, BotConfig
 from .config import CONFIG
@@ -79,8 +83,6 @@ def _play_one_selfplay_game(time_ms: int, max_plies: int) -> tuple[Optional[int]
     record = GameRecord()
 
     def step(active: Bot, mirror: Bot) -> bool:
-        """Place one stone via ``active``, mirror it on ``mirror``.
-        Return True if either side has won."""
         m = active.play_stone()
         mirror.observe(m)
         record.append(m)
@@ -93,13 +95,11 @@ def _play_one_selfplay_game(time_ms: int, max_plies: int) -> tuple[Optional[int]
             or bo.winner() is not None
         )
 
-    # Drive turns by following whichever side is to move on the X engine.
     while not done():
         side = bx.to_move()
         active, mirror = (bx, bo) if side == 0 else (bo, bx)
         if step(active, mirror) or done():
             break
-        # Same-side continuation: stone 2.
         if active.halfmove() == 1:
             if step(active, mirror) or done():
                 break
@@ -120,23 +120,346 @@ def cmd_selfplay(args: argparse.Namespace) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# bench — single best_move NPS smoke
+# bench — multi-subcommand dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+_REPO_ROOT = CONFIG.source_path.parent
+_RESULTS_DIR = _REPO_ROOT / CONFIG.bench.results_dir
+
+
+def _git_sha() -> str:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_REPO_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _isodate_now() -> tuple[str, str]:
+    """Return (iso_timestamp, compact_date_for_filename)."""
+    now = datetime.now(timezone.utc)
+    return (
+        now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        now.strftime("%Y%m%d-%H%M%S"),
+    )
+
+
+def _ensure_results_dir() -> None:
+    _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
-    eng = Engine(tt_size_mb=CONFIG.tt.default_size_mb)
-    # Seed a small mid-game-ish opening so eval/threats have signal.
-    for c in [(0, 0), (1, 0), (-1, 1), (0, 1)]:
-        eng.place(c)
-    t0 = time.perf_counter()
-    move = eng.best_move(time_ms=args.time_ms)
-    dt_ms = (time.perf_counter() - t0) * 1000.0
+    sub = args.bench_sub
+    if sub == "micro":
+        return _bench_micro(args)
+    if sub == "nps":
+        return _bench_nps(args)
+    if sub == "depth":
+        return _bench_depth(args)
+    if sub == "threats":
+        return _bench_threats(args)
+    if sub == "selfplay":
+        return _bench_selfplay(args)
+    if sub == "all":
+        return _bench_all(args)
+    if sub == "diff":
+        return _bench_diff(args)
+    print(f"error: unknown bench subcommand {sub}", file=sys.stderr)
+    return 1
+
+
+def _bench_micro(args: argparse.Namespace) -> int:
+    """Run criterion benches (one target or all) then drain into JSON."""
+    target = args.target
+    engine_dir = _REPO_ROOT / "hexo-engine"
+    if target == "all":
+        cmd = ["cargo", "bench"]
+    else:
+        cmd = ["cargo", "bench", "--bench", f"bench_{target}"]
+    print(f"$ {' '.join(cmd)}  (cwd={engine_dir})")
+    r = subprocess.call(cmd, cwd=engine_dir)
+    if r != 0:
+        return r
+    return _run_drain(args)
+
+
+def _run_drain(args: argparse.Namespace) -> int:
+    del args
+    _ensure_results_dir()
+    iso, date = _isodate_now()
+    sha = _git_sha()
+    out_path = _RESULTS_DIR / f"{date}-{sha}.json"
+    engine_dir = _REPO_ROOT / "hexo-engine"
+    drain_bin = engine_dir / "target" / "release" / "examples" / "bench_drain"
+    if not drain_bin.exists():
+        build = subprocess.call(
+            ["cargo", "build", "--release", "--example", "bench_drain"],
+            cwd=engine_dir,
+        )
+        if build != 0:
+            return build
+    crit_dir = engine_dir / "target" / "criterion"
+    r = subprocess.call(
+        [
+            str(drain_bin),
+            "--out",
+            str(out_path),
+            "--criterion-dir",
+            str(crit_dir),
+        ],
+        cwd=_REPO_ROOT,
+    )
+    if r != 0:
+        return r
+    print(f"micro drain → {out_path}")
+    del iso  # iso recorded by bench_drain itself
+    return 0
+
+
+def _bench_nps(args: argparse.Namespace) -> int:
+    r = bench.bench_nps(
+        fixture=args.fixture, time_ms=args.time_ms, runs=args.runs
+    )
     print(
-        f"bench: best={move} target={args.time_ms}ms actual={dt_ms:.0f}ms "
-        f"eval={eng.cached_eval()}"
+        f"NPS {r.fixture}: nodes={r.nodes:,} depth={r.depth_reached} "
+        f"nps={r.nps:,.0f} time_ms={r.time_ms}"
     )
     return 0
+
+
+def _bench_depth(args: argparse.Namespace) -> int:
+    r = bench.bench_depth_at_time(fixture=args.fixture, time_ms=args.time_ms)
+    print(
+        f"DEPTH {r.fixture} @ {r.time_ms} ms: depth_reached={r.depth_reached}"
+    )
+    return 0
+
+
+def _bench_threats(args: argparse.Namespace) -> int:
+    r = bench.bench_threat_latency(
+        fixture=args.fixture, n_calls=args.samples
+    )
+    print(
+        f"THREATS {r.fixture}: cold={r.cold_us:.2f}us "
+        f"warm={r.warm_us:.2f}us samples={r.samples}"
+    )
+    return 0
+
+
+def _bench_selfplay(args: argparse.Namespace) -> int:
+    r = bench.bench_selfplay(
+        time_per_stone_ms=args.time_ms,
+        games=args.games,
+        max_plies=args.max_plies,
+    )
+    print(
+        f"SELFPLAY {r.games} games: plies_total={r.plies_total} "
+        f"wall={r.wall_seconds:.2f}s plies/sec={r.plies_per_sec:.2f}"
+    )
+    return 0
+
+
+def _bench_all(args: argparse.Namespace) -> int:
+    """Full sweep: cargo bench → drain → macro → merged JSON."""
+    _ensure_results_dir()
+    engine_dir = _REPO_ROOT / "hexo-engine"
+    iso, date = _isodate_now()
+    sha = _git_sha()
+    out_path = _RESULTS_DIR / f"{date}-{sha}.json"
+
+    # 1. Run criterion full sweep.
+    print("$ cargo bench")
+    r = subprocess.call(["cargo", "bench"], cwd=engine_dir)
+    if r != 0:
+        return r
+
+    # 2. Drain into a temporary micro JSON.
+    drain_bin = engine_dir / "target" / "release" / "examples" / "bench_drain"
+    if not drain_bin.exists():
+        r = subprocess.call(
+            ["cargo", "build", "--release", "--example", "bench_drain"],
+            cwd=engine_dir,
+        )
+        if r != 0:
+            return r
+    micro_path = _RESULTS_DIR / f"{date}-{sha}.micro.json"
+    crit_dir = engine_dir / "target" / "criterion"
+    r = subprocess.call(
+        [
+            str(drain_bin),
+            "--out",
+            str(micro_path),
+            "--criterion-dir",
+            str(crit_dir),
+        ],
+        cwd=_REPO_ROOT,
+    )
+    if r != 0:
+        return r
+
+    micro = json.loads(micro_path.read_text())
+
+    # 3. Macro benches.
+    macro = bench.run_all(time_ms=args.time_ms)
+
+    # 4. Merge canonical schema.
+    canonical = {
+        "schema_version": CONFIG.bench.schema_version,
+        "timestamp": iso,
+        "git_sha": sha,
+        "rustc_version": micro.get("rustc_version", ""),
+        "host": micro.get("host", {}),
+        "micro": micro.get("micro", []),
+        "macro": macro,
+    }
+    out_path.write_text(json.dumps(canonical, indent=2))
+    micro_path.unlink(missing_ok=True)
+    print(out_path)
+    return 0
+
+
+def _bench_diff(args: argparse.Namespace) -> int:
+    a_path = _resolve_result_path(args.a)
+    b_path = _resolve_result_path(args.b)
+    a = json.loads(a_path.read_text())
+    b = json.loads(b_path.read_text())
+    if a.get("schema_version") != b.get("schema_version"):
+        print(
+            f"error: schema mismatch {a.get('schema_version')} vs "
+            f"{b.get('schema_version')}",
+            file=sys.stderr,
+        )
+        return 1
+    rows = _diff_rows(a, b)
+    _print_diff_table(rows)
+    regressions = sum(1 for r in rows if r["pct"] > 5.0)
+    if regressions:
+        print(f"\n{regressions} regression(s) > 5%")
+        return 1
+    return 0
+
+
+def _resolve_result_path(name: str) -> Path:
+    """Accept a bare name (relative to results dir) or a path."""
+    p = Path(name)
+    if p.exists():
+        return p
+    candidate = _RESULTS_DIR / name
+    if candidate.exists():
+        return candidate
+    candidate = _RESULTS_DIR / f"{name}.json"
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(f"no such bench JSON: {name}")
+
+
+def _diff_rows(a: dict, b: dict) -> list[dict]:
+    """Join two canonical bench JSONs by (group, name) for micro and
+    (metric, fixture, time_ms) for macro. Smaller is better for ns/us
+    metrics; larger is better for nps and plies/sec.
+    """
+    rows: list[dict] = []
+
+    # Micro: median_ns per (group, name). Lower is better.
+    a_micro = {(m["group"], m["name"]): m["median_ns"] for m in a.get("micro", [])}
+    b_micro = {(m["group"], m["name"]): m["median_ns"] for m in b.get("micro", [])}
+    for key in sorted(set(a_micro) | set(b_micro)):
+        a_v = a_micro.get(key)
+        b_v = b_micro.get(key)
+        if a_v is None or b_v is None:
+            continue
+        rows.append(_row(f"{key[0]} / {key[1]}", a_v, b_v, lower_is_better=True))
+
+    # Macro: nps (higher better), depth_at_time (higher better),
+    # threat_latency (lower better — both fields), selfplay plies/sec (higher).
+    a_macro = a.get("macro", {})
+    b_macro = b.get("macro", {})
+
+    def _join(metric: str, key_fn, value_fn, lower_is_better: bool) -> None:
+        a_items = {key_fn(r): value_fn(r) for r in a_macro.get(metric, [])}
+        b_items = {key_fn(r): value_fn(r) for r in b_macro.get(metric, [])}
+        for key in sorted(set(a_items) & set(b_items)):
+            rows.append(
+                _row(
+                    f"{metric} / {key}",
+                    a_items[key],
+                    b_items[key],
+                    lower_is_better=lower_is_better,
+                )
+            )
+
+    _join(
+        "nps",
+        lambda r: f"{r['fixture']}@{r['time_ms']}ms",
+        lambda r: r["nps"],
+        lower_is_better=False,
+    )
+    _join(
+        "depth_at_time",
+        lambda r: f"{r['fixture']}@{r['time_ms']}ms",
+        lambda r: r["depth_reached"],
+        lower_is_better=False,
+    )
+    _join(
+        "threat_latency",
+        lambda r: f"{r['fixture']}.cold",
+        lambda r: r["cold_us"],
+        lower_is_better=True,
+    )
+    _join(
+        "threat_latency",
+        lambda r: f"{r['fixture']}.warm",
+        lambda r: r["warm_us"],
+        lower_is_better=True,
+    )
+    _join(
+        "selfplay_throughput",
+        lambda r: f"@{r['time_per_stone_ms']}ms",
+        lambda r: r["plies_per_sec"],
+        lower_is_better=False,
+    )
+    return rows
+
+
+def _row(label: str, a: float, b: float, *, lower_is_better: bool) -> dict:
+    delta = b - a
+    pct_change = (delta / a * 100.0) if a else 0.0
+    # `pct` is the directional "worse-than-baseline" magnitude in % —
+    # positive means regression. For lower-is-better, b>a is bad.
+    pct = pct_change if lower_is_better else -pct_change
+    return {
+        "label": label,
+        "a": a,
+        "b": b,
+        "delta": delta,
+        "pct": pct,
+    }
+
+
+def _print_diff_table(rows: list[dict]) -> None:
+    if not rows:
+        print("(no comparable benches)")
+        return
+    label_w = max(len(r["label"]) for r in rows)
+    label_w = max(label_w, 32)
+    header = (
+        f"{'metric'.ljust(label_w)}  {'baseline':>14}  {'candidate':>14}"
+        f"  {'delta':>12}  {'pct':>7}"
+    )
+    print(header)
+    print("─" * len(header))
+    for r in rows:
+        sign = "+" if r["pct"] > 0 else " "
+        print(
+            f"{r['label'].ljust(label_w)}  {r['a']:>14.2f}  {r['b']:>14.2f}"
+            f"  {r['delta']:>+12.2f}  {sign}{r['pct']:>5.1f}%"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,7 +469,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
 def cmd_analyze(args: argparse.Namespace) -> int:
     del args
-    print("analyze: BSN parser not implemented yet (phase 11+).")
+    print("analyze: BSN parser not implemented yet (phase 12+).")
     return 1
 
 
@@ -165,7 +488,7 @@ def cmd_bot(args: argparse.Namespace) -> int:
             continue
         try:
             resp = _handle_bot_line(eng, line)
-        except Exception as exc:  # noqa: BLE001 — protocol surfaces any error
+        except Exception as exc:  # noqa: BLE001
             resp = f"error: {exc}"
         sys.stdout.write(f"{resp}\n")
         sys.stdout.flush()
@@ -218,18 +541,6 @@ def _handle_bot_line(eng: Engine, line: str) -> str:
 
 def _bot_cmd(venv_python: Path) -> list[str]:
     return [str(venv_python), "-m", "hexo.cli", "bot"]
-
-
-def _short_head_sha(repo_root: Path) -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip() or "unknown"
-    except Exception:  # noqa: BLE001
-        return "unknown"
 
 
 def _print_match_result(res: promote_mod.MatchResult, cfg: promote_mod.MatchConfig) -> None:
@@ -327,7 +638,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
         time_ms_per_stone=args.time_ms,
         test=args.test,
     )
-    head_sha = _short_head_sha(repo_root)
+    head_sha = _git_sha()
     print(
         f"promote: current={head_sha} vs best={best_sha[:8]} "
         f"n={cfg.n_games} time_ms={cfg.time_ms_per_stone} test={cfg.test}"
@@ -395,9 +706,38 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-plies", type=int, default=400)
     sp.set_defaults(fn=cmd_selfplay)
 
-    sp = sub.add_parser("bench", help="single-search NPS smoke")
-    sp.add_argument("--time-ms", type=int, default=CONFIG.bot.default_time_per_move_ms)
-    sp.set_defaults(fn=cmd_bench)
+    sp_bench = sub.add_parser("bench", help="benchmark suite")
+    bsub = sp_bench.add_subparsers(dest="bench_sub", required=True)
+
+    bs = bsub.add_parser("micro", help="run criterion + drain")
+    bs.add_argument("--target", default="all")
+
+    bs = bsub.add_parser("nps", help="nodes-per-second on a fixture")
+    bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
+    bs.add_argument("--fixture", default="midgame_12")
+    bs.add_argument("--runs", type=int, default=CONFIG.bench.default_runs)
+
+    bs = bsub.add_parser("depth", help="depth reached at time budget")
+    bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
+    bs.add_argument("--fixture", default="midgame_12")
+
+    bs = bsub.add_parser("threats", help="cached_eval cold vs warm")
+    bs.add_argument("--fixture", default="midgame_30")
+    bs.add_argument("--samples", type=int, default=64)
+
+    bs = bsub.add_parser("selfplay", help="selfplay throughput")
+    bs.add_argument("--time-ms", type=int, default=200)
+    bs.add_argument("--games", type=int, default=CONFIG.bench.default_games)
+    bs.add_argument("--max-plies", type=int, default=CONFIG.bench.default_max_plies)
+
+    bs = bsub.add_parser("all", help="full sweep → canonical JSON")
+    bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
+
+    bs = bsub.add_parser("diff", help="compare two run JSONs")
+    bs.add_argument("a")
+    bs.add_argument("b")
+
+    sp_bench.set_defaults(fn=cmd_bench)
 
     sp = sub.add_parser("analyze", help="analyze a BSN game (stub)")
     sp.add_argument("bsn")

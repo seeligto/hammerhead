@@ -128,6 +128,16 @@ zobrist_window = 127
 default_time_per_move_ms = 1000
 default_tt_size_mb       = 64
 
+[bench]
+# Benchmark suite defaults. See specs/SPEC_BENCHMARKS.md.
+default_time_ms     = 1000
+default_runs        = 3
+default_games       = 5
+default_max_plies   = 200
+results_dir         = "benches/results"
+fixtures_path       = "benches/fixtures/positions.json"
+schema_version      = 1
+
 [promote]
 # Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.
 # Python-only (subprocess driver). Rust does not consume these.

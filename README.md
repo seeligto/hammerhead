@@ -50,20 +50,29 @@ After `make build`:
 hexo play                       # human vs bot REPL
 hexo selfplay -n 10             # bot vs bot, 10 games
 hexo bench --time-ms 1000       # NPS smoke
-hexo bot                        # subprocess protocol (Phase 10 harness)
+hexo bot                        # subprocess protocol (Phase 11 harness)
+hexo match A_CMD B_CMD          # generic two-binary match
+hexo promote [--dry-run]        # current vs .bestref worktree
 ```
 
 The `hexo bot` subcommand exposes a line-oriented stdin/stdout protocol
 used by the promotion harness. See `specs/SPEC_API.md` for the command
 list.
 
-## Validation (Phase 10, planned)
+## Validation (Phase 11)
 
-`make vs N_GAMES=200` will run the current build against the last
-validated `best` and report win-rate statistics. `make promote` will
-advance `.bestref` if the configured threshold is met.
+`make vs N_GAMES=200` runs the current build against the worktree
+checked out at `.bestref` and reports win-rate, Wilson 95% CI, SPRT LLR
+(or raw/Wilson verdict), and an Elo estimate. It does not advance
+`.bestref`. `make promote` runs the same match and advances `.bestref`
+to `HEAD` if the verdict is `PROMOTE`.
 
-See `specs/SPEC_ROADMAP.md` § Phase 10 for the harness specification.
+Tuning lives in `hexo.toml § [promote]`. The worktree at `.worktree-best/`
+and its per-worktree venv `.venv-best/` are bootstrapped automatically
+by `scripts/setup_worktree.sh`; if `.bestref` is missing it's
+initialized to `HEAD`, so the first `make vs` runs current-vs-current.
+
+See `specs/SPEC_ROADMAP.md` § Phase 11 for the harness specification.
 
 ## Config
 

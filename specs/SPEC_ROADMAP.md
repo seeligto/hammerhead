@@ -15,8 +15,8 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 7 | `ordering` | ✅ done |
 | 8 | `search` | ✅ done |
 | 9 | `pybind` + Python `Bot` + CLI | ✅ done |
-| 10 | benchmark suite | 🔜 next |
-| 11 | promotion harness (`vs` / `promote`) | pending |
+| 10 | benchmark suite | ✅ done |
+| 11 | promotion harness (`vs` / `promote`) | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -240,7 +240,34 @@ promoting.
 - Per-worktree venv builds the baseline engine.
 - Subprocess protocol via `hexo bot` (Phase 9).
 - `hexo/hexo/promote.py` — SPRT / Wilson / raw tests.
-- `make vs`, `make promote` (replace Phase-9 stubs).
+- `make vs`, `make promote` replace the Phase-9 stubs.
+
+Tuning lives in `hexo.toml § [promote]` (Python-only — Rust does not
+consume these constants). The harness is serial (1 game at a time) and
+runs each game in a freshly-spawned subprocess pair to guarantee clean
+TT/history state.
+
+### `.bestref` bootstrap
+
+`scripts/setup_worktree.sh` is idempotent and self-bootstrapping:
+
+- If `.bestref` is missing, it is initialized to the current `HEAD`.
+  The first `make vs` then runs *current vs current* (winrate ≈ 0.5),
+  which exercises the harness plumbing without coupling to engine
+  strength.
+- If `.bestref` SHA differs from the worktree's HEAD, the worktree is
+  removed and recreated at the new SHA. The per-worktree venv is then
+  rebuilt via `maturin develop --release` and `pip install -e hexo`.
+- `HEXO_SKIP_BUILD=1` short-circuits the build step (used by the
+  idempotency test in `hexo/tests/test_promote.py`).
+
+### SPRT details
+
+We use a Bernoulli SPRT: each game contributes **two** Bernoulli trials
+(`win → 2/2`, `draw → 1/2`, `loss → 0/2`). The trial-level success
+probability for a hypothesis Elo `e` is `1 / (1 + 10^(-e/400))`. The
+log-likelihood ratio is `successes·log(p1/p0) + failures·log((1-p1)/(1-p0))`,
+checked against the standard Wald bounds `[log(β/(1-α)), log((1-β)/α)]`.
 
 See `prompts/PHASE_11_PROMPT.md`.
 

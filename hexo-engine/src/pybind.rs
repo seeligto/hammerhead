@@ -60,6 +60,33 @@ impl PyEngine {
         Ok((result.best_move.q, result.best_move.r))
     }
 
+    /// Bench-only variant returning the full search result as
+    /// `(q, r, score, depth_reached, nodes, time_ms)`. Lets the Python
+    /// macro-bench library compute NPS and depth-at-time without going
+    /// through `cargo bench`.
+    #[pyo3(signature = (time_ms = None, depth = None))]
+    fn bench_best_move(
+        &mut self,
+        py: Python<'_>,
+        time_ms: Option<u64>,
+        depth: Option<i8>,
+    ) -> PyResult<(i16, i16, i32, i8, u64, u64)> {
+        if time_ms.is_none() && depth.is_none() {
+            return Err(PyValueError::new_err(
+                "bench_best_move requires time_ms or depth",
+            ));
+        }
+        let r = py.detach(|| self.inner.best_move(time_ms, depth));
+        Ok((
+            r.best_move.q,
+            r.best_move.r,
+            r.score,
+            r.depth_reached,
+            r.nodes,
+            r.time_ms,
+        ))
+    }
+
     fn find_pv(&mut self, depth: i8) -> Vec<(i16, i16)> {
         self.inner
             .find_pv(depth)

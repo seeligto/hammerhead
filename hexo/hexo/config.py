@@ -128,6 +128,19 @@ class BotConfigDefaults:
 
 
 @dataclass(frozen=True, slots=True)
+class BenchConfig:
+    """Benchmark suite defaults. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    default_time_ms: int
+    default_runs: int
+    default_games: int
+    default_max_plies: int
+    results_dir: str
+    fixtures_path: str
+    schema_version: int
+
+
+@dataclass(frozen=True, slots=True)
 class PromoteConfig:
     """Promotion harness defaults. See ``specs/SPEC_ROADMAP.md`` § Phase 11."""
 
@@ -156,6 +169,7 @@ class HexoConfig:
     ordering: OrderingConfig
     board: BoardConfig
     bot: BotConfigDefaults
+    bench: BenchConfig
     promote: PromoteConfig
     source_path: Path
 
@@ -175,6 +189,7 @@ def load() -> HexoConfig:
     o = engine["ordering"]
     b = engine["board"]
     bot = raw["bot"]
+    bench = raw["bench"]
     promote = raw["promote"]
 
     return HexoConfig(
@@ -242,6 +257,15 @@ def load() -> HexoConfig:
         bot=BotConfigDefaults(
             default_time_per_move_ms=bot["default_time_per_move_ms"],
             default_tt_size_mb=bot["default_tt_size_mb"],
+        ),
+        bench=BenchConfig(
+            default_time_ms=bench["default_time_ms"],
+            default_runs=bench["default_runs"],
+            default_games=bench["default_games"],
+            default_max_plies=bench["default_max_plies"],
+            results_dir=bench["results_dir"],
+            fixtures_path=bench["fixtures_path"],
+            schema_version=bench["schema_version"],
         ),
         promote=PromoteConfig(
             default_n_games=promote["default_n_games"],
