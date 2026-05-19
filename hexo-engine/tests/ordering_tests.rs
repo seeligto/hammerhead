@@ -49,6 +49,7 @@ fn ctx<'a>(
         killers,
         history,
         stone1_s0_defense,
+        axis_run_cache: Default::default(),
     }
 }
 
