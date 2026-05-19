@@ -18,9 +18,11 @@ Cargo.lock
 refs/
 *.pdf
 
-# Benchmark output (Phase 10) — only baseline.json is committed.
+# Benchmark output (Phase 10) — only baseline.json + HOTSPOTS.md are
+# committed. Phase 12 flamegraph SVGs are local-only.
 benches/results/*.json
 !benches/results/baseline.json
+benches/results/flamegraph-*.svg
 target/criterion/
 
 # Promotion harness (Phase 11) — worktree of the locked best engine.
