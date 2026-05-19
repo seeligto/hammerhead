@@ -79,14 +79,21 @@ pub struct Board {
     zobrist: ZobristTable,
     axes: AxisBitmaps,
     winner: Option<Player>,
-    /// Per-player threat caches. Always `Some` after construction —
-    /// invariant maintained by [`Board::reset`] / [`Board::new`]. The
-    /// `threats_dirty` flag tracks whether the cached value is current;
-    /// when `dirty == false`, the cached `ThreatSet` is authoritative.
-    /// `RefCell` so the public accessor on `&self` can fill the cache
-    /// on a dirty read.
-    threats_x: RefCell<Option<ThreatSet>>,
-    threats_o: RefCell<Option<ThreatSet>>,
+    /// Per-player threat caches. Always populated after construction
+    /// — invariant maintained by [`Board::reset`] / [`Board::new`].
+    /// The `threats_dirty` flag tracks whether the cached value is
+    /// current; when `dirty == false`, the cached `ThreatSet` is
+    /// authoritative. `RefCell` so the public accessor on `&self` can
+    /// fill the cache on a dirty read.
+    ///
+    /// Phase 15 STEP 3: dropped the `Option` wrapper. The Phase-14
+    /// flamegraph's `pvs_node;threats;is_none;is_some<ThreatSet>` frame
+    /// disappeared once the `Option` projection inside `Ref::map` was
+    /// eliminated. The invariant is now load-bearing for safety: every
+    /// site that mutated the cache (`new`, `reset`, `reconcile_threats`)
+    /// writes a `ThreatSet`, not an `Option`.
+    threats_x: RefCell<ThreatSet>,
+    threats_o: RefCell<ThreatSet>,
     /// Reusable scratch buffers for the threat recompute hot path. Reset
     /// at the top of every `compute_with_scratch` call so capacity is
     /// retained across nodes.
@@ -150,8 +157,8 @@ impl Board {
             zobrist: ZobristTable::new(),
             axes: AxisBitmaps::new(),
             winner: None,
-            threats_x: RefCell::new(Some(ThreatSet::default())),
-            threats_o: RefCell::new(Some(ThreatSet::default())),
+            threats_x: RefCell::new(ThreatSet::default()),
+            threats_o: RefCell::new(ThreatSet::default()),
             threat_scratch: RefCell::new(ThreatScratch::default()),
             threats_dirty: Cell::new(false),
             threats_dirty_centers: RefCell::new(SmallVec::new()),
@@ -175,8 +182,8 @@ impl Board {
         self.side_to_move = Player::X;
         self.axes = AxisBitmaps::new();
         self.winner = None;
-        *self.threats_x.borrow_mut() = Some(ThreatSet::default());
-        *self.threats_o.borrow_mut() = Some(ThreatSet::default());
+        *self.threats_x.borrow_mut() = ThreatSet::default();
+        *self.threats_o.borrow_mut() = ThreatSet::default();
         self.threats_dirty.set(false);
         self.threats_dirty_centers.borrow_mut().clear();
         self.threats_dirty_overflow.set(false);
@@ -481,14 +488,10 @@ impl Board {
         if self.threats_dirty.get() {
             self.reconcile_threats();
         }
-        let slot = match player {
-            Player::X => &self.threats_x,
-            Player::O => &self.threats_o,
-        };
-        Ref::map(slot.borrow(), |o| {
-            o.as_ref()
-                .expect("invariant: clean cache always populated (set by new/reset/reconcile)")
-        })
+        match player {
+            Player::X => self.threats_x.borrow(),
+            Player::O => self.threats_o.borrow(),
+        }
     }
 
     /// Reconcile both player caches against [`Self::threats_dirty_centers`]
@@ -508,27 +511,36 @@ impl Board {
         };
         let mut scratch = self.threat_scratch.borrow_mut();
 
-        // Player X.
-        let prior_x = self.threats_x.borrow().clone();
-        let new_x = threats::compute_with_scratch(
-            self,
-            Player::X,
-            &mut scratch,
-            &centers_owned,
-            prior_x.as_ref(),
-        );
-        *self.threats_x.borrow_mut() = Some(new_x);
+        // Player X. The `Some(&*prior_x)` shape preserves the
+        // compute_with_scratch API (`prior: Option<&ThreatSet>`); the
+        // cache is always populated so `None` is no longer reachable
+        // from this caller.
+        {
+            let prior_x = self.threats_x.borrow();
+            let new_x = threats::compute_with_scratch(
+                self,
+                Player::X,
+                &mut scratch,
+                &centers_owned,
+                Some(&prior_x),
+            );
+            drop(prior_x);
+            *self.threats_x.borrow_mut() = new_x;
+        }
 
-        // Player O.
-        let prior_o = self.threats_o.borrow().clone();
-        let new_o = threats::compute_with_scratch(
-            self,
-            Player::O,
-            &mut scratch,
-            &centers_owned,
-            prior_o.as_ref(),
-        );
-        *self.threats_o.borrow_mut() = Some(new_o);
+        // Player O — symmetric.
+        {
+            let prior_o = self.threats_o.borrow();
+            let new_o = threats::compute_with_scratch(
+                self,
+                Player::O,
+                &mut scratch,
+                &centers_owned,
+                Some(&prior_o),
+            );
+            drop(prior_o);
+            *self.threats_o.borrow_mut() = new_o;
+        }
 
         drop(scratch);
         self.clear_threats_dirty();
