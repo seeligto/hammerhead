@@ -18,6 +18,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 10 | benchmark suite | ✅ done |
 | 11 | promotion harness (`vs` / `promote`) | ✅ done |
 | 12 | stabilization & reference (warning sweep, reference node counts, TT stats, baseline) | ✅ done |
+| 13 | kill hot HashMaps — `AxisBitmaps` flat array, `Board::pieces` removal, bench harness TT amortization | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -259,6 +260,41 @@ feature, captures a flamegraph, and commits the live `baseline.json`.
 Resolves Phase-10 deferred item "`baseline.json` committed".
 
 See `prompts/PHASE_12_PROMPT.md`.
+
+## Phase 13 — Kill the Hot HashMaps
+
+**Goal**: replace the two hashbrown probes identified by the Phase 12
+flamegraph as the dominant user-space costs.
+
+- `AxisBitmaps[axis][player]` switches from `FxHashMap<i16, LineBitmap>`
+  to a fixed-length `Box<[Option<LineBitmap>]>` of length
+  `2 * ZOBRIST_WINDOW + 1` (255 at defaults), indexed by
+  `line_id - LINE_ID_OFFSET`. Every `get` / `set` / `is_set` /
+  `window6` becomes a bounds-checked array load instead of a hashbrown
+  probe.
+- `Board::pieces: FxHashMap<Coord, Player>` is removed entirely.
+  `piece_at` becomes a two-player axis-bitmap probe (Q-axis arbitrarily);
+  `is_empty_cell` is `piece_at(c).is_none()`; `piece_count` is
+  `history.len()`; `pieces()` iteration walks the history `Vec` and
+  derives the player via `player_at_ply(idx)`. Internal helpers that
+  needed an occupancy check (`add_proximity`) probe `AxisBitmaps`
+  directly.
+- Bench harness fix: `bench_search` previously constructed `Engine::new`
+  inside `criterion::iter_batched_ref`'s setup closure, allocating a
+  64 MB TT every iteration. The Phase 12 flamegraph was dominated by
+  `from_elem<(TTEntry,TTEntry)>` / `unmap_region` / kernel page-fault
+  frames as a result. STEP 1 amortizes the `Engine` (and TT) across
+  iterations via `Engine::reset` + `Engine::clear_tt`. Harness-only —
+  production unaffected. Reference node counts identical.
+
+No algorithmic changes. No search-behaviour changes. Reference node
+counts must be identical at every `(fixture, depth)` before and after.
+
+Spec-vs-code corrections applied during Phase 13 are recorded in the
+existing "Spec-vs-code corrections" section below.
+
+See `prompts/PHASE_13_PROMPT.md` and Phase 12's
+`benches/results/HOTSPOTS.md` for the flamegraph rationale.
 
 ## Phase 11 — Promotion Harness
 

@@ -31,7 +31,6 @@ pub fn hex_distance(a: Coord, b: Coord) -> i16 {
 
 ```rust
 pub struct Board {
-    pieces: FxHashMap<Coord, Player>,
     proximity_count: FxHashMap<Coord, u32>,        // for legality (radius 8)
     inner_proximity_count: FxHashMap<Coord, u32>,  // for move-gen (radius 2)
     candidate_cells: FxHashSet<Coord>,
@@ -47,6 +46,20 @@ pub struct Board {
 #[repr(u8)]
 pub enum Player { X = 0, O = 1 }
 ```
+
+Board does **not** store a `pieces` map (removed in Phase 13 — see Phase 12
+flamegraph evidence). `piece_at(coord)` is served by probing the axis
+bitmaps: query `AxisBitmaps[Axis::Q][Player::X]` at the coord's
+`(line_id, pos)`; if set, return `Some(X)`. Same for `Player::O`. Else
+`None`. Single-axis probe is sufficient because every placed stone is
+registered in **all three** axis bitmaps; the Q-axis is chosen by
+convention. `is_empty_cell` is `piece_at(c).is_none()`; `piece_count`
+returns `history.len()`. `pieces()` iteration walks the move-history
+`Vec` in insertion order, deriving the player from `player_at_ply(idx)`.
+Callers that depended on the prior `FxHashMap` randomized order must
+either tolerate either order or sort explicitly; Phase 13 verified all
+existing callers are order-insensitive (see
+`subagents/scans/phase13-piece-at-callsites.md`).
 
 Two proximity refcounts are maintained in parallel. The outer (`r8`) one
 defines legality. The inner (`r2`, value from `MOVE_GEN_INNER_RADIUS`) backs
@@ -87,7 +100,7 @@ fn hash(&self) -> u128;
 
 A cell `c` is legal iff:
 
-- It is empty (`c` not in `pieces`), AND
+- It is empty (`is_empty_cell(c)` — bitmap probe, no `pieces` map), AND
 - One of:
   - `ply == 0` and `c == (0, 0)` (forced first move at origin), OR
   - `ply >= 1` and `min(hex_dist(c, p) for p in pieces) <= MAX_PIECE_DISTANCE`
@@ -105,7 +118,8 @@ incrementally:
 
 - `proximity_count: FxHashMap<Coord, u32>` — for each cell within `r8` of any
   piece, count how many pieces are within `r8`. Cell is in candidate set iff
-  `proximity_count > 0` AND cell is empty.
+  `proximity_count > 0` AND cell is empty (empty-check is an axis-bitmap
+  probe; `Board` no longer owns a `pieces` map).
 - `place(c)`: for every `d` in the `r8` hex around `c`, increment
   `proximity_count[d]`. If `proximity_count[d]` rose from 0 and `d` is empty,
   insert into candidates. Remove `c` itself from candidates. After proximity
@@ -244,14 +258,35 @@ pub struct LineBitmap {
 }
 
 pub struct AxisBitmaps {
-    /// [axis][player] -> map of line_id -> bitmap
-    lines: [[FxHashMap<i16, LineBitmap>; 2]; 3],
+    /// [axis][player] -> fixed-length flat array of optional line bitmaps,
+    /// indexed by `(line_id - LINE_ID_OFFSET)` where
+    /// `LINE_ID_OFFSET = -ZOBRIST_WINDOW` and the array length is
+    /// `LINE_ID_RANGE = 2 * ZOBRIST_WINDOW + 1`.
+    lines: [[Box<[Option<LineBitmap>]>; 2]; 3],
 }
 ```
 
 `SmallVec<[u64; 4]>` keeps most short lines inline (256 bits, covers ±128
 positions inline). Long lines spill to heap. No allocation in the common
 case once a line is established.
+
+**Storage rationale (Phase 13)**: line IDs are bounded by
+`±ZOBRIST_WINDOW` (default 127 → 255 entries per axis-player). The Phase
+12 flamegraph showed hashbrown probes inside `AxisBitmaps::line` /
+`is_set` / `window6` consuming ~500 M samples — the largest user-space
+cost after the bench-harness TT allocator artifact. Replacing the
+`FxHashMap<i16, LineBitmap>` with a fixed flat array reduces every probe
+to a single bounds-checked array load. Out-of-range line IDs are a bug
+(`debug_assert!`); the zobrist window already bounds them.
+
+Slots are lazily initialized: `None` until the first `set` on that line.
+`clear` does **not** deallocate (keeps the `Some(empty)` slot for re-use;
+reduces allocator churn during search). Memory cost per axis-player is
+`LINE_ID_RANGE * size_of::<Option<LineBitmap>>()` (≈ 12 KB at default
+window), total ≈ 72 KB — negligible compared to the 64 MB TT.
+
+Rotation property unchanged (axis permutation Q → S → R → Q; the array
+backing has no effect on the symmetry exploitation).
 
 ### Operations
 
