@@ -2,7 +2,7 @@
 //!
 //! X-positive eval. Per-stone granularity. PVS + aspiration windows +
 //! LMR + threat-only quiescence + check extensions. Minimax form (not
-//! negamax) — a single recursive [`pvs_node`] dispatches on
+//! negamax) — a single recursive `pvs_node` dispatches on
 //! `board.to_move()` so X maximizes and O minimizes without sign flips.
 
 #![allow(clippy::must_use_candidate)]

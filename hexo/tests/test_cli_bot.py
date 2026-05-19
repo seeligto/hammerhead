@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Optional
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 import pytest
 
 
-def _spawn() -> subprocess.Popen[str]:
-    return subprocess.Popen(
+@contextmanager
+def _bot_proc() -> Iterator[subprocess.Popen[str]]:
+    """Spawn a ``hexo bot`` subprocess and guarantee its pipes close.
+
+    Plain ``Popen.__exit__`` waits then drops references, but the pipe
+    objects themselves only close on GC — pytest with ``-W error`` then
+    promotes the resulting :class:`ResourceWarning` to a failure. Close
+    each pipe explicitly here.
+    """
+    proc = subprocess.Popen(
         [sys.executable, "-m", "hexo.cli", "bot", "--tt-size-mb", "4"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -18,6 +27,15 @@ def _spawn() -> subprocess.Popen[str]:
         text=True,
         bufsize=1,
     )
+    try:
+        yield proc
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+        for fd in (proc.stdin, proc.stdout, proc.stderr):
+            if fd is not None and not fd.closed:
+                fd.close()
 
 
 def _send(proc: subprocess.Popen[str], cmd: str) -> str:
@@ -34,8 +52,7 @@ def _wait_ready(proc: subprocess.Popen[str]) -> str:
 
 
 def test_subprocess_protocol_round_trip() -> None:
-    proc = _spawn()
-    try:
+    with _bot_proc() as proc:
         assert _wait_ready(proc) == "hexo bot ready"
         assert _send(proc, "reset") == "ok"
         assert _send(proc, "ply") == "0"
@@ -63,14 +80,10 @@ def test_subprocess_protocol_round_trip() -> None:
         assert _send(proc, "quit") == "bye"
         rc: Optional[int] = proc.wait(timeout=5)
         assert rc == 0
-    finally:
-        if proc.poll() is None:
-            proc.kill()
 
 
 def test_subprocess_unknown_command() -> None:
-    proc = _spawn()
-    try:
+    with _bot_proc() as proc:
         assert _wait_ready(proc) == "hexo bot ready"
         resp = _send(proc, "frobnicate")
         assert resp.startswith("error: unknown command")
@@ -78,14 +91,10 @@ def test_subprocess_unknown_command() -> None:
         assert _send(proc, "ply") == "0"
         _send(proc, "quit")
         proc.wait(timeout=5)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
 
 
 def test_subprocess_error_is_surfaced() -> None:
-    proc = _spawn()
-    try:
+    with _bot_proc() as proc:
         assert _wait_ready(proc) == "hexo bot ready"
         # First move must be at origin.
         resp = _send(proc, "place 5 5")
@@ -94,20 +103,13 @@ def test_subprocess_error_is_surfaced() -> None:
         assert _send(proc, "place 0 0") == "ok"
         _send(proc, "quit")
         proc.wait(timeout=5)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
 
 
 @pytest.mark.parametrize("malformed", ["place", "place 1", "best_move", "best_move foo"])
 def test_subprocess_malformed_commands_emit_error(malformed: str) -> None:
-    proc = _spawn()
-    try:
+    with _bot_proc() as proc:
         assert _wait_ready(proc) == "hexo bot ready"
         resp = _send(proc, malformed)
         assert resp.startswith("error:")
         _send(proc, "quit")
         proc.wait(timeout=5)
-    finally:
-        if proc.poll() is None:
-            proc.kill()

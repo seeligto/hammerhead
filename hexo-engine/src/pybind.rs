@@ -1,7 +1,7 @@
 //! `PyO3` wrapper. Thin shim over [`crate::search::Engine`]; no game logic.
 //!
-//! All search work runs inside `py.detach`, so long-running
-//! [`PyEngine::best_move`] calls release the GIL.
+//! All search work runs inside `py.detach`, so long-running `best_move`
+//! calls release the GIL.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;

@@ -401,7 +401,7 @@ impl Board {
         self.hash ^= old ^ new;
     }
 
-    /// Reverse of [`advance_parity`]: back-derive `(side, halfmove)` from
+    /// Reverse of [`Self::advance_parity`]: back-derive `(side, halfmove)` from
     /// the CURRENT (post-advance) parity, not from `player_at_ply`. Using
     /// the natural-parity formula would clobber any state set by
     /// [`Board::force_parity_for_test`] across a `place`/`undo` cycle.
