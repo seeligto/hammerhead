@@ -82,15 +82,22 @@ def _play_one_selfplay_game(time_ms: int, max_plies: int) -> tuple[Optional[int]
         record.append(m)
         return active.winner() is not None or mirror.winner() is not None
 
+    def done() -> bool:
+        return (
+            record.ply >= max_plies
+            or bx.winner() is not None
+            or bo.winner() is not None
+        )
+
     # Drive turns by following whichever side is to move on the X engine.
-    while record.ply < max_plies and bx.winner() is None and bo.winner() is None:
+    while not done():
         side = bx.to_move()
         active, mirror = (bx, bo) if side == 0 else (bo, bx)
-        if step(active, mirror):
+        if step(active, mirror) or done():
             break
         # Same-side continuation: stone 2.
-        if active.halfmove() == 1 and active.winner() is None and mirror.winner() is None:
-            if step(active, mirror):
+        if active.halfmove() == 1:
+            if step(active, mirror) or done():
                 break
 
     winner = bx.winner() if bx.winner() is not None else bo.winner()
