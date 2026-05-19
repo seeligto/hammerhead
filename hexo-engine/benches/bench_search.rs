@@ -42,6 +42,14 @@ fn bench_search_root(c: &mut Criterion) {
         .find(|f| f.name == "midgame_12")
         .expect("midgame_12 fixture must exist");
     let depths: [i8; 3] = [2, 4, 6];
+    // Pre-compute the fixture's move list once. The Phase 13 bench
+    // hoist amortized `Engine::new` across iterations but still
+    // rebuilt a full `Board` (with its `FxHashSet`s and `Vec`s) every
+    // iteration via `(fx.build)()`; the kernel-side `kernel_init_pages`
+    // / `unmap_region` frames in the Phase 14 mid-phase flamegraph all
+    // traced back to that per-iter Board churn. With the history
+    // hoisted, the inner loop is allocation-free for setup.
+    let history: Vec<_> = (fx.build)().history().to_vec();
     for &d in &depths {
         let mut group = c.benchmark_group(format!("search::search_root(depth={d})"));
         group.sample_size(10);
@@ -60,8 +68,7 @@ fn bench_search_root(c: &mut Criterion) {
                     // cold-start measurement is wanted.
                     e.reset();
                     e.clear_tt();
-                    let template = (fx.build)();
-                    for c in template.history() {
+                    for c in &history {
                         e.board.place_for_test(
                             *c,
                             hexo_engine_core::board::player_at_ply(e.board.ply()),

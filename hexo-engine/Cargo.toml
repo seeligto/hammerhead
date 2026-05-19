@@ -62,9 +62,13 @@ debug         = false
 
 # Inherit release optimizations for cargo bench, but keep debug symbols
 # so `make flamegraph` produces a meaningful SVG with named frames.
+# `strip = "none"` reverses the release-profile symbol strip we added in
+# Phase 14 STEP 0 — without it the flamegraph collapses to nameless
+# `[unknown]` frames.
 [profile.bench]
 inherits      = "release"
 debug         = true
+strip         = "none"
 lto           = "fat"
 codegen-units = 1
 
