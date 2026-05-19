@@ -67,7 +67,7 @@ check: lint test ## lint + test (CI gate)
 # ──────────────────────────────────────────────────────────────────────────────
 
 bench: ## full sweep, write canonical JSON to benches/results/
-	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS)
+	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 
 bench-micro: ## criterion benches for one TARGET (default: all) + drain
 	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET)
@@ -79,7 +79,7 @@ bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/r
 	@$(VPY) -m hexo.cli bench diff $(A) $(B)
 
 bench-baseline: ## refresh benches/results/baseline.json from the latest run
-	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS)
+	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 	@latest=$$(ls -t benches/results/*.json | grep -v baseline | head -1); \
 	    cp "$$latest" benches/results/baseline.json; \
 	    echo "baseline updated from $$latest"
