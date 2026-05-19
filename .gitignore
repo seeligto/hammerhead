@@ -26,5 +26,10 @@ target/criterion/
 # Promotion harness (Phase 11) — worktree of the locked best engine.
 .worktree-best/
 
-# ignore data
+# ignore data (includes analysis output under data/analysis/)
 data/
+
+# local-only analysis scripts (not part of the engine)
+scripts/analyze_human_games.py
+scripts/openbook/
+scripts/build_opening_book.py
