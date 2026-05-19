@@ -9,12 +9,12 @@
 
 use std::time::Instant;
 
-use hexo_engine::board::{Board, Player};
-use hexo_engine::config::MATE_SCORE;
-use hexo_engine::coords::{Coord, ORIGIN, hex_distance};
-use hexo_engine::ordering::OrderingState;
-use hexo_engine::search::{Engine, SearchConfig, search_root};
-use hexo_engine::tt::TranspositionTable;
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::config::MATE_SCORE;
+use hexo_engine_core::coords::{Coord, ORIGIN, hex_distance};
+use hexo_engine_core::ordering::OrderingState;
+use hexo_engine_core::search::{Engine, SearchConfig, search_root};
+use hexo_engine_core::tt::TranspositionTable;
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -24,7 +24,7 @@ fn fresh() -> (TranspositionTable, OrderingState) {
     (TranspositionTable::new(16), OrderingState::new())
 }
 
-fn run(b: &mut Board, depth: i8) -> hexo_engine::search::SearchResult {
+fn run(b: &mut Board, depth: i8) -> hexo_engine_core::search::SearchResult {
     let (mut tt, mut ord) = fresh();
     let cfg = SearchConfig {
         max_depth: depth,

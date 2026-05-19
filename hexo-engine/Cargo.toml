@@ -5,7 +5,13 @@ edition = "2024"
 rust-version = "1.85"
 
 [lib]
-name = "hexo_engine"
+# Distinct cargo target name from the PyO3 module name (`hexo_engine`).
+# Avoids output-filename collision when both `cdylib` and `rlib` are
+# emitted: cargo emits `libhexo_engine_core.{so,rlib}`, and maturin
+# renames the cdylib to `hexo_engine.so` per `pyproject.toml
+# [tool.maturin] module-name`. The PyO3 `#[pymodule] fn hexo_engine`
+# in `src/pybind.rs` is independent of this name.
+name = "hexo_engine_core"
 crate-type = ["cdylib", "rlib"]
 
 [features]

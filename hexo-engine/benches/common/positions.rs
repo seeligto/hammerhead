@@ -21,8 +21,8 @@
 //! `build_<name>() -> Board` per fixture plus the [`FIXTURES`] slice into
 //! `$OUT_DIR/fixtures_generated.rs`. Same JSON drives Python fixtures.
 
-use hexo_engine::board::{Board, player_at_ply};
-use hexo_engine::coords::Coord;
+use hexo_engine_core::board::{Board, player_at_ply};
+use hexo_engine_core::coords::Coord;
 
 /// Named bench position.
 pub struct Fixture {

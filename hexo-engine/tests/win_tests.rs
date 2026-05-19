@@ -1,6 +1,6 @@
-use hexo_engine::board::{Board, Player};
-use hexo_engine::coords::{Coord, ORIGIN};
-use hexo_engine::win::is_winning_move;
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::coords::{Coord, ORIGIN};
+use hexo_engine_core::win::is_winning_move;
 
 fn place_ok(b: &mut Board, c: Coord) {
     b.place(c)

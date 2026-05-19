@@ -3,9 +3,9 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use fxhash::FxHashSet;
-use hexo_engine::coords::ORIGIN;
-use hexo_engine::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
-use hexo_engine::{Board, Coord, Player};
+use hexo_engine_core::coords::ORIGIN;
+use hexo_engine_core::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
+use hexo_engine_core::{Board, Coord, Player};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::{Rng, SeedableRng};
 

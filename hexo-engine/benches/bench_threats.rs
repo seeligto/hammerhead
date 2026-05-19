@@ -14,12 +14,12 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::threats`].
+//! Micro-benchmarks for [`hexo_engine_core::threats`].
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::board::Player;
-use hexo_engine::threats;
+use hexo_engine_core::board::Player;
+use hexo_engine_core::threats;
 
 mod common;
 use common::positions::FIXTURES;

@@ -14,13 +14,13 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::axis_bitmap`].
+//! Micro-benchmarks for [`hexo_engine_core::axis_bitmap`].
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::axis_bitmap::Axis;
-use hexo_engine::board::Player;
-use hexo_engine::coords::Coord;
+use hexo_engine_core::axis_bitmap::Axis;
+use hexo_engine_core::board::Player;
+use hexo_engine_core::coords::Coord;
 
 mod common;
 use common::positions::FIXTURES;

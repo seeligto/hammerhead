@@ -14,11 +14,11 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::moves::generate`].
+//! Micro-benchmarks for [`hexo_engine_core::moves::generate`].
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::moves;
+use hexo_engine_core::moves;
 
 mod common;
 use common::positions::FIXTURES;

@@ -1,6 +1,6 @@
-use hexo_engine::axis_bitmap::{Axis, AxisBitmaps};
-use hexo_engine::board::Player;
-use hexo_engine::coords::Coord;
+use hexo_engine_core::axis_bitmap::{Axis, AxisBitmaps};
+use hexo_engine_core::board::Player;
+use hexo_engine_core::coords::Coord;
 
 #[test]
 fn axis_line_id_pos_roundtrip() {

@@ -14,12 +14,12 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::tt::TranspositionTable`].
+//! Micro-benchmarks for [`hexo_engine_core::tt::TranspositionTable`].
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::coords::ORIGIN;
-use hexo_engine::tt::{TTFlag, TranspositionTable};
+use hexo_engine_core::coords::ORIGIN;
+use hexo_engine_core::tt::{TTFlag, TranspositionTable};
 
 mod common;
 use common::positions::FIXTURES;

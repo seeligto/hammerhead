@@ -37,7 +37,7 @@ use std::process::{Command, ExitCode};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: u32 = hexo_engine::config::BENCH_SCHEMA_VERSION;
+const SCHEMA_VERSION: u32 = hexo_engine_core::config::BENCH_SCHEMA_VERSION;
 
 #[derive(Debug, Deserialize)]
 struct EstimateInner {

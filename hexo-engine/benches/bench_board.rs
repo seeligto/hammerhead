@@ -14,14 +14,14 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::board::Board`] — place, undo, round-trip.
+//! Micro-benchmarks for [`hexo_engine_core::board::Board`] — place, undo, round-trip.
 //!
 //! Run via `cargo bench --bench bench_board` (from `hexo-engine/`).
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::board::Board;
-use hexo_engine::coords::{Coord, ORIGIN};
+use hexo_engine_core::board::Board;
+use hexo_engine_core::coords::{Coord, ORIGIN};
 
 mod common;
 use common::positions::FIXTURES;

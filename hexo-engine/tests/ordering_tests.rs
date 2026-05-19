@@ -1,11 +1,11 @@
 //! Phase 7 ordering tests. Covers bucket priority, killer/history
 //! feed-in, `MOVE_GEN_CAP` truncation, history decay, killer dedup.
 
-use hexo_engine::board::{Board, Player};
-use hexo_engine::config::{HISTORY_CUTOFF_MAX, MOVE_GEN_CAP};
-use hexo_engine::coords::Coord;
-use hexo_engine::moves::MoveList;
-use hexo_engine::ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::config::{HISTORY_CUTOFF_MAX, MOVE_GEN_CAP};
+use hexo_engine_core::coords::Coord;
+use hexo_engine_core::moves::MoveList;
+use hexo_engine_core::ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 use smallvec::SmallVec;
 
 // ────────────────────────────────────────────────────────────────────────

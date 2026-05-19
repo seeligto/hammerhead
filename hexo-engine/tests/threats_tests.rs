@@ -1,8 +1,8 @@
 //! Phase 4 threat-detection integration tests.
 
-use hexo_engine::board::{Board, Player};
-use hexo_engine::coords::Coord;
-use hexo_engine::threats::{ThreatCounts, ThreatKind, compute, single_cell_blocks_all};
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::coords::Coord;
+use hexo_engine_core::threats::{ThreatCounts, ThreatKind, compute, single_cell_blocks_all};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

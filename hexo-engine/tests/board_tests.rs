@@ -1,8 +1,8 @@
 #![allow(clippy::cast_sign_loss)]
 
-use hexo_engine::board::{Board, BoardError, Player};
-use hexo_engine::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
-use hexo_engine::coords::{Coord, ORIGIN, RANGE_OFFSETS, hex_distance};
+use hexo_engine_core::board::{Board, BoardError, Player};
+use hexo_engine_core::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
+use hexo_engine_core::coords::{Coord, ORIGIN, RANGE_OFFSETS, hex_distance};
 use std::collections::HashSet;
 
 fn place_ok(b: &mut Board, c: Coord) {
@@ -16,7 +16,7 @@ fn new_board_state() {
     assert_eq!(b.ply(), 0);
     // Empty-board hash is the X-turn parity overlay, not zero (see
     // SPEC_ENGINE.md "Zobrist hashing").
-    assert_eq!(b.hash(), hexo_engine::zobrist::Z_TURN_X);
+    assert_eq!(b.hash(), hexo_engine_core::zobrist::Z_TURN_X);
     assert_eq!(b.halfmove(), 0);
     assert_eq!(b.to_move(), Player::X);
     assert_eq!(b.piece_count(), 0);

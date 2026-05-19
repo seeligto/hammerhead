@@ -14,15 +14,15 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::ordering`].
+//! Micro-benchmarks for [`hexo_engine_core::ordering`].
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use fxhash::FxHashMap;
-use hexo_engine::board::{Board, Player};
-use hexo_engine::coords::Coord;
-use hexo_engine::moves::{self, MoveList};
-use hexo_engine::ordering::{
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::coords::Coord;
+use hexo_engine_core::moves::{self, MoveList};
+use hexo_engine_core::ordering::{
     KillerSlot, OrderingContext, bench_bucket_value, order_moves,
 };
 

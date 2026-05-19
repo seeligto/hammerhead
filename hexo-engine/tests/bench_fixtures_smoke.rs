@@ -7,8 +7,8 @@
 
 #![allow(clippy::must_use_candidate, clippy::let_and_return)]
 
-use hexo_engine::board::{Board, player_at_ply};
-use hexo_engine::coords::Coord;
+use hexo_engine_core::board::{Board, player_at_ply};
+use hexo_engine_core::coords::Coord;
 
 pub struct Fixture {
     pub name: &'static str,

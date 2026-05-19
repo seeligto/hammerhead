@@ -1,9 +1,9 @@
 #![allow(clippy::cast_sign_loss)]
 
-use hexo_engine::board::Board;
-use hexo_engine::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
-use hexo_engine::coords::{Coord, ORIGIN, for_each_in_range, hex_distance};
-use hexo_engine::generate;
+use hexo_engine_core::board::Board;
+use hexo_engine_core::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
+use hexo_engine_core::coords::{Coord, ORIGIN, for_each_in_range, hex_distance};
+use hexo_engine_core::generate;
 use std::collections::HashSet;
 
 fn place_ok(b: &mut Board, c: Coord) {

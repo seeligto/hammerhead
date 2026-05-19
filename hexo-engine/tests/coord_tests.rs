@@ -1,5 +1,5 @@
-use hexo_engine::config::MAX_PIECE_DISTANCE;
-use hexo_engine::coords::{
+use hexo_engine_core::config::MAX_PIECE_DISTANCE;
+use hexo_engine_core::coords::{
     AXES, AXIS_Q, AXIS_R, AXIS_S, Coord, ORIGIN, RANGE_OFFSET_COUNT, RANGE_OFFSETS,
     for_each_in_range, hex_distance, within_range,
 };

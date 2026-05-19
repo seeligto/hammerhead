@@ -21,7 +21,7 @@
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::search::Engine;
+use hexo_engine_core::search::Engine;
 
 mod common;
 use common::positions::FIXTURES;
@@ -44,7 +44,7 @@ fn bench_search_root(c: &mut Criterion) {
                     for c in template.history() {
                         e.board.place_for_test(
                             *c,
-                            hexo_engine::board::player_at_ply(e.board.ply()),
+                            hexo_engine_core::board::player_at_ply(e.board.ply()),
                         );
                     }
                     e

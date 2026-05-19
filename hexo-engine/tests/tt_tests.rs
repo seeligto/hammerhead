@@ -3,8 +3,8 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use hexo_engine::coords::ORIGIN;
-use hexo_engine::{Coord, TTFlag, TranspositionTable};
+use hexo_engine_core::coords::ORIGIN;
+use hexo_engine_core::{Coord, TTFlag, TranspositionTable};
 
 /// 1) `new(64)` rounds to a power-of-two slot count whose mask is
 ///    `n_slots - 1`. A zero-MB request still yields a 1-slot table.

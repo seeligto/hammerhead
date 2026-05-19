@@ -3,13 +3,13 @@
 //! Covers the three eval layers, the mate-distance contract, and the
 //! `Board::cached_eval` invalidation discipline.
 
-use hexo_engine::board::{Board, Player};
-use hexo_engine::config::{
+use hexo_engine_core::board::{Board, Player};
+use hexo_engine_core::config::{
     FORK_COVER2_BONUS, MATE_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, TEMPO_WEIGHT,
 };
-use hexo_engine::coords::Coord;
-use hexo_engine::eval::{eval, is_mate_for};
-use hexo_engine::threats::compute as compute_threats;
+use hexo_engine_core::coords::Coord;
+use hexo_engine_core::eval::{eval, is_mate_for};
+use hexo_engine_core::threats::compute as compute_threats;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

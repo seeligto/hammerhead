@@ -14,7 +14,7 @@
     clippy::single_match_else,
     clippy::too_many_lines
 )]
-//! Micro-benchmarks for [`hexo_engine::eval`].
+//! Micro-benchmarks for [`hexo_engine_core::eval`].
 //!
 //! Layer-isolated benches call `#[doc(hidden)] pub fn bench_layer*` shims
 //! exposed in `eval.rs` so we can time each layer independently without
@@ -22,9 +22,9 @@
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use hexo_engine::board::Player;
-use hexo_engine::coords::ORIGIN;
-use hexo_engine::eval::{bench_layer1_window_scan, bench_layer2_shapes, bench_layer3_fork_bonus};
+use hexo_engine_core::board::Player;
+use hexo_engine_core::coords::ORIGIN;
+use hexo_engine_core::eval::{bench_layer1_window_scan, bench_layer2_shapes, bench_layer3_fork_bonus};
 
 mod common;
 use common::positions::FIXTURES;
