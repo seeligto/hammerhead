@@ -4,9 +4,19 @@
 //! with defense cells. Cached on [`Board`], recomputed incrementally
 //! within `THREAT_RECOMPUTE_RADIUS` of the last change center.
 //!
-//! The current implementation always does a full recompute on a dirty read;
-//! the `center`/`prior` arguments to [`compute`] reserve the API surface for
-//! true incremental scanning, planned for Phase 8.
+//! Phase 15: the `centers` / `prior` hints select between two paths:
+//!
+//! - **Full recompute** ([`full_recompute`]): scan every piece-line and
+//!   every cross-axis anchor. Used on initial read, on overflow of the
+//!   dirty-center accumulator, and as the oracle in the correctness
+//!   test (`tests/threats_oracle.rs`).
+//! - **Incremental** ([`incremental`]): walk linear runs in identical
+//!   order to `full_recompute` (so `s0_instances` iteration order is
+//!   preserved — see `subagents/scans/phase15-threats-cache-callers.md`)
+//!   but skip cross-axis pattern matching for anchors outside every
+//!   dirty cluster (radius `THREAT_CLUSTER_RADIUS`). Each anchor's
+//!   prior cross-axis contribution is inherited via
+//!   [`ThreatSet::cross_axis_per_piece`].
 
 // `span` is guaranteed to be in `[2, 5]` by the surrounding range check
 // before each `as u8` cast in `walk_linear_runs`.
@@ -14,8 +24,8 @@
 
 use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
-use crate::config::MAX_S0_INSTANCES;
-use crate::coords::Coord;
+use crate::config::{MAX_S0_INSTANCES, THREAT_CLUSTER_RADIUS};
+use crate::coords::{Coord, hex_distance};
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 
@@ -70,14 +80,50 @@ pub enum ThreatKind {
 pub struct ThreatInstance {
     /// Shape category.
     pub kind: ThreatKind,
-    /// Stones forming the run, in axis-order.
+    /// Stones forming the run, in axis-order (low pos → high pos).
     pub pieces: SmallVec<[Coord; 5]>,
     /// Cells whose occupation by the opponent denies completion. Size 1 for
     /// closed shapes, size 2 for open shapes.
     pub defense_cells: SmallVec<[Coord; 4]>,
+    /// Phase 15: deterministic anchor cell for dirty-radius membership
+    /// checks. `pieces[pieces.len() / 2]` — median by insertion order.
+    /// Two instances with the same `kind` / `pieces` / `defense_cells`
+    /// always have the same `anchor` (the pieces order is canonical
+    /// per [`walk_linear_runs`]).
+    ///
+    /// Anchor is **illustrative metadata, not part of identity**. The
+    /// oracle test (`tests/threats_oracle.rs`) compares instances via
+    /// the `threat_set_equiv` helper, which ignores `anchor`.
+    pub anchor: Coord,
+}
+
+/// Phase 15: per-anchor cross-axis contribution. Records how many shapes
+/// of each cross-axis type matched at this anchor. Used by the incremental
+/// path to inherit unchanged contributions without re-running the pattern
+/// matcher. Stored on [`ThreatSet`] in the same order as the recomputed
+/// piece list (insertion order).
+#[derive(Copy, Clone, Debug, Default)]
+pub struct CrossAxisContribution {
+    /// `# TRIANGLE_PATTERNS` matches with this anchor.
+    pub triangle: u8,
+    /// `# ARCH_PATTERNS` matches.
+    pub arch: u8,
+    /// `# RHOMBUS_PATTERNS` matches.
+    pub rhombus: u8,
+    /// `# BONE_PATTERNS` matches.
+    pub bone: u8,
+    /// `# TRAPEZOID_PATTERNS` matches.
+    pub trapezoid: u8,
 }
 
 /// Per-player threat snapshot. Cheap to clone (counts + small Vec).
+///
+/// Phase 15: the per-anchor cross-axis breakdown used by the
+/// incremental compute path lives on [`ThreatScratch`] (owned by
+/// `Board`) rather than here — storing it on `ThreatSet` would bloat
+/// the struct and regress every consumer that iterates
+/// `s0_instances` or reads `counts`. Search consumers see only
+/// `counts` + `s0_instances`.
 #[derive(Clone, Debug, Default)]
 pub struct ThreatSet {
     /// Shape counts across all detected threats.
@@ -89,19 +135,51 @@ pub struct ThreatSet {
 /// Reusable scratch buffers for `compute`. Owned by `Board` and reset
 /// between calls so the `FxHashSet` `seen` dedup and the per-player
 /// pieces `Vec` keep their backing capacity instead of reallocating on
-/// every dirty read. Cleared (not shrunk) at the start of each
-/// `compute_with_scratch`.
+/// every dirty read.
+///
+/// Phase 15: also carries `cross_axis_x` / `cross_axis_o` — the
+/// per-anchor cross-axis contribution from the last compute, per
+/// player. These persist across [`ThreatScratch::reset`] (which
+/// only clears the per-call buffers) so the incremental path can
+/// inherit clean-anchor contributions without cloning prior
+/// `ThreatSet`s.
+///
+/// Cleared (not shrunk) at the start of each `compute_with_scratch`.
 #[derive(Debug, Default)]
 pub struct ThreatScratch {
     seen: FxHashSet<(Axis, i16, i16)>,
     pieces: Vec<Coord>,
+    /// Cross-axis breakdown from the last compute for `Player::X`.
+    /// Cleared in `full_recompute`, swapped in `incremental`.
+    cross_axis_x: Vec<(Coord, CrossAxisContribution)>,
+    /// Cross-axis breakdown from the last compute for `Player::O`.
+    cross_axis_o: Vec<(Coord, CrossAxisContribution)>,
 }
 
 impl ThreatScratch {
+    /// Per-call reset: clears the per-call buffers (`seen` dedup and
+    /// `pieces` work list). Does **not** touch the cross-axis
+    /// breakdowns — those persist as the inherited prior for the
+    /// incremental path.
     #[inline]
     fn reset(&mut self) {
         self.seen.clear();
         self.pieces.clear();
+    }
+
+    /// Full reset: clears every internal buffer including the
+    /// cross-axis breakdowns. Called from `Board::reset` so a fresh
+    /// game starts without stale prior breakdowns from the previous
+    /// game (the prior breakdown would index pieces that no longer
+    /// exist; incremental would still produce a correct result via
+    /// lookup-miss fallback, but pretending no prior exists is
+    /// strictly simpler).
+    #[inline]
+    pub fn clear_all(&mut self) {
+        self.seen.clear();
+        self.pieces.clear();
+        self.cross_axis_x.clear();
+        self.cross_axis_o.clear();
     }
 }
 
@@ -146,8 +224,19 @@ pub fn compute(
 /// buffers across many calls — only the buffers' capacities are
 /// retained, eliminating the per-call allocation seen in the
 /// flamegraph's threats compute frame.
+///
+/// Phase 15 dispatch:
+///
+/// - `centers.is_empty() || prior.is_none()` → [`full_recompute`].
+///   Initial reads (`prior == None`) and overflow-fallback reads
+///   (`centers == &[]` passed by `Board::reconcile_threats` when the
+///   dirty-center accumulator overflowed) take this path.
+/// - `scratch.cross_axis_<player>` is empty (i.e. no prior compute
+///   has populated the per-anchor breakdown) → also [`full_recompute`].
+/// - Otherwise → [`incremental`]. Walks linear runs in identical order
+///   to `full_recompute` and inherits cross-axis contributions from
+///   the scratch breakdown for anchors outside every dirty cluster.
 #[must_use]
-#[allow(unused_variables)]
 pub fn compute_with_scratch(
     board: &Board,
     player: Player,
@@ -155,10 +244,16 @@ pub fn compute_with_scratch(
     centers: &[Coord],
     prior: Option<&ThreatSet>,
 ) -> ThreatSet {
-    // Phase 15 STEP 2.1: signature only. Behaviour is still full recompute.
-    // STEP 2.2 wires the incremental path here.
-    let _ = (centers, prior);
-    full_recompute(board, player, scratch)
+    let breakdown_present = !match player {
+        Player::X => scratch.cross_axis_x.is_empty(),
+        Player::O => scratch.cross_axis_o.is_empty(),
+    };
+    let try_incremental = !centers.is_empty() && prior.is_some() && breakdown_present;
+    if try_incremental {
+        incremental(board, player, scratch, centers)
+    } else {
+        full_recompute(board, player, scratch)
+    }
 }
 
 #[cold]
@@ -172,8 +267,64 @@ fn full_recompute(board: &Board, player: Player, scratch: &mut ThreatScratch) ->
     }
 
     walk_linear_runs(board, player, &scratch.pieces, &mut scratch.seen, &mut out);
-    walk_cross_axis(board, player, &scratch.pieces, &mut out.counts);
 
+    // Take the per-player breakdown buffer, clear it, write fresh.
+    let breakdown = match player {
+        Player::X => &mut scratch.cross_axis_x,
+        Player::O => &mut scratch.cross_axis_o,
+    };
+    breakdown.clear();
+    walk_cross_axis_full(board, player, &scratch.pieces, &mut out.counts, breakdown);
+
+    out
+}
+
+/// Incremental recompute. Walks linear runs in identical piece-order to
+/// [`full_recompute`] so the `s0_instances` iteration order is
+/// preserved (load-bearing — see
+/// `subagents/scans/phase15-threats-cache-callers.md`: `search.rs:726`
+/// `collect_stone1_defense` uses `.find()`). Cross-axis pattern
+/// matching runs only for anchors within `THREAT_CLUSTER_RADIUS` of
+/// any dirty center; other anchors inherit their contribution from
+/// the scratch breakdown (via `mem::take` swap to avoid a clone).
+fn incremental(
+    board: &Board,
+    player: Player,
+    scratch: &mut ThreatScratch,
+    centers: &[Coord],
+) -> ThreatSet {
+    debug_assert!(!centers.is_empty(), "incremental requires non-empty centers");
+    let mut out = ThreatSet::default();
+    scratch.reset();
+    for (c, p) in board.pieces() {
+        if p == player {
+            scratch.pieces.push(c);
+        }
+    }
+
+    // Linear walk is identical to full_recompute — preserves iteration
+    // order of `s0_instances` and recomputes counts contributions for
+    // open_3 / closed_3 / open_2. The cost of this walk is the floor
+    // for the incremental path; the cross-axis selective scan below is
+    // where the speedup lives.
+    walk_linear_runs(board, player, &scratch.pieces, &mut scratch.seen, &mut out);
+
+    // Swap the prior breakdown out of scratch (zero-cost), then
+    // refill scratch with the new breakdown using `prior` as lookup.
+    let breakdown_slot = match player {
+        Player::X => &mut scratch.cross_axis_x,
+        Player::O => &mut scratch.cross_axis_o,
+    };
+    let prior_breakdown = std::mem::take(breakdown_slot);
+    walk_cross_axis_incremental(
+        board,
+        player,
+        &scratch.pieces,
+        centers,
+        &prior_breakdown,
+        &mut out.counts,
+        breakdown_slot,
+    );
     out
 }
 
@@ -319,10 +470,12 @@ fn push_s0(
         return;
     }
     bump(&mut out.counts);
+    let anchor = pieces[pieces.len() / 2];
     out.s0_instances.push(ThreatInstance {
         kind,
         pieces,
         defense_cells,
+        anchor,
     });
 }
 
@@ -456,34 +609,108 @@ const BONE_PATTERNS: &[[(i16, i16); 4]] = &[
     [(0, 1), (1, -1), (1, 0), (-1, 2)],
 ];
 
-fn walk_cross_axis(board: &Board, player: Player, pieces: &[Coord], out: &mut ThreatCounts) {
-    for &anchor in pieces {
-        for pat in TRIANGLE_PATTERNS {
-            if matches_pattern(board, player, anchor, pat) {
-                out.triangle = out.triangle.saturating_add(1);
-            }
-        }
-        for pat in ARCH_PATTERNS {
-            if matches_pattern(board, player, anchor, pat) {
-                out.arch = out.arch.saturating_add(1);
-            }
-        }
-        for pat in RHOMBUS_PATTERNS {
-            if matches_pattern(board, player, anchor, pat) {
-                out.rhombus = out.rhombus.saturating_add(1);
-            }
-        }
-        for pat in BONE_PATTERNS {
-            if matches_pattern(board, player, anchor, pat) {
-                out.bone = out.bone.saturating_add(1);
-            }
-        }
-        for pat in TRAPEZOID_PATTERNS {
-            if matches_pattern(board, player, anchor, pat) {
-                out.trapezoid = out.trapezoid.saturating_add(1);
-            }
+/// Cross-axis pattern matching at `anchor` for `player`. Returns the
+/// per-shape match count contributed by this anchor.
+#[inline]
+fn anchor_cross_axis(board: &Board, player: Player, anchor: Coord) -> CrossAxisContribution {
+    let mut contrib = CrossAxisContribution::default();
+    for pat in TRIANGLE_PATTERNS {
+        if matches_pattern(board, player, anchor, pat) {
+            contrib.triangle = contrib.triangle.saturating_add(1);
         }
     }
+    for pat in ARCH_PATTERNS {
+        if matches_pattern(board, player, anchor, pat) {
+            contrib.arch = contrib.arch.saturating_add(1);
+        }
+    }
+    for pat in RHOMBUS_PATTERNS {
+        if matches_pattern(board, player, anchor, pat) {
+            contrib.rhombus = contrib.rhombus.saturating_add(1);
+        }
+    }
+    for pat in BONE_PATTERNS {
+        if matches_pattern(board, player, anchor, pat) {
+            contrib.bone = contrib.bone.saturating_add(1);
+        }
+    }
+    for pat in TRAPEZOID_PATTERNS {
+        if matches_pattern(board, player, anchor, pat) {
+            contrib.trapezoid = contrib.trapezoid.saturating_add(1);
+        }
+    }
+    contrib
+}
+
+#[inline]
+fn add_cross_axis_contrib(counts: &mut ThreatCounts, contrib: CrossAxisContribution) {
+    counts.triangle = counts.triangle.saturating_add(contrib.triangle);
+    counts.arch = counts.arch.saturating_add(contrib.arch);
+    counts.rhombus = counts.rhombus.saturating_add(contrib.rhombus);
+    counts.bone = counts.bone.saturating_add(contrib.bone);
+    counts.trapezoid = counts.trapezoid.saturating_add(contrib.trapezoid);
+}
+
+/// Full cross-axis walk: pattern match at every anchor. Writes each
+/// anchor's contribution to `breakdown` for the subsequent
+/// incremental path to inherit.
+fn walk_cross_axis_full(
+    board: &Board,
+    player: Player,
+    pieces: &[Coord],
+    counts: &mut ThreatCounts,
+    breakdown: &mut Vec<(Coord, CrossAxisContribution)>,
+) {
+    breakdown.reserve(pieces.len());
+    for &anchor in pieces {
+        let contrib = anchor_cross_axis(board, player, anchor);
+        add_cross_axis_contrib(counts, contrib);
+        breakdown.push((anchor, contrib));
+    }
+}
+
+/// Incremental cross-axis walk: per anchor, if it falls within
+/// `THREAT_CLUSTER_RADIUS` of any dirty center the cross-axis pattern
+/// match is run fresh; otherwise the prior contribution is inherited
+/// (linear scan over `prior_breakdown`). The walk preserves piece
+/// insertion order so the resulting `breakdown` stays parallel to
+/// the player's piece list.
+fn walk_cross_axis_incremental(
+    board: &Board,
+    player: Player,
+    pieces: &[Coord],
+    centers: &[Coord],
+    prior_breakdown: &[(Coord, CrossAxisContribution)],
+    counts: &mut ThreatCounts,
+    breakdown: &mut Vec<(Coord, CrossAxisContribution)>,
+) {
+    breakdown.reserve(pieces.len());
+    for &anchor in pieces {
+        let dirty = centers
+            .iter()
+            .any(|&c| hex_distance(anchor, c) <= THREAT_CLUSTER_RADIUS);
+        let contrib = if dirty {
+            anchor_cross_axis(board, player, anchor)
+        } else {
+            prior_cross_axis(prior_breakdown, anchor)
+                .unwrap_or_else(|| anchor_cross_axis(board, player, anchor))
+        };
+        add_cross_axis_contrib(counts, contrib);
+        breakdown.push((anchor, contrib));
+    }
+}
+
+/// Linear lookup over a prior breakdown slice. `None` if the anchor is
+/// new (no entry — e.g. a stone placed since the last reconcile).
+#[inline]
+fn prior_cross_axis(
+    prior_breakdown: &[(Coord, CrossAxisContribution)],
+    anchor: Coord,
+) -> Option<CrossAxisContribution> {
+    prior_breakdown
+        .iter()
+        .find(|&&(c, _)| c == anchor)
+        .map(|&(_, contrib)| contrib)
 }
 
 #[inline]

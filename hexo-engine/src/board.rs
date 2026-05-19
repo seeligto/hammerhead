@@ -180,6 +180,7 @@ impl Board {
         self.threats_dirty.set(false);
         self.threats_dirty_centers.borrow_mut().clear();
         self.threats_dirty_overflow.set(false);
+        self.threat_scratch.borrow_mut().clear_all();
         self.eval_cache.set(None);
     }
 
