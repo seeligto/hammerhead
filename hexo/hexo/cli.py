@@ -463,6 +463,30 @@ def _diff_rows(a: dict, b: dict) -> list[dict]:
         lambda r: r["plies_per_sec"],
         lower_is_better=False,
     )
+
+    # Reference node counts (regression net — see SPEC_BENCHMARKS.md).
+    # Any drift indicates a behaviour change: same fixture × depth must
+    # explore the same tree. We treat *any* delta as a regression so a
+    # 0.1 % drift still surfaces, but only flag the failure exit code
+    # when the magnitude exceeds the standard 5 % threshold the diff
+    # tool already uses for other metrics.
+    a_ref = {
+        (r["fixture"], r["depth"]): r["nodes"]
+        for r in a_macro.get("reference", [])
+    }
+    b_ref = {
+        (r["fixture"], r["depth"]): r["nodes"]
+        for r in b_macro.get("reference", [])
+    }
+    for key in sorted(set(a_ref) & set(b_ref)):
+        rows.append(
+            _row(
+                f"reference / {key[0]}.d{key[1]}",
+                float(a_ref[key]),
+                float(b_ref[key]),
+                lower_is_better=True,
+            )
+        )
     return rows
 
 
