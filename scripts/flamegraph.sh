@@ -19,6 +19,10 @@
 
 set -euo pipefail
 
+# `cargo install`'d binaries live in ~/.cargo/bin, which isn't always in
+# the PATH of non-login shells (e.g. CI, make).
+export PATH="${HOME}/.cargo/bin:${PATH}"
+
 SHA=$(git rev-parse --short HEAD)
 DATE=$(date +%Y-%m-%dT%H-%M-%S)
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -30,34 +34,52 @@ PERF_DATA="${RESULTS}/.flamegraph.perf.data"
 mkdir -p "${RESULTS}"
 
 # Pre-flight: surface missing tools clearly instead of mid-perf failures.
-for tool in perf cargo-flamegraph; do
+for tool in perf cargo-flamegraph inferno-flamegraph inferno-collapse-perf; do
     if ! command -v "${tool}" >/dev/null 2>&1; then
         echo "error: ${tool} not in PATH — see header of this script for install steps" >&2
         exit 1
     fi
 done
 
-# cargo-flamegraph keeps perf.data when --perfdata is supplied; we need it
-# anyway to emit the folded-stack text, so direct it into results/.
+# cargo-flamegraph doesn't expose the intermediate perf.data, so we drive
+# perf + inferno directly. This also lets us emit both the SVG and the
+# folded-stack text without re-running the workload.
 cd "${REPO_ROOT}/hexo-engine"
-PERF=perf cargo flamegraph --release \
-    --bench bench_search \
-    --output "${SVG}" \
-    --perfdata "${PERF_DATA}" \
-    -- --bench
 
-# Folded stacks for grep / LLM analysis. inferno-collapse-perf parses the
-# perf-script output and sorts hottest-first by sample count.
+# Build the bench binary with debug symbols (configured in [profile.bench]).
+cargo bench --bench bench_search --no-run >/dev/null
+
+# Pick the most recent bench_search executable in target/release/deps.
+BENCH_BIN=$(ls -t target/release/deps/bench_search-* 2>/dev/null \
+    | grep -v '\.d$' \
+    | head -1)
+if [ -z "${BENCH_BIN}" ]; then
+    echo "error: bench_search binary not found" >&2
+    exit 1
+fi
+
+# Record samples. `--call-graph dwarf` produces useful stacks for Rust;
+# `-F 997` is the standard non-aliasing sampling rate.
+perf record \
+    --call-graph dwarf \
+    -F 997 \
+    -o "${PERF_DATA}" \
+    --quiet \
+    -- "${BENCH_BIN}" --bench >/dev/null
+
+# Emit folded stacks first (hottest path on top), then render to SVG.
 perf script -i "${PERF_DATA}" \
-    | "${HOME}/.cargo/bin/inferno-collapse-perf" \
+    | inferno-collapse-perf \
     | sort -t' ' -k2 -nr \
     > "${FOLDED}"
 
-# perf.data is large and binary; keep folded text and SVG only.
+inferno-flamegraph < "${FOLDED}" > "${SVG}"
+
+# perf.data is large + binary; keep only folded text + SVG.
 rm -f "${PERF_DATA}" "${PERF_DATA}.old"
 
 echo "wrote ${SVG}"
 echo "wrote ${FOLDED}"
 echo
-echo "Top 10 hottest frames:"
+echo "Top 10 hottest frames (count / stack):"
 head -10 "${FOLDED}"
