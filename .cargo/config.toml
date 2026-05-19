@@ -1,0 +1,12 @@
+# Phase 14 — pin instruction set to host CPU.
+#
+# Acceptable for development + local bench host (AMD Ryzen 7 8845HS:
+# Zen 4, AVX2 + AVX-512). For portable release artifacts swap for an
+# explicit feature gate, e.g.
+#
+#   rustflags = ["-C", "target-feature=+avx2,+bmi2,+fma"]
+#
+# See specs/SPEC_ARCHITECTURE.md § Build.
+
+[build]
+rustflags = ["-C", "target-cpu=native"]

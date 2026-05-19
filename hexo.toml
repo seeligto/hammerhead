@@ -146,6 +146,20 @@ fixtures   = ["empty", "single_origin", "midgame_12", "midgame_30"]
 max_depth  = 8
 budget_s   = 60
 
+[bench.scaling]
+# ms-time scaling table. See specs/SPEC_BENCHMARKS.md § ms-time scaling.
+# (fixture, time_ms) → (depth_reached, nodes, NPS, ci95_lo, ci95_hi).
+fixtures   = ["empty", "single_origin", "midgame_12", "midgame_30"]
+time_ms    = [1, 10, 50, 100, 250, 500, 1000]
+runs       = 5
+
+[bench.breakdown]
+# Per-function cycles breakdown. See specs/SPEC_BENCHMARKS.md
+# § Per-function cycles breakdown. Estimates only; flamegraph is
+# ground truth.
+fixtures   = ["midgame_12", "midgame_30"]
+depth      = 4
+
 [promote]
 # Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.
 # Python-only (subprocess driver). Rust does not consume these.

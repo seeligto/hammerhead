@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help build clean rebuild test lint fmt check vs promote install \
-        bench bench-micro bench-diff bench-baseline flamegraph
+        bench bench-micro bench-diff bench-baseline flamegraph pgo
 
 ENGINE    := hexo-engine
 PY        := hexo
@@ -86,6 +86,9 @@ bench-baseline: ## refresh benches/results/baseline.json from the latest run
 
 flamegraph: ## [Phase 12] capture bench_search flamegraph SVG (requires perf + cargo-flamegraph)
 	@./scripts/flamegraph.sh
+
+pgo: ## [Phase 14] profile-guided optimization build (requires llvm-tools-preview)
+	@./scripts/pgo_build.sh
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Phase 11 — promotion harness. See specs/SPEC_ROADMAP.md § Phase 11.

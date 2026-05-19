@@ -19,8 +19,15 @@ crate-type = ["cdylib", "rlib"]
 # defaults so the PyO3 wrapper stays zero-cost. Enable `tt_stats` in
 # dev / regression builds to surface TT probe/hit/store/collision
 # counters (see specs/SPEC_BENCHMARKS.md § TT statistics).
-default  = []
-tt_stats = []
+#
+# `mimalloc` swaps the global allocator. Off by default — Phase 14
+# STEP 3 measured the delta. `simd_eval` gates the AVX2
+# encode_ternary lane; off by default until the 729-table identity
+# test certifies correctness on the build host.
+default   = []
+tt_stats  = []
+mimalloc  = ["dep:mimalloc"]
+simd_eval = []
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
@@ -30,6 +37,7 @@ rand = "0.9"
 rand_xoshiro = "0.8"
 thiserror = "2"
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [build-dependencies]
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
@@ -43,16 +51,21 @@ serde_json  = "1"
 chrono      = { version = "0.4", default-features = false, features = ["clock"] }
 
 [profile.release]
-opt-level = 3
-lto = "fat"
+opt-level     = 3
+lto           = "fat"
 codegen-units = 1
-panic = "abort"
+panic         = "abort"
+strip         = "symbols"
+incremental   = false
+debug         = false
 
 # Inherit release optimizations for cargo bench, but keep debug symbols
 # so `make flamegraph` produces a meaningful SVG with named frames.
 [profile.bench]
-inherits = "release"
-debug = true
+inherits      = "release"
+debug         = true
+lto           = "fat"
+codegen-units = 1
 
 [[bench]]
 name = "bench_board"

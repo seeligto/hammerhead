@@ -119,11 +119,44 @@ maturin develop --release   # builds Rust, installs Python module
 Release flags in `Cargo.toml`:
 ```toml
 [profile.release]
-opt-level = 3
-lto = "fat"
+opt-level     = 3
+lto           = "fat"
 codegen-units = 1
-panic = "abort"
+panic         = "abort"
+strip         = "symbols"
+incremental   = false
 ```
+
+### `.cargo/config.toml` — `target-cpu=native`
+
+Phase 14 added `.cargo/config.toml` with `rustflags = ["-C",
+"target-cpu=native"]`. This binds the release binary's instruction
+set to the host CPU's exact feature set (Zen 4 / AVX2 / AVX-512 on
+the bench host). Accepted trade-off for development + bench because
+all macro NPS / flamegraph numbers are captured locally.
+
+**For distribution / CI release artifacts**: swap `target-cpu=native`
+for an explicit feature gate, e.g.
+
+```toml
+rustflags = ["-C", "target-feature=+avx2,+bmi2,+fma"]
+```
+
+…or build per-arch artifacts. The PyO3 cdylib loaded into a Python
+ABI3 wheel inherits the same constraint; portable wheels should use
+the explicit-feature form.
+
+### Optional features
+
+- `tt_stats` — `Engine::tt_stats()` populates probe/hit/store/
+  collision counters. Zero-cost when off (no fields, no code paths).
+- `mimalloc` — swaps the global allocator for mimalloc. Useful when
+  small per-iter allocations dominate; off by default — see Phase 14
+  STEP 3 result.
+- `simd_eval` — enables the AVX2 `encode_ternary` lane in
+  `eval::simd`. Runtime feature detect; scalar fallback always
+  available. Off by default until the 729-table identity test
+  certifies correctness on the build host.
 
 ## Testing Strategy
 

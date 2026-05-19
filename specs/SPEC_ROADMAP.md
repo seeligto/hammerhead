@@ -19,6 +19,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 11 | promotion harness (`vs` / `promote`) | ✅ done |
 | 12 | stabilization & reference (warning sweep, reference node counts, TT stats, baseline) | ✅ done |
 | 13 | kill hot HashMaps — `AxisBitmaps` flat array, `Board::pieces` removal, bench harness TT amortization | ✅ done |
+| 14 | deep optimization sweep — release profile, target-cpu, allocator, piece_at refactor, inline sweep, LineBitmap micro-opts, incremental threats, SIMD encode_ternary, PGO, bench infra extensions | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -203,12 +204,8 @@ audit.)
   `#[pyclass(unsendable)]` for Board's `RefCell` / `Cell`. Engine
   owns `clear_tt` method (shim stays thin).
 
-## Known follow-ups (deferred, post-baseline)
+## Phase 15 candidates (deferred follow-ups)
 
-- **Incremental threat recompute**: Phase 4 ships full recompute on
-  every dirty read. Spec accepts `center` / `prior` args but ignores
-  them. Implement true incremental in a sub-phase after Phase 10 NPS
-  bench identifies it as a bottleneck.
 - **`closed_2` shape detector** for full tempo +0 / -1 cases.
 - **BotConfig vs SearchConfig time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
@@ -218,6 +215,18 @@ audit.)
 - **Radius-theory colony discounting** in eval.
 - **Lazy-SMP parallel search**.
 - **Opening book**, **endgame tables**, **WebSocket live integration**.
+
+## Phase 14 resolved follow-ups
+
+- **Incremental threat recompute**: shipped in Phase 14 (STEP 7).
+  `threats::compute` now uses the `center` / `prior` hints to
+  restrict the rescan to a dirty radius around the most-recent
+  placement and merge with the surviving prior set. Oracle test
+  in `tests/threats_incremental.rs` enforces equality with full
+  recompute across 10k random positions.
+- **`piece_at` 2-probe regression** (Phase 13 carry-over): resolved
+  via `AxisBitmaps::is_player` and a short-circuit in
+  `threats::matches_pattern<N>` (STEP 4).
 
 ## Phase 10 — Benchmark Suite
 

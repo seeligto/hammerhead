@@ -428,6 +428,69 @@ develop --release --features tt_stats`.
 The `new_generation` and `clear` paths reset all counters, so a
 fresh `Engine` starts at zero regardless of generation cycles.
 
+## ms-time scaling table (Phase 14)
+
+`hexo bench scaling` produces a table of `(fixture, time_budget_ms) →
+(depth_reached, nodes, NPS)`. Time budgets: `[1, 10, 50, 100, 250,
+500, 1000]` ms. Fixtures: same default set as reference. Each cell
+is the median over `runs` runs (cold TT each run — fresh Engine).
+
+Output: `scaling` array appended under `macro` in canonical JSON:
+
+```json
+{
+  "scaling": [
+    {
+      "fixture": "midgame_12",
+      "time_ms": 50,
+      "depth": 3,
+      "nodes": 8200,
+      "nps": 164000,
+      "ci95_lo": 158000,
+      "ci95_hi": 169000
+    }
+  ]
+}
+```
+
+Purpose: validate ms-time + sub-second strength claims. ms-time
+scaling is a separate axis from steady-state NPS — at very short
+budgets the iterative-deepening overhead and first-iteration latency
+dominate, so raw NPS isn't predictive.
+
+`ci95_lo` / `ci95_hi` are the percentile-bootstrap 95% CI on the
+per-run NPS (not a Wilson CI — Wilson is for binomial proportions).
+With small `runs` (e.g. 5) we fall back to min / max as a conservative
+band.
+
+## Per-function cycles breakdown (Phase 14)
+
+`hexo bench breakdown` runs each fixture at depth 4 (fixed, no time
+budget) and estimates the share of total search cycles spent in each
+top-level module by combining criterion micro-bench medians with
+calls-per-search counts. Reported as a table:
+
+```json
+{
+  "breakdown": [
+    { "fixture": "midgame_12", "depth": 4, "function": "eval",        "pct_cycles": 38.2 },
+    { "fixture": "midgame_12", "depth": 4, "function": "threats",     "pct_cycles": 21.4 },
+    { "fixture": "midgame_12", "depth": 4, "function": "moves",       "pct_cycles":  5.1 },
+    { "fixture": "midgame_12", "depth": 4, "function": "ordering",    "pct_cycles":  8.0 },
+    { "fixture": "midgame_12", "depth": 4, "function": "tt",          "pct_cycles":  4.5 },
+    { "fixture": "midgame_12", "depth": 4, "function": "search_other","pct_cycles": 22.8 }
+  ]
+}
+```
+
+Function categories: `eval`, `threats`, `moves`, `ordering`, `tt`,
+`search_other` (residual = 100% − sum). Hard-coded mapping from
+criterion group names to categories.
+
+The numbers are **estimates**, not a profile — caveat their use.
+Their value is trend tracking across phases. Use `make flamegraph`
+for ground-truth profiling.
+
 ## Future extensions (post-baseline)
 
 - Memory benchmarks: `peak_rss` per fixture at depth N.
