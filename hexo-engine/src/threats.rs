@@ -207,14 +207,14 @@ fn walk_linear_runs(
             let left_cell = coord_at(axis, line_id, start_pos - 1);
             let right_cell = coord_at(axis, line_id, end_pos + 1);
             let opp = player.opponent();
-            let left_open = board.piece_at(left_cell) != Some(opp);
-            let right_open = board.piece_at(right_cell) != Some(opp);
+            let left_open = !axes.is_player(left_cell, opp);
+            let right_open = !axes.is_player(right_cell, opp);
             debug_assert!(
-                board.piece_at(left_cell) != Some(player),
+                !axes.is_player(left_cell, player),
                 "non-maximal run on left"
             );
             debug_assert!(
-                board.piece_at(right_cell) != Some(player),
+                !axes.is_player(right_cell, player),
                 "non-maximal run on right"
             );
 
@@ -279,7 +279,7 @@ fn classify_linear_run(
             } else {
                 (right_cell, coord_at(axis, line_id, end_pos + 2))
             };
-            if board.piece_at(beyond) != Some(opp) {
+            if !board.axes().is_player(beyond, opp) {
                 push_s0(
                     out,
                     ThreatKind::ClosedFour,
@@ -373,8 +373,9 @@ fn has_room_for_six(
 ) -> bool {
     let beyond_left = coord_at(axis, line_id, start - 2);
     let beyond_right = coord_at(axis, line_id, end + 2);
+    let bitmaps = board.axes();
     let opp = player.opponent();
-    board.piece_at(beyond_left) != Some(opp) || board.piece_at(beyond_right) != Some(opp)
+    !bitmaps.is_player(beyond_left, opp) || !bitmaps.is_player(beyond_right, opp)
 }
 
 /// Open-2 qualifier: no opponent stone within 2 cells either side along
@@ -386,10 +387,11 @@ fn is_isolated_open_two(
     line_id: i16,
     start: i16,
 ) -> bool {
+    let bitmaps = board.axes();
     let opp = player.opponent();
     for delta in [-2_i16, -1, 2, 3] {
         let c = coord_at(axis, line_id, start + delta);
-        if board.piece_at(c) == Some(opp) {
+        if bitmaps.is_player(c, opp) {
             return false;
         }
     }
@@ -489,9 +491,10 @@ fn matches_pattern<const N: usize>(
     anchor: Coord,
     offsets: &[(i16, i16); N],
 ) -> bool {
+    let axes = board.axes();
     for (dq, dr) in offsets {
         let c = Coord::new(anchor.q + dq, anchor.r + dr);
-        if board.piece_at(c) != Some(player) {
+        if !axes.is_player(c, player) {
             return false;
         }
     }

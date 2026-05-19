@@ -378,6 +378,20 @@ impl AxisBitmaps {
         }
     }
 
+    /// `true` iff `p` owns `c`. Single-probe shortcut against the
+    /// Q-axis bitmap — equivalent to `is_set(Axis::Q, line_id(c),
+    /// pos(c), p)`. Threat detection's `matches_pattern` and the
+    /// flank-cell checks in `walk_linear_runs` use this to avoid the
+    /// two-probe `piece_at` path that disambiguates `Some(X) /
+    /// Some(O) / None` from the unified occupancy bitmap.
+    #[inline]
+    #[must_use]
+    pub fn is_player(&self, c: Coord, p: Player) -> bool {
+        let id = Axis::Q.line_id(c);
+        let pos = Axis::Q.pos(c);
+        self.is_set(Axis::Q, id, pos, p)
+    }
+
     /// Player owning `c`, or `None` if empty. Short-circuits on the
     /// unified occupancy bitmap when the cell is empty (the common case
     /// for `piece_at` queries on flank cells in threat detection), then

@@ -13,6 +13,7 @@ measurements unless noted. Host: AMD Ryzen 7 8845HS, rustc 1.94.0.
 | step 2 | release profile delta (cold, 1 run × 3 runs avg) | 244,132 (+2.8%) | 133,040 (+3.7%) | `lto=fat` + `codegen-units=1` were already on; pure `target-cpu=native` lift |
 | step 3.2 | mimalloc behind feature (cold, 3 runs avg) | 243,729 (−0.2%) | 133,694 (+0.5%) | within noise; feature gate kept, not default-enabled |
 | step 3.3 | threats::compute scratch buffer (3 runs avg) | 269,517 (+10.4%) | 144,678 (+8.7%) | hoisted `FxHashSet seen` + `Vec pieces` into `Board.threat_scratch` |
+| step 4 | piece_at → is_player single-probe (3 runs avg) | 291,375 (+8.1%) | 159,326 (+10.1%) | `AxisBitmaps::is_player`; threats `matches_pattern` + flank-cell checks |
 
 ## Reference table — Phase 14 truly fixed-depth counts (post step 1.5)
 
