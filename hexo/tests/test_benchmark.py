@@ -198,6 +198,54 @@ def test_bench_reference_rejects_invalid_args():
         bench.bench_reference(fixtures=["empty"], max_depth=1, budget_s=0.0)
 
 
+def test_bench_scaling_returns_cell_per_budget():
+    rows = bench.bench_scaling(
+        fixtures=["single_origin"], time_ms_buckets=[10, 50], runs=3
+    )
+    assert len(rows) == 2
+    keys = [(r.fixture, r.time_ms) for r in rows]
+    assert keys == [("single_origin", 10), ("single_origin", 50)]
+    for r in rows:
+        assert isinstance(r, bench.ScalingEntry)
+        assert r.nps > 0
+        assert r.ci95_lo <= r.nps <= r.ci95_hi
+        # depth is non-negative; very short budgets may bottom out at 0/1
+        assert r.depth >= 0
+        assert r.nodes > 0
+
+
+def test_bench_scaling_rejects_zero_runs():
+    with pytest.raises(ValueError):
+        bench.bench_scaling(
+            fixtures=["empty"], time_ms_buckets=[10], runs=0
+        )
+
+
+def test_bench_breakdown_emits_all_buckets():
+    rows = bench.bench_breakdown(fixtures=["midgame_12"], depth=2)
+    fns = {r.function for r in rows}
+    # Must produce all six top-level categories regardless of whether
+    # the latest micro JSON had data to attribute.
+    assert fns == {
+        "eval",
+        "threats",
+        "moves",
+        "ordering",
+        "tt",
+        "search_other",
+    }
+    pcts = [r.pct_cycles for r in rows]
+    assert all(p >= 0.0 for p in pcts)
+    # Either we have micro data and the sum is ~100, or no data and all 0s.
+    total = sum(pcts)
+    assert total == pytest.approx(0.0) or total == pytest.approx(100.0, abs=1e-6)
+
+
+def test_bench_breakdown_rejects_zero_depth():
+    with pytest.raises(ValueError):
+        bench.bench_breakdown(fixtures=["empty"], depth=0)
+
+
 def test_diff_schema_mismatch_rejects(tmp_path: Path, capsys):
     a = tmp_path / "a.json"
     b = tmp_path / "b.json"

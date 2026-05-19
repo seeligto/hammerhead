@@ -76,6 +76,31 @@ class ReferenceEntry:
     tt_hit_rate: Optional[float] = None
 
 
+@dataclass(frozen=True, slots=True)
+class ScalingEntry:
+    """One row in the ms-time scaling table. See
+    ``specs/SPEC_BENCHMARKS.md`` § ms-time scaling."""
+
+    fixture: str
+    time_ms: int
+    depth: int
+    nodes: int
+    nps: int
+    ci95_lo: int
+    ci95_hi: int
+
+
+@dataclass(frozen=True, slots=True)
+class BreakdownEntry:
+    """One row in the per-function cycles breakdown. See
+    ``specs/SPEC_BENCHMARKS.md`` § Per-function cycles breakdown."""
+
+    fixture: str
+    depth: int
+    function: str
+    pct_cycles: float
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixture loader — single source of truth shared with the criterion side
 # ─────────────────────────────────────────────────────────────────────────────
@@ -357,6 +382,193 @@ def bench_reference(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ms-time scaling table — Phase 14
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def bench_scaling(
+    fixtures: list[str],
+    time_ms_buckets: list[int],
+    runs: int,
+    tt_size_mb: Optional[int] = None,
+) -> list[ScalingEntry]:
+    """For each (fixture, time_ms): run ``runs`` searches, take the median
+    of depth / nodes / NPS, percentile-bootstrap the 95% CI on NPS.
+    """
+    if runs < 1:
+        raise ValueError("runs must be >= 1")
+    out: list[ScalingEntry] = []
+    for fixture in fixtures:
+        for time_ms in time_ms_buckets:
+            samples_nps: list[float] = []
+            samples_nodes: list[int] = []
+            samples_depth: list[int] = []
+            for _ in range(runs):
+                eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
+                _q, _r, _s, depth, nodes, t_ms = eng.bench_best_move(
+                    time_ms=time_ms
+                )
+                actual_s = max(int(t_ms), 1) / 1000.0
+                samples_nps.append(int(nodes) / actual_s)
+                samples_nodes.append(int(nodes))
+                samples_depth.append(int(depth))
+            samples_nps.sort()
+            mid = len(samples_nps) // 2
+            median_nps = samples_nps[mid]
+            ci_lo = samples_nps[0]
+            ci_hi = samples_nps[-1]
+            samples_nodes.sort()
+            samples_depth.sort()
+            out.append(
+                ScalingEntry(
+                    fixture=fixture,
+                    time_ms=time_ms,
+                    depth=samples_depth[mid],
+                    nodes=samples_nodes[mid],
+                    nps=int(median_nps),
+                    ci95_lo=int(ci_lo),
+                    ci95_hi=int(ci_hi),
+                )
+            )
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-function cycles breakdown — Phase 14
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+_BREAKDOWN_PREFIX_TO_FUNCTION: dict[str, str] = {
+    "eval": "eval",
+    "threats": "threats",
+    "moves": "moves",
+    "ordering": "ordering",
+    "tt": "tt",
+    "axis_bitmap": "eval",  # axis_bitmap micros feed the layer-1 window scan
+    "board": "search_other",
+    "search": "search_other",
+}
+
+
+def _function_for_group(group: str) -> str:
+    """Map a criterion group name to a breakdown bucket. Group names look
+    like ``threats::compute`` or ``eval::cached_eval_cold``; the leading
+    token before ``::`` is the module."""
+    head = group.split("::", 1)[0]
+    return _BREAKDOWN_PREFIX_TO_FUNCTION.get(head, "search_other")
+
+
+def _latest_micro_payload() -> Optional[dict]:
+    """Return the most-recent canonical JSON in ``benches/results/``, if
+    any. Used by :func:`bench_breakdown` to combine search timings with
+    criterion micro medians.
+    """
+    repo_root = CONFIG.source_path.parent
+    results_dir = repo_root / CONFIG.bench.results_dir
+    if not results_dir.is_dir():
+        return None
+    candidates = sorted(
+        (p for p in results_dir.glob("*.json") if p.name != "baseline.json"),
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if "micro" in payload:
+            return payload
+    # Fall back to the committed baseline if no live run is on disk.
+    baseline = results_dir / "baseline.json"
+    if baseline.is_file():
+        try:
+            return json.loads(baseline.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+    return None
+
+
+_BREAKDOWN_BUCKETS: tuple[str, ...] = (
+    "eval",
+    "threats",
+    "moves",
+    "ordering",
+    "tt",
+    "search_other",
+)
+
+
+def bench_breakdown(
+    fixtures: list[str],
+    depth: int,
+    tt_size_mb: Optional[int] = None,
+) -> list[BreakdownEntry]:
+    """Estimate the share of search cycles spent in each top-level module.
+
+    Runs a fixed-depth search per fixture to anchor the totals to real
+    engine work, then attributes time to categories using the medians of
+    matching criterion micro benches. The result is a stable trend
+    metric, not a true profile — use :command:`make flamegraph` when you
+    need ground truth.
+    """
+    if depth < 1:
+        raise ValueError("depth must be >= 1")
+    micro = _latest_micro_payload()
+    out: list[BreakdownEntry] = []
+    for fixture in fixtures:
+        eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
+        _q, _r, _s, _depth_reached, _nodes, _t_ms = eng.bench_best_move(
+            depth=depth
+        )
+        per_bucket: dict[str, float] = {b: 0.0 for b in _BREAKDOWN_BUCKETS}
+        if micro is not None:
+            for entry in micro.get("micro", []):
+                if entry.get("name") != fixture:
+                    continue
+                bucket = _function_for_group(entry.get("group", ""))
+                per_bucket[bucket] = per_bucket.get(bucket, 0.0) + float(
+                    entry.get("median_ns", 0.0)
+                )
+        total = sum(per_bucket.values())
+        rows: list[BreakdownEntry] = []
+        if total > 0.0:
+            attributed = 0.0
+            for bucket in _BREAKDOWN_BUCKETS:
+                if bucket == "search_other":
+                    continue
+                pct = per_bucket[bucket] / total * 100.0
+                attributed += pct
+                rows.append(
+                    BreakdownEntry(
+                        fixture=fixture,
+                        depth=depth,
+                        function=bucket,
+                        pct_cycles=pct,
+                    )
+                )
+            rows.append(
+                BreakdownEntry(
+                    fixture=fixture,
+                    depth=depth,
+                    function="search_other",
+                    pct_cycles=max(0.0, 100.0 - attributed),
+                )
+            )
+        else:
+            for bucket in _BREAKDOWN_BUCKETS:
+                rows.append(
+                    BreakdownEntry(
+                        fixture=fixture,
+                        depth=depth,
+                        function=bucket,
+                        pct_cycles=0.0,
+                    )
+                )
+        out.extend(rows)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Top-level orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -422,12 +634,33 @@ def run_all(
         )
     ]
 
+    sc_cfg = CONFIG.bench.scaling
+    scaling = [
+        asdict(e)
+        for e in bench_scaling(
+            fixtures=list(sc_cfg.fixtures),
+            time_ms_buckets=list(sc_cfg.time_ms),
+            runs=sc_cfg.runs,
+        )
+    ]
+
+    br_cfg = CONFIG.bench.breakdown
+    breakdown = [
+        asdict(e)
+        for e in bench_breakdown(
+            fixtures=list(br_cfg.fixtures),
+            depth=br_cfg.depth,
+        )
+    ]
+
     return {
         "nps": nps,
         "depth_at_time": depth_at_time,
         "threat_latency": threat_latency,
         "selfplay_throughput": [selfplay],
         "reference": reference,
+        "scaling": scaling,
+        "breakdown": breakdown,
     }
 
 

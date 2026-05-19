@@ -168,6 +168,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_selfplay(args)
     if sub == "reference":
         return _bench_reference(args)
+    if sub == "scaling":
+        return _bench_scaling(args)
+    if sub == "breakdown":
+        return _bench_breakdown(args)
     if sub == "all":
         return _bench_all(args)
     if sub == "diff":
@@ -301,6 +305,66 @@ def _bench_reference(args: argparse.Namespace) -> int:
             hr = "—" if r.tt_hit_rate is None else f"{r.tt_hit_rate*100:>7.2f}%"
             line += f"  {hr:>9}"
         print(line)
+    return 0
+
+
+def _bench_scaling(args: argparse.Namespace) -> int:
+    cfg = CONFIG.bench.scaling
+    fixtures = (
+        [s.strip() for s in args.fixtures.split(",") if s.strip()]
+        if args.fixtures
+        else list(cfg.fixtures)
+    )
+    time_ms_buckets = (
+        [int(s) for s in args.time_ms.split(",") if s.strip()]
+        if args.time_ms
+        else list(cfg.time_ms)
+    )
+    runs = args.runs if args.runs is not None else cfg.runs
+    rows = bench.bench_scaling(
+        fixtures=fixtures,
+        time_ms_buckets=time_ms_buckets,
+        runs=runs,
+    )
+    label_w = max((len(r.fixture) for r in rows), default=8)
+    label_w = max(label_w, 12)
+    header = (
+        f"{'fixture'.ljust(label_w)}  {'time_ms':>8}  {'depth':>5}"
+        f"  {'nodes':>10}  {'nps':>12}  {'ci95_lo':>10}  {'ci95_hi':>10}"
+    )
+    print(header)
+    print("─" * len(header))
+    for r in rows:
+        print(
+            f"{r.fixture.ljust(label_w)}  {r.time_ms:>8}  {r.depth:>5}"
+            f"  {r.nodes:>10,}  {r.nps:>12,}  {r.ci95_lo:>10,}"
+            f"  {r.ci95_hi:>10,}"
+        )
+    return 0
+
+
+def _bench_breakdown(args: argparse.Namespace) -> int:
+    cfg = CONFIG.bench.breakdown
+    fixtures = (
+        [s.strip() for s in args.fixtures.split(",") if s.strip()]
+        if args.fixtures
+        else list(cfg.fixtures)
+    )
+    depth = args.depth if args.depth is not None else cfg.depth
+    rows = bench.bench_breakdown(fixtures=fixtures, depth=depth)
+    label_w = max((len(r.fixture) for r in rows), default=8)
+    label_w = max(label_w, 12)
+    header = (
+        f"{'fixture'.ljust(label_w)}  {'depth':>5}  {'function':>14}"
+        f"  {'pct_cycles':>10}"
+    )
+    print(header)
+    print("─" * len(header))
+    for r in rows:
+        print(
+            f"{r.fixture.ljust(label_w)}  {r.depth:>5}  {r.function:>14}"
+            f"  {r.pct_cycles:>9.2f}%"
+        )
     return 0
 
 
@@ -818,6 +882,40 @@ def _build_parser() -> argparse.ArgumentParser:
         "--tt-stats",
         action="store_true",
         help="report TT hit rate per row (requires tt_stats feature build)",
+    )
+
+    bs = bsub.add_parser("scaling", help="ms-time scaling table (Phase 14)")
+    bs.add_argument(
+        "--fixtures",
+        default="",
+        help="comma-separated fixture names; defaults to [bench.scaling]",
+    )
+    bs.add_argument(
+        "--time-ms",
+        default="",
+        help="comma-separated time budgets in ms; defaults to [bench.scaling]",
+    )
+    bs.add_argument(
+        "--runs",
+        type=int,
+        default=None,
+        help="number of runs per (fixture, time_ms); defaults to [bench.scaling]",
+    )
+
+    bs = bsub.add_parser(
+        "breakdown",
+        help="per-function cycles breakdown estimate (Phase 14)",
+    )
+    bs.add_argument(
+        "--fixtures",
+        default="",
+        help="comma-separated fixture names; defaults to [bench.breakdown]",
+    )
+    bs.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="fixed search depth; defaults to [bench.breakdown]",
     )
 
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")

@@ -137,6 +137,23 @@ class BenchReferenceConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BenchScalingConfig:
+    """ms-time scaling config. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    fixtures: tuple[str, ...]
+    time_ms: tuple[int, ...]
+    runs: int
+
+
+@dataclass(frozen=True, slots=True)
+class BenchBreakdownConfig:
+    """Per-function cycles breakdown config. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    fixtures: tuple[str, ...]
+    depth: int
+
+
+@dataclass(frozen=True, slots=True)
 class BenchConfig:
     """Benchmark suite defaults. See ``specs/SPEC_BENCHMARKS.md``."""
 
@@ -148,6 +165,8 @@ class BenchConfig:
     fixtures_path: str
     schema_version: int
     reference: BenchReferenceConfig
+    scaling: BenchScalingConfig
+    breakdown: BenchBreakdownConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +299,15 @@ def load() -> HexoConfig:
                 fixtures=tuple(bench["reference"]["fixtures"]),
                 max_depth=bench["reference"]["max_depth"],
                 budget_s=bench["reference"]["budget_s"],
+            ),
+            scaling=BenchScalingConfig(
+                fixtures=tuple(bench["scaling"]["fixtures"]),
+                time_ms=tuple(bench["scaling"]["time_ms"]),
+                runs=bench["scaling"]["runs"],
+            ),
+            breakdown=BenchBreakdownConfig(
+                fixtures=tuple(bench["breakdown"]["fixtures"]),
+                depth=bench["breakdown"]["depth"],
             ),
         ),
         promote=PromoteConfig(
