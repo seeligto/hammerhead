@@ -64,6 +64,18 @@ class SelfplayThroughputResult:
     time_per_stone_ms: int
 
 
+@dataclass(frozen=True, slots=True)
+class ReferenceEntry:
+    """One row in the reference node-count table. See
+    ``specs/SPEC_BENCHMARKS.md`` § Reference node-counts."""
+
+    fixture: str
+    depth: int
+    nodes: int
+    ms: int
+    tt_hit_rate: Optional[float] = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixture loader — single source of truth shared with the criterion side
 # ─────────────────────────────────────────────────────────────────────────────
@@ -287,6 +299,64 @@ def _run_one_game(time_per_stone_ms: int, max_plies: int) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Reference node-count table — deterministic, fixed-depth search
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def bench_reference(
+    fixtures: list[str],
+    max_depth: int,
+    budget_s: float,
+    use_tt_stats: bool = False,
+    tt_size_mb: Optional[int] = None,
+) -> list[ReferenceEntry]:
+    """Fixed-depth searches across ``fixtures × 1..=max_depth``.
+
+    Deterministic by construction: a fresh :class:`Engine` is built per
+    ``(fixture, depth)`` row so TT, killers, and history all start at
+    defaults. Within a fixture, accumulated wall-clock time is checked
+    after each depth; once it exceeds ``budget_s`` the remaining depths
+    for that fixture are skipped (other fixtures still run).
+
+    ``use_tt_stats`` reads ``Engine.tt_stats()`` after each search and
+    sets ``tt_hit_rate = hits / probes`` when ``probes > 0``. The
+    counter columns are only populated when the engine was built with
+    Cargo feature ``tt_stats``; otherwise the rate is ``None`` (zero
+    probes → no hit-rate signal).
+    """
+    if max_depth < 1:
+        raise ValueError("max_depth must be >= 1")
+    if budget_s <= 0:
+        raise ValueError("budget_s must be > 0")
+    out: list[ReferenceEntry] = []
+    for fixture in fixtures:
+        elapsed = 0.0
+        for depth in range(1, max_depth + 1):
+            if elapsed > budget_s:
+                break
+            eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
+            _q, _r, _score, _depth_reached, nodes, t_ms = eng.bench_best_move(
+                depth=depth
+            )
+            hit_rate: Optional[float] = None
+            if use_tt_stats:
+                s = eng.tt_stats()
+                if s["probes"] > 0:
+                    hit_rate = s["hits"] / s["probes"]
+            out.append(
+                ReferenceEntry(
+                    fixture=fixture,
+                    depth=depth,
+                    nodes=int(nodes),
+                    ms=int(t_ms),
+                    tt_hit_rate=hit_rate,
+                )
+            )
+            elapsed += t_ms / 1000.0
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Top-level orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -306,6 +376,7 @@ def run_all(
     threat_samples: Optional[int] = None,
     selfplay_games: Optional[int] = None,
     selfplay_max_plies: Optional[int] = None,
+    use_tt_stats: bool = False,
 ) -> dict:
     """Run every macro bench across the standard fixture set.
 
@@ -340,11 +411,23 @@ def run_all(
         )
     )
 
+    ref_cfg = CONFIG.bench.reference
+    reference = [
+        asdict(e)
+        for e in bench_reference(
+            fixtures=list(ref_cfg.fixtures),
+            max_depth=ref_cfg.max_depth,
+            budget_s=float(ref_cfg.budget_s),
+            use_tt_stats=use_tt_stats,
+        )
+    ]
+
     return {
         "nps": nps,
         "depth_at_time": depth_at_time,
         "threat_latency": threat_latency,
         "selfplay_throughput": [selfplay],
+        "reference": reference,
     }
 
 

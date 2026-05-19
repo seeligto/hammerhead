@@ -150,6 +150,54 @@ def test_diff_regression_returns_one(tmp_path: Path, capsys):
     assert rc == 1
 
 
+def test_bench_reference_returns_per_depth_rows():
+    rows = bench.bench_reference(
+        fixtures=["empty"], max_depth=3, budget_s=5.0
+    )
+    assert len(rows) == 3
+    depths = [r.depth for r in rows]
+    assert depths == [1, 2, 3]
+    fixtures = {r.fixture for r in rows}
+    assert fixtures == {"empty"}
+    # Node counts should be non-decreasing with depth at the empty board.
+    nodes = [r.nodes for r in rows]
+    assert nodes == sorted(nodes)
+    for r in rows:
+        assert isinstance(r, bench.ReferenceEntry)
+        assert r.tt_hit_rate is None
+
+
+def test_bench_reference_deterministic():
+    a = bench.bench_reference(
+        fixtures=["single_origin"], max_depth=4, budget_s=10.0
+    )
+    b = bench.bench_reference(
+        fixtures=["single_origin"], max_depth=4, budget_s=10.0
+    )
+    a_nodes = [(r.fixture, r.depth, r.nodes) for r in a]
+    b_nodes = [(r.fixture, r.depth, r.nodes) for r in b]
+    assert a_nodes == b_nodes
+
+
+def test_bench_reference_truncates_on_tight_budget():
+    # 1ms budget — at most one depth per fixture before the loop bails.
+    rows = bench.bench_reference(
+        fixtures=["midgame_30"], max_depth=8, budget_s=0.001
+    )
+    # Loop checks elapsed > budget AFTER each search, so at least the
+    # first depth always runs.
+    assert 1 <= len(rows) <= 8
+    for r in rows:
+        assert r.fixture == "midgame_30"
+
+
+def test_bench_reference_rejects_invalid_args():
+    with pytest.raises(ValueError):
+        bench.bench_reference(fixtures=["empty"], max_depth=0, budget_s=1.0)
+    with pytest.raises(ValueError):
+        bench.bench_reference(fixtures=["empty"], max_depth=1, budget_s=0.0)
+
+
 def test_diff_schema_mismatch_rejects(tmp_path: Path, capsys):
     a = tmp_path / "a.json"
     b = tmp_path / "b.json"

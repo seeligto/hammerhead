@@ -166,6 +166,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_threats(args)
     if sub == "selfplay":
         return _bench_selfplay(args)
+    if sub == "reference":
+        return _bench_reference(args)
     if sub == "all":
         return _bench_all(args)
     if sub == "diff":
@@ -265,6 +267,43 @@ def _bench_selfplay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bench_reference(args: argparse.Namespace) -> int:
+    ref_cfg = CONFIG.bench.reference
+    fixtures = (
+        [s.strip() for s in args.fixtures.split(",") if s.strip()]
+        if args.fixtures
+        else list(ref_cfg.fixtures)
+    )
+    max_depth = args.max_depth if args.max_depth is not None else ref_cfg.max_depth
+    budget_s = float(args.budget_s) if args.budget_s is not None else float(ref_cfg.budget_s)
+    rows = bench.bench_reference(
+        fixtures=fixtures,
+        max_depth=max_depth,
+        budget_s=budget_s,
+        use_tt_stats=args.tt_stats,
+    )
+    label_w = max((len(r.fixture) for r in rows), default=8)
+    label_w = max(label_w, 12)
+    header = (
+        f"{'fixture'.ljust(label_w)}  {'depth':>5}  {'nodes':>12}"
+        f"  {'ms':>6}"
+    )
+    if args.tt_stats:
+        header += f"  {'hit_rate':>9}"
+    print(header)
+    print("─" * len(header))
+    for r in rows:
+        line = (
+            f"{r.fixture.ljust(label_w)}  {r.depth:>5}  {r.nodes:>12,}"
+            f"  {r.ms:>6}"
+        )
+        if args.tt_stats:
+            hr = "—" if r.tt_hit_rate is None else f"{r.tt_hit_rate*100:>7.2f}%"
+            line += f"  {hr:>9}"
+        print(line)
+    return 0
+
+
 def _bench_all(args: argparse.Namespace) -> int:
     """Full sweep: cargo bench → drain → macro → merged JSON."""
     _ensure_results_dir()
@@ -306,7 +345,7 @@ def _bench_all(args: argparse.Namespace) -> int:
     micro = json.loads(micro_path.read_text())
 
     # 3. Macro benches.
-    macro = bench.run_all(time_ms=args.time_ms)
+    macro = bench.run_all(time_ms=args.time_ms, use_tt_stats=args.tt_stats)
 
     # 4. Merge canonical schema.
     canonical = {
@@ -730,8 +769,40 @@ def _build_parser() -> argparse.ArgumentParser:
     bs.add_argument("--games", type=int, default=CONFIG.bench.default_games)
     bs.add_argument("--max-plies", type=int, default=CONFIG.bench.default_max_plies)
 
+    bs = bsub.add_parser(
+        "reference",
+        help="deterministic fixed-depth node-count table (regression net)",
+    )
+    bs.add_argument(
+        "--fixtures",
+        default="",
+        help="comma-separated fixture names; defaults to [bench.reference]",
+    )
+    bs.add_argument(
+        "--max-depth",
+        type=int,
+        default=None,
+        help="upper bound on fixed search depth (default: [bench.reference])",
+    )
+    bs.add_argument(
+        "--budget-s",
+        type=float,
+        default=None,
+        help="cumulative per-fixture wall-clock cap in seconds",
+    )
+    bs.add_argument(
+        "--tt-stats",
+        action="store_true",
+        help="report TT hit rate per row (requires tt_stats feature build)",
+    )
+
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")
     bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
+    bs.add_argument(
+        "--tt-stats",
+        action="store_true",
+        help="populate reference hit-rate column (requires tt_stats build)",
+    )
 
     bs = bsub.add_parser("diff", help="compare two run JSONs")
     bs.add_argument("a")
