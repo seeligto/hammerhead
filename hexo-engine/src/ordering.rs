@@ -5,7 +5,7 @@
 //! see `SPEC_ENGINE.md` "Ordering". Approximate predicates for
 //! `creates_s0` / `creates_s1` are documented inline.
 
-use crate::axis_bitmap::{Axis, LineBitmap};
+use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
 use crate::config::{
     HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY, MOVE_GEN_CAP,
@@ -13,7 +13,6 @@ use crate::config::{
 use crate::coords::Coord;
 use crate::moves::MoveList;
 use fxhash::FxHashMap;
-use std::cell::Cell;
 
 // ────────────────────────────────────────────────────────────────────────
 // Killer-move state
@@ -155,50 +154,6 @@ pub struct OrderingContext<'a> {
     /// Defense cells of the S0 created by stone 1 of the current turn, or
     /// empty when stone-1-completion does not apply.
     pub stone1_s0_defense: &'a [Coord],
-    /// Phase 15 STEP 4: per-(axis, side) last-query cache. Six slots;
-    /// each holds the most recent `(line_id, line)` pair queried.
-    /// Consecutive candidates on the same `(axis, line_id, side)`
-    /// hit this cache instead of redoing the `Board::axes()::line()`
-    /// chain. Cleared implicitly per `order_moves` call — the cache
-    /// lives on a fresh `OrderingContext` constructed once per node.
-    ///
-    /// `Cell` (not `RefCell`) because the slot value is `Copy`. The
-    /// `&'a LineBitmap` reference shares its lifetime with `board`.
-    ///
-    /// Construct as `Default::default()` — six empty `Cell`s. Public
-    /// so integration tests / benches can construct an
-    /// `OrderingContext` via struct literal syntax.
-    pub axis_run_cache: AxisRunCache<'a>,
-}
-
-/// Phase 15 STEP 4: per-call `(axis, side)` → `(line_id, line)`
-/// cache, six slots. `Cell` (not `RefCell`) because the slot value is
-/// `Copy`. Public so callers can construct it via `Default::default()`.
-pub type AxisRunCache<'a> = [[Cell<Option<(i16, Option<&'a LineBitmap>)>>; 2]; 3];
-
-impl<'a> OrderingContext<'a> {
-    /// Resolve `(axis, side, line_id)` to its `LineBitmap`, populating
-    /// the per-call cache on first miss. Subsequent queries with the
-    /// same `(axis, side)` and matching `line_id` skip the
-    /// `Board::axes()::line()` chain — the per-candidate predicate
-    /// cost on a hot axis becomes a single tag-compare.
-    #[inline]
-    pub(crate) fn line_for(
-        &self,
-        axis: Axis,
-        side: Player,
-        line_id: i16,
-    ) -> Option<&'a LineBitmap> {
-        let slot = &self.axis_run_cache[axis as usize][side as usize];
-        if let Some((cached_id, cached_line)) = slot.get() {
-            if cached_id == line_id {
-                return cached_line;
-            }
-        }
-        let line = self.board.axes().line(axis, side, line_id);
-        slot.set(Some((line_id, line)));
-        line
-    }
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -236,22 +191,22 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if ctx.tt_move == Some(m) {
         return 10;
     }
-    if would_make_six_cached(ctx, m, ctx.side) {
+    if would_make_six(ctx.board, m, ctx.side) {
         return 9;
     }
-    if would_make_six_cached(ctx, m, ctx.side.opponent()) {
+    if would_make_six(ctx.board, m, ctx.side.opponent()) {
         return 8;
     }
     if !ctx.stone1_s0_defense.is_empty() && ctx.stone1_s0_defense.contains(&m) {
         return 7;
     }
-    if creates_s0_cached(ctx, m, ctx.side) {
+    if creates_s0(ctx.board, m, ctx.side) {
         return 6;
     }
     if blocks_opp_s0(ctx.board, m, ctx.side) {
         return 5;
     }
-    if creates_s1_cached(ctx, m, ctx.side) {
+    if creates_s1(ctx.board, m, ctx.side) {
         return 4;
     }
     if ctx.killers.contains(m) {
@@ -261,69 +216,6 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     // encoding value 0 would mean "history below the high-byte fence",
     // never emitted in v1.
     1
-}
-
-/// Cached `would_make_six`: uses [`OrderingContext::line_for`] so the
-/// `(axis, side, line_id)` lookup hits the per-call cache on
-/// consecutive candidates on the same line.
-#[inline]
-fn would_make_six_cached(ctx: &OrderingContext, m: Coord, side: Player) -> bool {
-    for axis in Axis::all() {
-        if axis_run_through_empty_cached(ctx, m, axis, side) >= 6 {
-            return true;
-        }
-    }
-    false
-}
-
-/// Cached `creates_s0`. See [`creates_s0`] for the predicate semantics
-/// (line of 4 or 5 with at least one non-opp end cell).
-fn creates_s0_cached(ctx: &OrderingContext, m: Coord, side: Player) -> bool {
-    let opp = side.opponent();
-    let board = ctx.board;
-    for axis in Axis::all() {
-        let id = axis.line_id(m);
-        let Some(line) = ctx.line_for(axis, side, id) else {
-            continue;
-        };
-        let pos = axis.pos(m);
-        let back = line.run_backward(pos);
-        let fwd = line.run_forward(pos);
-        let total = 1 + back + fwd;
-        if !(4..=5).contains(&total) {
-            continue;
-        }
-        let left = coord_on_axis(axis, id, pos - i16::from(back) - 1);
-        let right = coord_on_axis(axis, id, pos + i16::from(fwd) + 1);
-        let left_open = board.piece_at(left) != Some(opp);
-        let right_open = board.piece_at(right) != Some(opp);
-        if left_open || right_open {
-            return true;
-        }
-    }
-    false
-}
-
-/// Cached `creates_s1`.
-#[inline]
-fn creates_s1_cached(ctx: &OrderingContext, m: Coord, side: Player) -> bool {
-    for axis in Axis::all() {
-        if axis_run_through_empty_cached(ctx, m, axis, side) >= 3 {
-            return true;
-        }
-    }
-    false
-}
-
-/// Cached `axis_run_through_empty`. Uses [`OrderingContext::line_for`].
-#[inline]
-fn axis_run_through_empty_cached(ctx: &OrderingContext, m: Coord, axis: Axis, side: Player) -> u8 {
-    let id = axis.line_id(m);
-    let Some(line) = ctx.line_for(axis, side, id) else {
-        return 1;
-    };
-    let pos = axis.pos(m);
-    1 + line.run_backward(pos) + line.run_forward(pos)
 }
 
 /// Virtual-place predicate: would placing `side` at the empty cell `m`
@@ -396,6 +288,21 @@ pub(crate) fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
         .s0_instances
         .iter()
         .any(|inst| inst.defense_cells.contains(&m))
+}
+
+/// Approximation of "creates an S1 threat for `side`" — see
+/// `SPEC_ENGINE.md` "Ordering — Approximations". Fires when the virtual
+/// placement extends an own axis run to length ≥ 3. Catches open-3
+/// directly and most rhombus / arch / trapezoid / bone extensions whose
+/// added stone is collinear with two existing stones; pure non-collinear
+/// shapes are bucket-7 noise per spec.
+fn creates_s1(board: &Board, m: Coord, side: Player) -> bool {
+    for axis in Axis::all() {
+        if axis_run_through_empty(board, m, axis, side) >= 3 {
+            return true;
+        }
+    }
+    false
 }
 
 /// Reconstruct an axis-line cell from its `(line_id, pos)` pair. Mirrors

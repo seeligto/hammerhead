@@ -325,7 +325,6 @@ fn pvs_node(
             killers: &killers_snap,
             history: &ord.history,
             stone1_s0_defense: stone1_defense,
-            axis_run_cache: Default::default(),
         };
         order_moves_with_buckets(&mut moves_list, &ctx)
     };
