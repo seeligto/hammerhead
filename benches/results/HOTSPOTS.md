@@ -1,15 +1,12 @@
 # Hotspots — Phase 12 baseline
 
-**Captured:** 2026-05-19 — git `e24b5ed`, rustc 1.94.0
+**Captured:** 2026-05-19 — git `ee1b14c`, rustc 1.94.0
 **Host:** AMD Ryzen 7 8845HS (16 cores), Linux 7.0.3-arch1-2
-**Source:** `benches/results/20260519-092352-e24b5ed.json` (`make bench` with
+**Bench data:** `benches/results/baseline.json` (`make bench` with
 `--features tt_stats`, `--time-ms 1000`).
-**Capture method note:** `perf` and `cargo-flamegraph` were not available
-in the Phase 12 host environment (kernel `perf_event_paranoid = 2`, no
-root). The ranking below is derived from objective measurements —
-criterion micro-bench medians, macro NPS, and threat-latency micro-
-benchmarks. Future captures via `make flamegraph` (script in
-`scripts/flamegraph.sh`) should be cross-referenced against this list.
+**Flamegraph:** `benches/results/flamegraph-2026-05-19T12-20-14-ee1b14c.svg`
+(captured via `make flamegraph` — `perf record --call-graph dwarf
+-F 997` over `bench_search` criterion runs at depth 2 / 4 / 6).
 
 ## Headline numbers
 
@@ -25,125 +22,181 @@ benchmarks. Future captures via `make flamegraph` (script in
 | Threat latency warm, `midgame_30` | 0.06 µs | (cached read) |
 | TT hit rate, `midgame_12` depth=6 | 15.08 % | — |
 | TT hit rate, `midgame_30` depth=6 | 23.30 % | — |
-| `place`, `endgame_60` | 6.7 µs | <500 ns (MISS — 13× over) |
-| `place`/`undo` roundtrip, `endgame_60` | 7.7 µs | <1 µs (MISS) |
 
-The `place` target in `SPEC_ROADMAP.md` (<500 ns) was for an
-isolated-bitmap design that pre-dated incremental threat caching and
-zobrist parity. The current `place` includes board mutation + axis
-bitmap + zobrist + parity overlay + threat-set invalidation. Either
-the target is stale (most likely) or there's room to claw back. Note
-for Phase 13: re-evaluate the target before chasing it.
+## Flamegraph-derived ranking (authoritative)
 
-## Top 5 hotspots (impact × difficulty)
+Sampled stacks were aggregated by user-space leaf and stack tail
+(kernel frames — page faults, munmap, IRQ — were stripped before
+ranking; see "Kernel frame discount" below). Sample counts shown are
+totals across all `bench_search` configurations (depth 2 / 4 / 6 on
+`midgame_12`).
 
-Ranked by `median_ns × estimated calls-per-search`. Calls/search is
-inferred from `(nodes, depth)` for `midgame_30` at 1000 ms (~53k
-nodes, depth 6): every node generates moves, evaluates leaves, probes
-+ stores TT, runs through ordering once.
+### #1 — TT allocation in benchmark setup *(bench-setup artifact, not production)*
 
-### 1. Move generation — `moves::generate(r=8)` (full-legality scan)
+| Stack tail | Samples |
+|---|---:|
+| `from_elem<(TTEntry,TTEntry)>;extend_with;write` | 14.2 B |
+| `extend_with;add` | 2.5 B |
 
-- **Cost:** 7 µs (midgame_12) → 16 µs (midgame_30) → 30 µs (endgame_60)
-- **Frequency:** O(nodes). For a 53k-node search at midgame_30, full-
-  legality scans add up to ~850 ms of pure move-gen if every node
-  pays the r=8 cost.
-- **Why it's expensive:** at r=8 the legality grid covers ~196 cells.
-  The function visits every populated cell and checks hex-distance.
-- **Optimization candidates** (Phase 13):
-  - Restrict full-legality scan to opening-radius or anti-colony
-    extensions only — most internal nodes use the r=2 default.
-  - Cache the legality bitmap per-position keyed off TT hit.
-  - Lower `MOVE_GEN_INNER_RADIUS` for deeper plies (LMR already
-    reduces depth; move radius could mirror).
-- **Difficulty:** medium. Move-gen has well-defined inputs but is
-  shared across search and qsearch.
+`bench_search` constructs a fresh `Engine` per criterion iteration,
+which allocates a 64 MB TT each time (`vec![(TTEntry::EMPTY,
+TTEntry::EMPTY); n_slots]`). Every allocation triggers
+`do_anonymous_page` + `kernel_init_pages` on first touch, then
+`unmap_region` on drop. This dominates the profile but **does not
+reflect production search cost** — long-running searches allocate the
+TT once.
 
-### 2. Cold eval / threat recompute — `eval::cached_eval_cold` and `threats::compute`
+**Action:** not a Phase 13 optimization target. Bench refactor: amortize
+the TT across iterations (e.g. construct once in
+`bench_function_setup`, call `engine.reset() + engine.clear_tt()`
+between iters) so future flamegraphs surface real search work.
 
-- **Cost:** `cached_eval_cold` median 8.4 µs at `midgame_30`, 8.7 µs
-  at `endgame_60`. Threats alone: 6.64 µs cold at `midgame_30`.
-- **Frequency:** every leaf + every node where the threat cache is
-  invalidated by `place`/`undo`. With ~53k nodes and 8 µs each, this
-  is ~425 ms — the single biggest cost centre.
-- **Why it's expensive:** full threat recompute scans every line in
-  every axis. `ThreatSet` accepts `place_center` / `prior` args but
-  ignores them (see `SPEC_ROADMAP.md § Known follow-ups` —
-  "Incremental threat recompute, Phase 4 ships full recompute on
-  every dirty read").
-- **Optimization candidates** (Phase 13):
-  - **Incremental threat recompute** — the deferred item from Phase
-    4. ThreatSet already records the cause-of-invalidation; use it.
-  - Reuse threats across siblings (move N+1 differs from N by a
-    single stone — re-run threats only on affected axes).
-- **Difficulty:** medium-high. Requires correctness checks against
-  the current full recompute as a reference oracle.
+### #2 — Layer 1 eval (`encode_ternary` / `window6` / `layer1_window_scan`)
 
-### 3. TT — low hit rate at midgame
+| Stack tail | Samples |
+|---|---:|
+| `eval;layer1_window_scan;scan_line;encode_ternary` | 719 M |
+| `quiescence_node;cached_eval;window6` | 597 M |
+| `cached_eval;window6;get;indices` | 522 M |
+| `axis_bitmap::LineBitmap::get;find_inner;probe_seq` | 486 M |
 
-- **Cost:** probe ~250 ns, store ~6 µs. The probe is cheap per call
-  but happens at every node.
-- **Frequency / waste:** hit rates of 15 % (midgame_12 d=6) and 23 %
-  (midgame_30 d=6) mean ~80 % of probes find a non-matching bucket
-  and trigger a full re-search. Collisions at midgame_30 d=6 were
-  measurable (see baseline JSON).
-- **Why:** two-bucket (depth + always-replace) at 64 MB. Bucket-fill
-  is healthy (`occupied ≈ 0.1 %`) so the bottleneck isn't size — it's
-  index distribution and migration policy.
-- **Optimization candidates** (Phase 13):
-  - 4-bucket cluster (probe four entries on miss). Stockfish-style.
-  - Better hash distribution — currently `(hash as u64 as usize) &
-    mask`; xor-fold the upper 64 bits before masking.
-  - Cluster co-residency: align bucket pairs to 64-byte cache lines.
-- **Difficulty:** low (re-tuning) to medium (4-bucket).
+Layer 1 of the eval (the 729-entry ternary lookup) walks every
+populated `(axis, line)` pair via `populated_range` + `window6` +
+`encode_ternary`. Most of the cost is in the inner per-window
+ternary encode and the hashbrown probe (`indices` / `probe_seq` /
+`find_inner`) used by `axis_bitmap::AxisBitmaps` to find the
+`LineBitmap` for a given line index.
 
-### 4. Move ordering — `ordering::order_moves`
+**Optimization candidates:**
+- Replace the `HashMap<i16, LineBitmap>` in axis bitmaps with a flat
+  array indexed by `line_id - line_id_offset`. Hashbrown probe is
+  the single largest non-allocator user-space cost.
+- Vectorize `encode_ternary` — the 6-cell window encode is purely
+  arithmetic and ripe for SIMD.
+- Cache the encoded ternary index per `(axis, line, offset)` and
+  invalidate only on cells touched by `place`.
 
-- **Cost:** 6.3 µs at `endgame_60`, ~3–5 µs typical.
-- **Frequency:** once per non-leaf node — ~25k calls at midgame_30
-  d=6.
-- **Why it's expensive:** scores every candidate via bucket lookup +
-  history table + killer comparison + virtual-place axis-run probe.
-  The score function dominates the cost (verified by the per-fixture
-  drift: position with deeper move queues is slower).
-- **Optimization candidates** (Phase 13):
-  - Two-pass ordering: cheap-score the first 8, full-score the rest
-    only if we explore past index 8.
-  - SmallVec-only path — currently inlines move list capacity 24,
-    pedantic-allocs above that. Trim allocation paths.
-- **Difficulty:** low.
+### #3 — Threats compute (`matches_pattern` / `walk_cross_axis`)
 
-### 5. Place / undo roundtrip — `board::place` + `board::undo`
+| Stack tail | Samples |
+|---|---:|
+| `threats;compute;matches_pattern<4>` | 139 M |
+| `threats;compute;full_recompute;walk_cross_axis` | 119 M |
+| `threats;compute;matches_pattern<4>;piece_at;get` | 52 M |
+| `threats;compute;full_recompute;...;walk_cross_axis;matches_pattern<2>;piece_at;get` | 38 M |
 
-- **Cost:** 6.7 µs `place` + 1.0 µs `undo` ≈ 7.7 µs roundtrip
-  (endgame_60). Lighter fixtures see 3–5 µs.
-- **Frequency:** every search recursion. At 53k nodes × ~8 µs that's
-  ~420 ms — comparable to threat cost. Many of these cycles are
-  inside ordering's virtual-place probes, not the search itself.
-- **Why it's expensive:** the roundtrip includes axis-bitmap mutation
-  + zobrist XOR + parity-overlay + threat-set invalidation. The
-  threat invalidation is the highest unit cost.
-- **Optimization candidates** (Phase 13):
-  - Make `cached_eval` lazy-on-read so `place`/`undo` cycles that
-    never observe eval don't pay the invalidation cost (ordering's
-    `creates_s0` probe is the main offender — it does `place ; check
-    ; undo` per candidate).
-  - Replace virtual-place probes with direct axis-bitmap scans —
-    `creates_s0` can be checked without touching the board.
-- **Difficulty:** medium.
+Threat detection scans every axis line for length-2, length-4, and
+length-6 patterns via `matches_pattern<N>`. The pattern matcher
+fetches each cell via `Board::piece_at`, which dispatches through a
+`HashMap<Coord, Player>`. The hashbrown hash + probe shows up
+repeatedly under `piece_at`.
+
+**Optimization candidates:**
+- Incremental threat recompute — deferred from Phase 4.
+  `ThreatSet` already takes `place_center` / `prior` args but ignores
+  them. Use them.
+- Drop the `Board::pieces` HashMap in favour of the axis bitmaps
+  (which already encode "is there a piece here?" by axis). `piece_at`
+  becomes a sub-`LineBitmap` set-bit check — no hash, no probe.
+
+### #4 — `quiescence_node` threat / hop checks
+
+| Stack tail | Samples |
+|---|---:|
+| `quiescence_node;is_threat_move;would_make_six` | 62 M |
+| `quiescence_node;is_threat_move;would_make_six` (dup) | 43 M |
+
+Quiescence enumerates threat-creating moves and re-checks via
+`would_make_six` (line walk for terminal-position detection). Modest
+cost compared to #2/#3, but on the critical path of every leaf.
+
+**Optimization candidates:**
+- `would_make_six` could share its line walk with the threat-set
+  cache rather than running fresh.
+
+### #5 — Board piece HashMap (`Board::pieces`, `Board::piece_at`)
+
+Top single-call leaves:
+- `hashbrown::find_inner;probe_seq` (via `piece_at`)
+- `Board::pieces` iteration in `threats::full_recompute`
+  (`from_iter` / `spec_extend` chain at 43 M samples)
+
+`Board::pieces` returns `Iter<Coord, Player>` over a HashMap, which
+gets collected into a Vec inside `full_recompute`. This is alloc +
+hashing + iteration — all avoidable.
+
+**Optimization candidates:**
+- Replace `HashMap<Coord, Player>` with a `Vec<(Coord, Player)>`
+  parallel to the move history (insertion-ordered, O(1) iteration).
+  `piece_at` becomes an axis-bitmap query (already required for #2).
+
+## Kernel frame discount
+
+The raw flamegraph top-of-list is dominated by kernel-side memory
+management:
+
+| Stack tail | Samples | Why |
+|---|---:|---|
+| `unmap_page_range` / `unmap_region` | 1.98 B | TT teardown per iter |
+| `asm_exc_page_fault` | 1.74 B | first-touch faults on TT pages |
+| `__irqentry_text_end` | 1.20 B | timer/sched IRQs |
+| `do_anonymous_page;vma_alloc_folio_noprof;...;prep_new_page;kernel_init_pages` | 1.17 B | zero-fill new TT pages |
+
+These reflect **bench harness allocator pressure**, not search work.
+The ranking above strips them so the user-space costs are visible.
+The next flamegraph capture should refactor the bench to allocate the
+TT once.
+
+## Inferred ranking (superseded by flamegraph above)
+
+Kept for record. The pre-flamegraph ranking was derived from
+criterion micro-bench medians × estimated calls-per-search:
+
+1. `moves::generate(r=8)` — 7–30 µs at midgame/endgame
+2. `eval::cached_eval_cold` + `threats::compute`
+3. TT hit rate (15–25 % at midgame)
+4. `ordering::order_moves`
+5. `board::place`/`undo` roundtrip
+
+The flamegraph contradicts this in two ways:
+- **Layer 1 eval** is the dominant production-relevant cost, more so
+  than threat recompute. The criterion `cached_eval_cold` median
+  hid that the cost is concentrated in `encode_ternary` + the
+  hashbrown probe in `window6`, not in the threat call.
+- **`moves::generate`** does not appear in the flamegraph's top
+  user-space frames. The criterion micro-bench measures `generate`
+  in isolation (at maximum r=8), but the real search uses r=2
+  default and the cost is amortized over move-ordering.
+- **TT hit rate** remains a real win, but the per-probe cost is
+  small. The biggest TT win would come from removing the
+  `HashMap<Coord, Player>` collisions that show up under
+  `threats::compute` and `piece_at`.
 
 ## Phase 13 entry point
 
-Strongest signal: **incremental threat recompute** (#2 above). It
-removes a ~425 ms cost centre on a 1-second search and unblocks #5
-(virtual-place no longer triggers full threat invalidation). Expected
-NPS lift: 20–35 % on midgame_30.
+**Replace the hashbrown HashMaps in the hot path with flat arrays.**
+Two maps account for a combined ~1 B samples of user-space work:
 
-Second priority: TT hit-rate work (#3). A 4-bucket layout typically
-brings a 1.5–2× hit-rate improvement; with current ~20 % rate that
-translates to roughly +10 % NPS via avoided re-search.
+1. `axis_bitmap::AxisBitmaps`'s `HashMap<i16, LineBitmap>` (#2 above —
+   ~500 M samples in `find_inner`/`probe_seq`/`indices`).
+2. `Board::pieces` / `Board::piece_at`'s `HashMap<Coord, Player>` (#3
+   and #5 — combined ~250 M samples).
 
-Move-gen (#1) and ordering (#4) are lower-priority refinements.
+Both have small, bounded key spaces:
+- Axis line IDs are `i16` in `[-ZOBRIST_WINDOW, +ZOBRIST_WINDOW]` —
+  bounded by `2 * ZOBRIST_WINDOW + 1 = 255` entries. A flat array is
+  trivially correct.
+- `Board::pieces` is at most `~400` entries on `endgame_60`. Iteration
+  order matters in only one place (`full_recompute`'s `pieces()`
+  collect), which is order-independent.
+
+Expected NPS lift: 20–40 % at midgame, larger at endgame. Difficulty:
+medium (mechanical refactor across `axis_bitmap.rs`, `board.rs`,
+`threats.rs`, `eval.rs` — but well-bounded by tests).
+
+Secondary: vectorize `encode_ternary` (#2) and start incremental
+threat recompute (#3). Either is good follow-up after the HashMap
+work lands.
 
 ## How to refresh this report
 
@@ -151,7 +204,7 @@ Move-gen (#1) and ordering (#4) are lower-priority refinements.
 # 1. Build with stats enabled (so reference table has hit-rate)
 cd hexo-engine && maturin develop --release --features tt_stats
 
-# 2. Capture a flamegraph SVG (Linux: requires `perf` + paranoid<=1)
+# 2. Capture flamegraph SVG + folded stacks
 make flamegraph
 
 # 3. Run the full bench sweep
@@ -160,5 +213,5 @@ make bench BENCH_TIME_MS=1000
 # 4. Diff against current baseline
 make bench-diff A=baseline B=<latest-isodate-sha>
 
-# 5. Re-rank the top 5 here based on observed deltas.
+# 5. Re-rank the top sections above based on the new folded.txt.
 ```
