@@ -128,6 +128,15 @@ class BotConfigDefaults:
 
 
 @dataclass(frozen=True, slots=True)
+class BenchReferenceConfig:
+    """Reference node-count config. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    fixtures: tuple[str, ...]
+    max_depth: int
+    budget_s: int
+
+
+@dataclass(frozen=True, slots=True)
 class BenchConfig:
     """Benchmark suite defaults. See ``specs/SPEC_BENCHMARKS.md``."""
 
@@ -138,6 +147,7 @@ class BenchConfig:
     results_dir: str
     fixtures_path: str
     schema_version: int
+    reference: BenchReferenceConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +276,11 @@ def load() -> HexoConfig:
             results_dir=bench["results_dir"],
             fixtures_path=bench["fixtures_path"],
             schema_version=bench["schema_version"],
+            reference=BenchReferenceConfig(
+                fixtures=tuple(bench["reference"]["fixtures"]),
+                max_depth=bench["reference"]["max_depth"],
+                budget_s=bench["reference"]["budget_s"],
+            ),
         ),
         promote=PromoteConfig(
             default_n_games=promote["default_n_games"],

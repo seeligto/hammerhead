@@ -138,6 +138,14 @@ results_dir         = "benches/results"
 fixtures_path       = "benches/fixtures/positions.json"
 schema_version      = 1
 
+[bench.reference]
+# Reference node-count table. See specs/SPEC_BENCHMARKS.md § Reference.
+# Deterministic per-fixture search at fixed depths; serves as regression
+# net for any change that touches search.
+fixtures   = ["empty", "single_origin", "midgame_12", "midgame_30"]
+max_depth  = 8
+budget_s   = 60
+
 [promote]
 # Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.
 # Python-only (subprocess driver). Rust does not consume these.

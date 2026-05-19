@@ -17,6 +17,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 9 | `pybind` + Python `Bot` + CLI | ✅ done |
 | 10 | benchmark suite | ✅ done |
 | 11 | promotion harness (`vs` / `promote`) | ✅ done |
+| 12 | stabilization & reference (warning sweep, reference node counts, TT stats, baseline) | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -230,6 +231,34 @@ tool compares two result sets. `make bench`, `make bench-micro`,
 `make bench-diff`, `make bench-baseline`.
 
 See `specs/SPEC_BENCHMARKS.md` and `prompts/PHASE_10_PROMPT.md`.
+
+## Phase 12 — Stabilization & Reference
+
+**Goal**: pre-optimization cleanup and measurement infrastructure.
+
+No new features. No algorithmic changes. Sweeps warnings, adds the
+reference node-count table, gates TT instrumentation behind a Cargo
+feature, captures a flamegraph, and commits the live `baseline.json`.
+
+- Cargo target rename: `[lib] name = "hexo_engine_core"` (was
+  `hexo_engine`). The PyO3 module name (`hexo_engine`) is independent
+  of the cargo target name and stays unchanged; maturin emits the
+  cdylib under the module name via `pyproject.toml [tool.maturin]
+  module-name`. Resolves the `cargo bench` filename-collision warning
+  (cdylib and rlib both produced `libhexo_engine.so`).
+- Warning sweep: every `make` target completes warning-free. Python
+  pytest runs with `-W error`.
+- `hexo bench reference` subcommand (see `SPEC_BENCHMARKS.md
+  § Reference node-counts`).
+- TT statistics behind Cargo feature `tt_stats` (see
+  `SPEC_BENCHMARKS.md § TT statistics`).
+- Flamegraph capture script + top-5 hotspots committed to
+  `benches/results/HOTSPOTS.md` for use as Phase 13 entry points.
+- Committed `benches/results/baseline.json` from a real bench run.
+
+Resolves Phase-10 deferred item "`baseline.json` committed".
+
+See `prompts/PHASE_12_PROMPT.md`.
 
 ## Phase 11 — Promotion Harness
 

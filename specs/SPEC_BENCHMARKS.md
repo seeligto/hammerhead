@@ -353,6 +353,81 @@ Do not bench:
 - Python ↔ Rust boundary (covered by macro benches indirectly).
 - Notation parsing.
 
+## Reference node-counts (Phase 12)
+
+`hexo bench reference` produces a deterministic node-count table:
+search at fixed depths `1..=N` on specific fixtures, no time budget,
+TT cleared between runs. Each call uses a freshly-constructed
+`Engine`, so move ordering, killer slots, and history all start from
+defaults — output is bit-for-bit reproducible.
+
+Output: appended to the canonical JSON under a new `reference` array
+(stays empty when the subcommand is not part of the run):
+
+```json
+{
+  "reference": [
+    { "fixture": "empty",      "depth": 1, "nodes": 1,    "ms": 0 },
+    { "fixture": "empty",      "depth": 2, "nodes": 12,   "ms": 0 },
+    ...
+    { "fixture": "midgame_12", "depth": 8, "nodes": 1234, "ms": 187 }
+  ]
+}
+```
+
+Fixtures used (default): `empty`, `single_origin`, `midgame_12`,
+`midgame_30`. Depth range: `1..=8`. The cumulative wall-clock budget
+per fixture (`[bench.reference] budget_s`) caps total runtime — once
+exceeded, subsequent depths for that fixture are skipped. Configured
+in `hexo.toml`:
+
+```toml
+[bench.reference]
+fixtures   = ["empty", "single_origin", "midgame_12", "midgame_30"]
+max_depth  = 8
+budget_s   = 60
+```
+
+This table is the regression net for optimization phases: any change
+that touches search must produce identical `nodes` at every
+`(fixture, depth)` unless the change is explicitly about move
+ordering or pruning. Node-count drift = behaviour change = explain
+or revert.
+
+## TT statistics (Cargo feature `tt_stats`)
+
+Behind Cargo feature `tt_stats`, the TT tracks probe / hit / store /
+collision counts via `AtomicU64` counters. Zero-cost when the feature
+is off: no fields, no code paths.
+
+```rust
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TTStatsSnapshot {
+    pub n_slots: usize,
+    pub occupied: usize,
+    pub generation: u8,
+    pub probes: u64,      // always 0 without feature
+    pub hits: u64,        // always 0 without feature
+    pub stores: u64,      // always 0 without feature
+    pub collisions: u64,  // always 0 without feature
+}
+```
+
+Exposed via `Engine::tt_stats() -> TTStatsSnapshot` and the PyO3
+wrapper `PyEngine.tt_stats() -> dict` (always present; `probes` etc.
+read as `0` when the feature is off, so callers can branch on
+`probes == 0` to detect "no stats" rather than guarding the import).
+
+`hexo bench reference --tt-stats` and `hexo bench nps --tt-stats`
+read the snapshot after the run and include hit rate (`hits/probes`)
+in the canonical JSON. Production builds (cdylib via `maturin
+develop --release`) do not enable the feature. Dev / regression
+builds opt in via `cargo build --features tt_stats` or `maturin
+develop --release --features tt_stats`.
+
+The `new_generation` and `clear` paths reset all counters, so a
+fresh `Engine` starts at zero regardless of generation cycles.
+
 ## Future extensions (post-baseline)
 
 - Memory benchmarks: `peak_rss` per fixture at depth N.

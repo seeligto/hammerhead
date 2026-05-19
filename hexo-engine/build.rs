@@ -74,6 +74,19 @@ fn emit_bench(out: &mut String, cfg: &toml::Value) {
         &["bench", "schema_version"],
         "BENCH_SCHEMA_VERSION",
     );
+    // Phase 12: reference node-count config.
+    emit_u32(
+        out,
+        cfg,
+        &["bench", "reference", "max_depth"],
+        "BENCH_REFERENCE_MAX_DEPTH",
+    );
+    emit_u32(
+        out,
+        cfg,
+        &["bench", "reference", "budget_s"],
+        "BENCH_REFERENCE_BUDGET_S",
+    );
 }
 
 /// Codegen fixture builders from `positions.json` → `$OUT_DIR/fixtures_generated.rs`.

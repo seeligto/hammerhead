@@ -8,6 +8,14 @@ rust-version = "1.85"
 name = "hexo_engine"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Default: no extra instrumentation. Production cdylib must build with
+# defaults so the PyO3 wrapper stays zero-cost. Enable `tt_stats` in
+# dev / regression builds to surface TT probe/hit/store/collision
+# counters (see specs/SPEC_BENCHMARKS.md § TT statistics).
+default  = []
+tt_stats = []
+
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
 fxhash = "0.2"
