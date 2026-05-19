@@ -8,7 +8,7 @@ VPY       := $(VENV)/bin/python
 VPYTEST   := $(VENV)/bin/pytest
 VMATURIN  := $(VENV)/bin/maturin
 
-# Phase 10 (promotion harness) defaults — override on the command line:
+# Phase 11 (promotion harness) defaults — override on the command line:
 #   make vs N_GAMES=500 TIME_MS=2000 TEST=wilson
 N_GAMES   ?= 200
 TIME_MS   ?= 1000
@@ -54,17 +54,16 @@ fmt: ## cargo fmt
 check: lint test ## lint + test (CI gate)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Phase 10 — promotion harness. Stubbed until baseline (Phase 9) is complete.
-# See specs/SPEC_ROADMAP.md § Phase 10 for the harness specification.
+# Phase 11 — promotion harness. See specs/SPEC_ROADMAP.md § Phase 11.
+# Reads .bestref; builds a worktree at that SHA via scripts/setup_worktree.sh.
 # ──────────────────────────────────────────────────────────────────────────────
 
-vs: ## [Phase 10] current vs best, N_GAMES games (override N_GAMES, TIME_MS, TEST, ELO_LOW, ELO_HIGH)
-	@echo "vs harness: Phase 10 (post-baseline)."
-	@echo "  N_GAMES=$(N_GAMES) TIME_MS=$(TIME_MS) TEST=$(TEST) ELO_LOW=$(ELO_LOW) ELO_HIGH=$(ELO_HIGH)"
-	@echo "  See specs/SPEC_ROADMAP.md § Phase 10."
-	@exit 1
+vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
+	@./scripts/setup_worktree.sh
+	@$(VPY) -m hexo.cli promote --dry-run \
+	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)
 
-promote: ## [Phase 10] advance .bestref to HEAD if vs passes threshold
-	@echo "promote: Phase 10 (post-baseline)."
-	@echo "  See specs/SPEC_ROADMAP.md § Phase 10."
-	@exit 1
+promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
+	@./scripts/setup_worktree.sh
+	@$(VPY) -m hexo.cli promote \
+	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)
