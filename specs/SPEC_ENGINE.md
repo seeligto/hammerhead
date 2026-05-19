@@ -260,8 +260,11 @@ pub struct LineBitmap {
 pub struct AxisBitmaps {
     /// [axis][player] -> fixed-length flat array of optional line bitmaps,
     /// indexed by `(line_id - LINE_ID_OFFSET)` where
-    /// `LINE_ID_OFFSET = -ZOBRIST_WINDOW` and the array length is
-    /// `LINE_ID_RANGE = 2 * ZOBRIST_WINDOW + 1`.
+    /// `LINE_ID_OFFSET = -2 * ZOBRIST_WINDOW` and the array length is
+    /// `LINE_ID_RANGE = 4 * ZOBRIST_WINDOW + 1`. The 2× factor covers the
+    /// S-axis line_id `q + r`, which reaches `±2 * ZOBRIST_WINDOW` even
+    /// when each coord component stays inside the per-coordinate zobrist
+    /// window of `±ZOBRIST_WINDOW`.
     lines: [[Box<[Option<LineBitmap>]>; 2]; 3],
 }
 ```
@@ -271,19 +274,20 @@ positions inline). Long lines spill to heap. No allocation in the common
 case once a line is established.
 
 **Storage rationale (Phase 13)**: line IDs are bounded by
-`±ZOBRIST_WINDOW` (default 127 → 255 entries per axis-player). The Phase
-12 flamegraph showed hashbrown probes inside `AxisBitmaps::line` /
+`±2 * ZOBRIST_WINDOW` (default 127 → 509 entries per axis-player; the
+2× factor accommodates axis-S `line_id = q + r`). The Phase 12
+flamegraph showed hashbrown probes inside `AxisBitmaps::line` /
 `is_set` / `window6` consuming ~500 M samples — the largest user-space
 cost after the bench-harness TT allocator artifact. Replacing the
 `FxHashMap<i16, LineBitmap>` with a fixed flat array reduces every probe
 to a single bounds-checked array load. Out-of-range line IDs are a bug
-(`debug_assert!`); the zobrist window already bounds them.
+(`debug_assert!`); the zobrist window already bounds per-coord values.
 
 Slots are lazily initialized: `None` until the first `set` on that line.
 `clear` does **not** deallocate (keeps the `Some(empty)` slot for re-use;
 reduces allocator churn during search). Memory cost per axis-player is
-`LINE_ID_RANGE * size_of::<Option<LineBitmap>>()` (≈ 12 KB at default
-window), total ≈ 72 KB — negligible compared to the 64 MB TT.
+`LINE_ID_RANGE * size_of::<Option<LineBitmap>>()` (≈ 24 KB at default
+window), total ≈ 150 KB — negligible compared to the 64 MB TT.
 
 Rotation property unchanged (axis permutation Q → S → R → Q; the array
 backing has no effect on the symmetry exploitation).

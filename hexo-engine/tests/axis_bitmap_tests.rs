@@ -114,6 +114,33 @@ fn window6_aligned() {
 }
 
 #[test]
+#[should_panic(expected = "out of zobrist window")]
+#[cfg(debug_assertions)]
+fn out_of_window_line_id_panics_in_debug() {
+    // Coord::new(200, 0) has axis-Q line_id = 0 (in range) but axis-R line_id = 200,
+    // outside the default ±127 zobrist window. The flat-array index check must trip.
+    let mut axes = AxisBitmaps::new();
+    axes.set(Coord::new(200, 0), Player::X);
+}
+
+#[test]
+fn flat_array_iteration_skips_none_slots() {
+    // line_ids must enumerate populated lines only — never the empty None slots
+    // that pad the flat array.
+    let mut axes = AxisBitmaps::new();
+    // Touch three axis-Q lines (Q's line_id = r). Pick widely separated r values
+    // so the None slots between them are observable.
+    for &r in &[-50i16, 0, 50] {
+        axes.set(Coord::new(0, r), Player::X);
+    }
+    let ids: Vec<i16> = axes.line_ids(Axis::Q, Player::X).collect();
+    assert_eq!(ids, vec![-50, 0, 50]);
+    // Other player on the same axis sees no populated lines.
+    let ids_o: Vec<i16> = axes.line_ids(Axis::Q, Player::O).collect();
+    assert!(ids_o.is_empty());
+}
+
+#[test]
 fn clear_doesnt_break_neighbors() {
     let mut axes = AxisBitmaps::new();
     for q in 0i16..5 {

@@ -4,6 +4,14 @@
 //! `SmallVec` of `u64` words indexed by position offset along the line.
 //! Shared infrastructure for win detection, window-scan eval, and shape
 //! detection. Maintained incrementally by `Board::place` / `Board::undo`.
+//!
+//! Storage is a fixed-length flat array per `(axis, player)` indexed by
+//! `(line_id - LINE_ID_OFFSET)`. Line IDs are bounded by `±ZOBRIST_WINDOW`
+//! (the same window that constrains the per-cell zobrist key table); the
+//! array length is `LINE_ID_RANGE = 2 * ZOBRIST_WINDOW + 1`. Phase 13
+//! replaced the prior `FxHashMap<i16, LineBitmap>` storage after the Phase
+//! 12 flamegraph identified hashbrown probes inside `window6` / `is_set`
+//! / `line` as the largest user-space cost. See `SPEC_ENGINE.md`.
 
 // All `as usize` / `as i16` casts in this module index into a bitmap whose
 // range has been validated by `in_range` or `word_index`. Pedantic clippy
@@ -15,8 +23,8 @@
 )]
 
 use crate::board::Player;
+use crate::config::ZOBRIST_WINDOW;
 use crate::coords::Coord;
-use fxhash::FxHashMap;
 use smallvec::SmallVec;
 
 /// One of the three axes of the hex grid.
@@ -223,18 +231,64 @@ impl LineBitmap {
     }
 }
 
+/// Fixed length of each `(axis, player)` flat array. Line IDs lie in
+/// `[-2*ZOBRIST_WINDOW, +2*ZOBRIST_WINDOW]` because axis-S `line_id` is
+/// `q + r`, which can reach `±2*ZOBRIST_WINDOW` even when both `q` and
+/// `r` stay inside `[-ZOBRIST_WINDOW, +ZOBRIST_WINDOW]` (the
+/// per-coordinate zobrist window). Axes Q and R only reach `±ZOBRIST_WINDOW`
+/// individually, but we keep a single uniform range across all axes for
+/// simplicity (per-axis sizing saves only ~50 KB out of ~150 KB total).
+/// Default `ZOBRIST_WINDOW = 127` → `LINE_ID_RANGE = 509`.
+const LINE_ID_RANGE: usize = (4 * ZOBRIST_WINDOW + 1) as usize;
+const LINE_ID_OFFSET: i16 = -2 * ZOBRIST_WINDOW;
+
 /// Per-axis per-player line bitmaps. The only mutators are `set` / `clear`;
-/// readers borrow through `Board::axes()`.
-#[derive(Clone, Debug, Default)]
+/// readers borrow through `Board::axes()`. Storage is a flat array indexed
+/// by `(line_id - LINE_ID_OFFSET)` so every probe is a bounds-checked
+/// array load instead of a hashbrown chase.
+#[derive(Clone, Debug)]
 pub struct AxisBitmaps {
-    lines: [[FxHashMap<i16, LineBitmap>; 2]; 3],
+    /// `[axis][player]` → fixed-length flat array of optional line bitmaps.
+    /// `None` until the first `set` on that line; `clear` does not
+    /// deallocate (keeps the `Some(empty)` slot for re-use).
+    lines: [[Box<[Option<LineBitmap>]>; 2]; 3],
+    /// `[axis][player]` → list of every `line_id` ever touched by `set`
+    /// (insertion order, never removed). Backs `line_ids()` so the eval
+    /// hot path enumerates populated lines without scanning the full
+    /// LINE_ID_RANGE-long flat array. Mirrors the prior `FxHashMap` key
+    /// retention: a line stays listed even after a `clear` empties it,
+    /// matching the old hashmap's "key persists" semantics.
+    populated_ids: [[SmallVec<[i16; 32]>; 2]; 3],
+}
+
+impl Default for AxisBitmaps {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AxisBitmaps {
-    /// Empty maps for all axes / players.
+    /// All slots empty.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            lines: std::array::from_fn(|_| std::array::from_fn(|_| empty_line_slots())),
+            populated_ids: std::array::from_fn(|_| std::array::from_fn(|_| SmallVec::new())),
+        }
+    }
+
+    /// Convert a `line_id` to a flat-array index. Panics in debug builds
+    /// when out of `[-2*ZOBRIST_WINDOW, +2*ZOBRIST_WINDOW]`; in release it
+    /// wraps silently — callers must ensure coords stay in the zobrist
+    /// window.
+    #[inline]
+    fn idx(line_id: i16) -> usize {
+        debug_assert!(
+            (LINE_ID_OFFSET..=-LINE_ID_OFFSET).contains(&line_id),
+            "line_id {line_id} out of zobrist window [{LINE_ID_OFFSET}, {}]",
+            -LINE_ID_OFFSET
+        );
+        (line_id - LINE_ID_OFFSET) as usize
     }
 
     /// Set the bit for `(c, p)` on all three axes.
@@ -243,20 +297,24 @@ impl AxisBitmaps {
         for axis in Axis::all() {
             let id = axis.line_id(c);
             let pos = axis.pos(c);
-            self.lines[axis as usize][p as usize]
-                .entry(id)
-                .or_default()
-                .set(pos);
+            let slot = &mut self.lines[axis as usize][p as usize][Self::idx(id)];
+            if slot.is_none() {
+                // First touch of this line — register it so `line_ids` can
+                // enumerate populated lines without walking the full array.
+                self.populated_ids[axis as usize][p as usize].push(id);
+            }
+            slot.get_or_insert_with(LineBitmap::default).set(pos);
         }
     }
 
-    /// Clear the bit for `(c, p)` on all three axes. No-op if absent.
+    /// Clear the bit for `(c, p)` on all three axes. No-op if the line slot
+    /// is empty.
     #[inline]
     pub fn clear(&mut self, c: Coord, p: Player) {
         for axis in Axis::all() {
             let id = axis.line_id(c);
             let pos = axis.pos(c);
-            if let Some(line) = self.lines[axis as usize][p as usize].get_mut(&id) {
+            if let Some(line) = &mut self.lines[axis as usize][p as usize][Self::idx(id)] {
                 line.clear(pos);
             }
         }
@@ -269,7 +327,7 @@ impl AxisBitmaps {
     pub fn run_length_through(&self, c: Coord, axis: Axis, p: Player) -> u8 {
         let id = axis.line_id(c);
         let pos = axis.pos(c);
-        let Some(line) = self.lines[axis as usize][p as usize].get(&id) else {
+        let Some(line) = self.lines[axis as usize][p as usize][Self::idx(id)].as_ref() else {
             return 0;
         };
         if !line.get(pos) {
@@ -278,22 +336,23 @@ impl AxisBitmaps {
         1 + line.run_backward(pos) + line.run_forward(pos)
     }
 
-    /// 6-bit window at `(axis, line_id, pos)` for `p`. `0` if the line has
-    /// no stones for `p` yet.
+    /// 6-bit window at `(axis, line_id, pos)` for `p`. `0` if the line slot
+    /// has no stones for `p` yet.
     #[must_use]
     pub fn window6(&self, axis: Axis, line_id: i16, pos: i16, p: Player) -> u8 {
-        let Some(line) = self.lines[axis as usize][p as usize].get(&line_id) else {
+        let Some(line) = self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref() else {
             return 0;
         };
         line.window6(pos)
     }
 
     /// `true` iff `p` has a stone at `(axis, line_id, pos)`. Cheap single-bit
-    /// probe used by the Layer 1 extension-factor check in eval.
+    /// probe used by the Layer 1 extension-factor check in eval and by
+    /// `Board::piece_at` / `is_empty_cell` (Phase 13).
     #[inline]
     #[must_use]
     pub fn is_set(&self, axis: Axis, line_id: i16, pos: i16, p: Player) -> bool {
-        match self.lines[axis as usize][p as usize].get(&line_id) {
+        match self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref() {
             Some(line) => line.get(pos),
             None => false,
         }
@@ -304,13 +363,16 @@ impl AxisBitmaps {
     #[inline]
     #[must_use]
     pub fn line(&self, axis: Axis, p: Player, line_id: i16) -> Option<&LineBitmap> {
-        self.lines[axis as usize][p as usize].get(&line_id)
+        self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref()
     }
 
-    /// Iterate the `line_id`s of every populated line for `(axis, p)`.
-    /// Order is non-deterministic (`FxHashMap` iteration order).
+    /// Iterate the `line_id`s of every line that has ever been touched by
+    /// `set` for `(axis, p)`. Yielded in insertion order (mirrors the
+    /// prior `FxHashMap` semantics: keys persist after the line's bits
+    /// are cleared). Iterates over a packed `SmallVec`, so the cost is
+    /// `O(populated_lines)`, not `O(LINE_ID_RANGE)`.
     pub fn line_ids(&self, axis: Axis, p: Player) -> impl Iterator<Item = i16> + '_ {
-        self.lines[axis as usize][p as usize].keys().copied()
+        self.populated_ids[axis as usize][p as usize].iter().copied()
     }
 
     /// Endpoints `(start_pos, end_pos)` of the maximal `p`-run on `axis`
@@ -322,7 +384,7 @@ impl AxisBitmaps {
     pub fn run_endpoints(&self, c: Coord, axis: Axis, p: Player) -> Option<(i16, i16)> {
         let id = axis.line_id(c);
         let pos = axis.pos(c);
-        let line = self.lines[axis as usize][p as usize].get(&id)?;
+        let line = self.lines[axis as usize][p as usize][Self::idx(id)].as_ref()?;
         if !line.get(pos) {
             return None;
         }
@@ -330,4 +392,11 @@ impl AxisBitmaps {
         let fwd = i16::from(line.run_forward(pos));
         Some((pos - back, pos + fwd))
     }
+}
+
+/// Allocate a fresh `LINE_ID_RANGE`-long boxed slice of `None` slots.
+fn empty_line_slots() -> Box<[Option<LineBitmap>]> {
+    let mut v: Vec<Option<LineBitmap>> = Vec::with_capacity(LINE_ID_RANGE);
+    v.resize_with(LINE_ID_RANGE, || None);
+    v.into_boxed_slice()
 }
