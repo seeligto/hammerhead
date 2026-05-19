@@ -21,7 +21,16 @@
 // All `as i32` casts apply to `ply: u32` (bounded above by the legal
 // stone count of HeXO) and `ThreatCounts` u8 fields (bounded by
 // `MAX_S0_INSTANCES`). Pedantic clippy can't see those invariants.
-#![allow(clippy::cast_possible_wrap)]
+// `as i16` casts in the Layer-1 chunked window scan apply to chunk
+// indices bounded by the 64-byte stack buffer used by
+// `LineBitmap::windows6_run`. `total_count` is computed from
+// non-negative `(max_pos - start + 1)` clamped via `.max(0)` before
+// the cast.
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 
 use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
 use crate::board::{Board, Player};
@@ -166,18 +175,38 @@ fn scan_line(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
         (None, None) => return 0,
     };
 
+    let start = min_pos - 5;
+    let total_count = (max_pos - start + 1).max(0) as usize;
+    // Chunked stack buffers keep the windows6_run output close to the
+    // encode + score lookup loop. 64 windows × 2 players × 1 byte
+    // fits in a single L1 line pair.
+    let mut x_buf = [0u8; 64];
+    let mut o_buf = [0u8; 64];
     let mut total: i32 = 0;
-    let mut base_pos = min_pos - 5;
-    while base_pos <= max_pos {
-        let x_bits = xl.map_or(0, |l| l.window6(base_pos));
-        let o_bits = ol.map_or(0, |l| l.window6(base_pos));
-        let idx = encode_ternary(x_bits, o_bits);
-        let base = WINDOW_SCORE[idx as usize];
-        if base != 0 {
-            let factor = extension_factor(bitmaps, axis, line_id, base_pos, base);
-            total += base * factor;
+    let mut emitted = 0usize;
+    while emitted < total_count {
+        let chunk = (total_count - emitted).min(x_buf.len());
+        let chunk_start = start + emitted as i16;
+        if let Some(l) = xl {
+            l.windows6_run(chunk_start, chunk, &mut x_buf[..chunk]);
+        } else {
+            x_buf[..chunk].fill(0);
         }
-        base_pos += 1;
+        if let Some(l) = ol {
+            l.windows6_run(chunk_start, chunk, &mut o_buf[..chunk]);
+        } else {
+            o_buf[..chunk].fill(0);
+        }
+        for k in 0..chunk {
+            let idx = encode_ternary(x_buf[k], o_buf[k]);
+            let base = WINDOW_SCORE[idx as usize];
+            if base != 0 {
+                let factor =
+                    extension_factor(bitmaps, axis, line_id, chunk_start + k as i16, base);
+                total += base * factor;
+            }
+        }
+        emitted += chunk;
     }
     total
 }

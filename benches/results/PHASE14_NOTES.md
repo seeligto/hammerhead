@@ -15,6 +15,7 @@ measurements unless noted. Host: AMD Ryzen 7 8845HS, rustc 1.94.0.
 | step 3.3 | threats::compute scratch buffer (3 runs avg) | 269,517 (+10.4%) | 144,678 (+8.7%) | hoisted `FxHashSet seen` + `Vec pieces` into `Board.threat_scratch` |
 | step 4 | piece_at → is_player single-probe (3 runs avg) | 291,375 (+8.1%) | 159,326 (+10.1%) | `AxisBitmaps::is_player`; threats `matches_pattern` + flank-cell checks |
 | step 5 | inline + cold sweep (3 runs avg) | 289,953 (−0.5%) | 160,890 (+1.0%) | trivial; kept for intent / future-proofing terminal paths |
+| step 6 | LineBitmap align + windows6_run (3 runs avg) | 325,133 (+12.1%) | 196,156 (+21.9%) | batched 6-bit window extract from u64 words; #[repr(align(64))] keeps lines off cache-line straddles |
 
 ## Reference table — Phase 14 truly fixed-depth counts (post step 1.5)
 
