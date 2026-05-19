@@ -49,13 +49,22 @@ pub enum Player { X = 0, O = 1 }
 
 Board does **not** store a `pieces` map (removed in Phase 13 — see Phase 12
 flamegraph evidence). `piece_at(coord)` is served by probing the axis
-bitmaps: query `AxisBitmaps[Axis::Q][Player::X]` at the coord's
-`(line_id, pos)`; if set, return `Some(X)`. Same for `Player::O`. Else
-`None`. Single-axis probe is sufficient because every placed stone is
-registered in **all three** axis bitmaps; the Q-axis is chosen by
-convention. `is_empty_cell` is `piece_at(c).is_none()`; `piece_count`
-returns `history.len()`. `pieces()` iteration walks the move-history
-`Vec` in insertion order, deriving the player from `player_at_ply(idx)`.
+bitmaps: first the unified Q-axis occupancy bitmap short-circuits the
+empty case in one probe, then a single per-player Q-axis probe
+disambiguates. Single-axis probe is sufficient because every placed
+stone is registered in **all three** axis bitmaps; the Q-axis is chosen
+by convention. `is_empty_cell` is the negation of `AxisBitmaps::is_occupied`
+(one bitmap probe). `piece_count` returns `history.len()`.
+
+`pieces()` iteration walks the move-history `Vec` in insertion order.
+The player for each entry comes from a parallel `history_players:
+Vec<Player>` field, **not** from `player_at_ply(idx)`: the test-only
+`Board::place_for_test` allows placing for an arbitrary player
+regardless of parity, so deriving the player from `player_at_ply`
+would round-trip the wrong player through `undo`. `history_players[i]`
+is the player actually placed at `history[i]`, kept in lockstep by
+`place` / `place_for_test` / `undo`.
+
 Callers that depended on the prior `FxHashMap` randomized order must
 either tolerate either order or sort explicitly; Phase 13 verified all
 existing callers are order-insensitive (see
@@ -266,6 +275,22 @@ pub struct AxisBitmaps {
     /// when each coord component stays inside the per-coordinate zobrist
     /// window of `±ZOBRIST_WINDOW`.
     lines: [[Box<[Option<LineBitmap>]>; 2]; 3],
+    /// [axis][player] -> list of every `line_id` ever touched by `set`
+    /// (insertion order, never removed). Backs `line_ids()` so the eval
+    /// hot path enumerates populated lines in O(populated_lines) instead
+    /// of scanning the full `LINE_ID_RANGE`-long flat array. Mirrors the
+    /// prior `FxHashMap` semantics of "keys persist after the line's bits
+    /// are cleared". The `SmallVec` inline size of 32 holds a typical
+    /// midgame's per-axis line count on-stack.
+    populated_ids: [[SmallVec<[i16; 32]>; 2]; 3],
+    /// [axis] -> unified per-axis occupancy bitmap (no player dimension).
+    /// Set whenever either player places at the cell; cleared on any
+    /// `clear` (HeXO permits at most one stone per cell, so the other
+    /// player cannot own it). Backs `is_occupied(c)` as a single per-axis
+    /// probe — the hot path inside `Board::add_proximity`'s
+    /// neighbour-occupancy check fires ~470 times per place, so a single
+    /// bitmap load beats two per-player probes by ~6 % NPS.
+    occupied: [Box<[Option<LineBitmap>]>; 3],
 }
 ```
 

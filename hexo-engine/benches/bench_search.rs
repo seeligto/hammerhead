@@ -50,6 +50,14 @@ fn bench_search_root(c: &mut Criterion) {
             b.iter_custom(|iters| {
                 let mut total = Duration::ZERO;
                 for _ in 0..iters {
+                    // Reset only the board + TT. `OrderingState` (killers
+                    // + history) is intentionally retained across
+                    // iterations: it accumulates the same way it does
+                    // between consecutive `best_move` calls in a real
+                    // game, so the bench reflects warm-start search
+                    // ordering rather than a pure cold start. Add
+                    // `e.ordering = OrderingState::new()` here if a
+                    // cold-start measurement is wanted.
                     e.reset();
                     e.clear_tt();
                     let template = (fx.build)();

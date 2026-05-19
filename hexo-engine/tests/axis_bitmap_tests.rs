@@ -124,6 +124,23 @@ fn out_of_window_line_id_panics_in_debug() {
 }
 
 #[test]
+fn line_ids_persist_after_clear() {
+    // Phase 13: the parallel populated_ids SmallVec retains line_ids
+    // even after the line's bits are cleared, mirroring the prior
+    // FxHashMap's "key persists after removal of every value" semantic.
+    // Callers (eval::layer1_window_scan) tolerate empty lines but
+    // depend on line enumeration not shrinking mid-search.
+    let mut axes = AxisBitmaps::new();
+    let c = Coord::new(0, 7);
+    axes.set(c, Player::X);
+    let before: Vec<i16> = axes.line_ids(Axis::Q, Player::X).collect();
+    assert_eq!(before, vec![7]);
+    axes.clear(c, Player::X);
+    let after: Vec<i16> = axes.line_ids(Axis::Q, Player::X).collect();
+    assert_eq!(after, vec![7], "line_ids must not shrink after clear");
+}
+
+#[test]
 fn flat_array_iteration_skips_none_slots() {
     // line_ids must enumerate populated lines only — never the empty None slots
     // that pad the flat array.

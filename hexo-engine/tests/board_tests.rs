@@ -257,6 +257,24 @@ fn piece_at_via_axis_bitmaps_matches_history() {
 }
 
 #[test]
+fn is_empty_cell_round_trips_on_place_undo() {
+    // Phase 13: unified per-axis occupancy bitmap. After undo the cell
+    // must report empty again (verifies the occupancy bit clears even
+    // though per-player bits are cleared by axes.clear).
+    let mut b = Board::new();
+    let c = Coord::new(1, 0);
+    place_ok(&mut b, ORIGIN);
+    assert!(b.is_empty_cell(c));
+    place_ok(&mut b, c);
+    assert!(!b.is_empty_cell(c));
+    b.undo().unwrap();
+    assert!(b.is_empty_cell(c), "occupancy bit must clear after undo");
+    // Re-place to confirm the slot was actually freed.
+    place_ok(&mut b, c);
+    assert!(!b.is_empty_cell(c));
+}
+
+#[test]
 fn pieces_iteration_yields_insertion_order_after_undo() {
     // Phase 13: pieces() walks history (insertion order). After undo the
     // popped record is gone from history — iteration order naturally
