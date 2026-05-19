@@ -849,6 +849,59 @@ impl Engine {
         self.board.ply()
     }
 
+    /// Halfmove flag — `0` if next stone starts a fresh turn, `1` if
+    /// the same side will play their second stone.
+    #[must_use]
+    pub fn halfmove(&self) -> u8 {
+        self.board.halfmove()
+    }
+
+    /// 128-bit Zobrist hash of the current position.
+    #[must_use]
+    pub fn hash(&self) -> u128 {
+        self.board.hash()
+    }
+
+    /// Walk the transposition table from the current position, returning
+    /// up to `depth` best-move plies. Stops early at the first TT miss
+    /// or illegal probe. The board is restored to its starting state
+    /// before return.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the internal `undo` rewind disagrees with `place` —
+    /// an invariant violation, not a reachable runtime error.
+    pub fn find_pv(&mut self, depth: i8) -> Vec<Coord> {
+        let max = depth.max(0) as usize;
+        if max == 0 {
+            return Vec::new();
+        }
+        let mut pv: Vec<Coord> = Vec::with_capacity(max);
+        while pv.len() < max {
+            let Some(entry) = self.tt.probe(self.board.hash()) else {
+                break;
+            };
+            let m = entry.best_move;
+            // ORIGIN is the TT sentinel for "no recorded move" once the
+            // origin is already occupied. If it is still empty, ORIGIN
+            // is a legal first move.
+            if m == ORIGIN && self.board.piece_at(ORIGIN).is_some() {
+                break;
+            }
+            if self.board.place(m).is_err() {
+                break;
+            }
+            pv.push(m);
+            if self.board.winner().is_some() {
+                break;
+            }
+        }
+        for _ in 0..pv.len() {
+            self.board.undo().expect("undo within find_pv must succeed");
+        }
+        pv
+    }
+
     /// Reset to a fresh game. TT and ordering state are retained (their
     /// own clearing methods are available on the public fields).
     pub fn reset(&mut self) {

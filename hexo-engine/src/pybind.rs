@@ -1,94 +1,115 @@
-// PyO3 stub: every method is a thin shim that takes `&self`/`&mut self`
-// because that's the receiver shape `#[pymethods]` requires. The actual
-// engine logic lives in pure-Rust modules; this layer is a scaffold until
-// those land.
-#![allow(
-    clippy::unused_self,
-    clippy::unnecessary_wraps,
-    clippy::used_underscore_binding
-)]
+//! `PyO3` wrapper. Thin shim over [`crate::search::Engine`]; no game logic.
+//!
+//! All search work runs inside `py.detach`, so long-running
+//! [`PyEngine::best_move`] calls release the GIL.
 
-use crate::board::Board;
-use crate::search::SearchConfig;
-use crate::tt::TranspositionTable;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
-#[pyclass(unsendable)]
-pub struct Engine {
-    _board: Board,
-    _search: SearchConfig,
-    _tt: TranspositionTable,
+use crate::board::Player;
+use crate::coords::Coord;
+use crate::search::Engine as RustEngine;
+
+/// `Board` keeps a few `RefCell` / `Cell` caches (lazy threat sets, lazy
+/// static eval), so the wrapper is `!Sync`. `unsendable` lifts `PyO3`'s
+/// `Send + Sync` requirement; we still get `Send` automatically because
+/// every field is `Send`, which is enough for `Python::detach` (its
+/// `Ungil` bound is `T: Send`).
+#[pyclass(name = "Engine", unsendable)]
+pub struct PyEngine {
+    inner: RustEngine,
 }
 
 #[pymethods]
-impl Engine {
+impl PyEngine {
     #[new]
     #[pyo3(signature = (tt_size_mb = None))]
     fn new(tt_size_mb: Option<usize>) -> Self {
-        let tt_mb = tt_size_mb.unwrap_or(crate::config::DEFAULT_TT_SIZE_MB);
+        let mb = tt_size_mb.unwrap_or(crate::config::DEFAULT_TT_SIZE_MB);
         Self {
-            _board: Board::new(),
-            _search: SearchConfig::default(),
-            _tt: TranspositionTable::new(tt_mb),
+            inner: RustEngine::new(mb),
         }
     }
 
-    fn place(&mut self, _pos: (i16, i16)) -> PyResult<()> {
-        Err(PyValueError::new_err("not implemented"))
+    fn place(&mut self, pos: (i16, i16)) -> PyResult<()> {
+        let c = Coord::new(pos.0, pos.1);
+        self.inner
+            .place(c)
+            .map_err(|e| PyValueError::new_err(format!("place failed: {e}")))
     }
 
     fn undo(&mut self) -> PyResult<()> {
-        Err(PyValueError::new_err("not implemented"))
+        self.inner
+            .undo()
+            .map_err(|e| PyValueError::new_err(format!("undo failed: {e}")))
     }
 
     #[pyo3(signature = (time_ms = None, depth = None))]
-    fn best_move(&mut self, time_ms: Option<u64>, depth: Option<i8>) -> PyResult<(i16, i16)> {
-        let _ = (time_ms, depth);
-        Err(PyValueError::new_err("not implemented"))
+    fn best_move(
+        &mut self,
+        py: Python<'_>,
+        time_ms: Option<u64>,
+        depth: Option<i8>,
+    ) -> PyResult<(i16, i16)> {
+        if time_ms.is_none() && depth.is_none() {
+            return Err(PyValueError::new_err(
+                "best_move requires time_ms or depth",
+            ));
+        }
+        let result = py.detach(|| self.inner.best_move(time_ms, depth));
+        Ok((result.best_move.q, result.best_move.r))
     }
 
-    fn eval(&self) -> i32 {
-        0
+    fn find_pv(&mut self, depth: i8) -> Vec<(i16, i16)> {
+        self.inner
+            .find_pv(depth)
+            .into_iter()
+            .map(|c| (c.q, c.r))
+            .collect()
     }
 
-    fn state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        Ok(PyDict::new(py))
-    }
-
-    fn reset(&mut self) {
-        self._board = Board::new();
-    }
-
-    fn load_bsn(&mut self, _s: &str) -> PyResult<()> {
-        Err(PyValueError::new_err("not implemented"))
-    }
-
-    fn dump_bsn(&self) -> String {
-        String::new()
+    fn cached_eval(&self) -> i32 {
+        self.inner.cached_eval()
     }
 
     fn to_move(&self) -> u8 {
-        0
-    }
-
-    fn is_legal(&self, _pos: (i16, i16)) -> bool {
-        false
+        match self.inner.to_move() {
+            Player::X => 0,
+            Player::O => 1,
+        }
     }
 
     fn winner(&self) -> Option<u8> {
-        None
+        self.inner.winner().map(|p| match p {
+            Player::X => 0,
+            Player::O => 1,
+        })
     }
 
     fn ply(&self) -> u32 {
-        0
+        self.inner.ply()
+    }
+
+    fn halfmove(&self) -> u8 {
+        self.inner.halfmove()
+    }
+
+    fn hash(&self) -> u128 {
+        self.inner.hash()
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset();
+    }
+
+    fn clear_tt(&mut self) {
+        self.inner.tt.clear();
     }
 }
 
 #[pymodule]
 fn hexo_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Engine>()?;
+    m.add_class::<PyEngine>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
