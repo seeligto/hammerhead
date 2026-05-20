@@ -82,6 +82,10 @@ bench-micro: ## criterion benches for one TARGET (default: all) + drain
 	@$(ENGINE)/target/release/examples/bench_drain \
 	    --criterion-dir $(ENGINE)/target/criterion
 
+bench-micro-quick: ## [Phase 16] fast criterion for one TARGET (~5-10s, no drain)
+	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET) -- \
+	    --sample-size 10 --measurement-time 1 --warm-up-time 0.5
+
 bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/results/)
 	@$(VPY) -m hexo.cli bench diff $(A) $(B)
 
