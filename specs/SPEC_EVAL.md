@@ -404,10 +404,20 @@ eval without re-introducing the double-counting fault?
 restated as `weight = α × A_shape`, with `A_shape` a Layer 1 anchor
 (see below); the sweep tunes one dimensionless α per shape. Weights
 are applied per cell via the runtime `Engine.set_eval_shape_weights`
-override — no rebuilds. Baseline = the Phase 17 engine (S1/S2 weights
-all 0); since no engine-algorithm change has landed since Phase 17,
-this is behaviourally the `.bestref` engine. See
+override — no rebuilds. See
 `subagents/scans/phase18-tuning-methodology.md`.
+
+**Baseline.** Each A/B runs candidate vs baseline *in the same binary*
+(the Phase 18 HEAD engine): the candidate seat carries the cell's
+weight vector, the baseline seat carries the shipped weights (all 0).
+The two seats therefore differ in **exactly the 8 S1/S2 weights and
+nothing else** — the cleanest possible isolation of the weight
+variable. This is *not* the `.bestref` worktree engine (`.bestref`
+predates the Phase-17 tempo removal / 8-cell scanner / ordering
+changes); running against `.bestref` would confound the weight change
+with those unrelated deltas. The in-process zero-weight baseline is
+the shipped engine's eval, which is the configuration the verdict is
+about.
 
 ### Stage A — Layer 1 anchors
 
@@ -419,14 +429,21 @@ runs (its Layer 1 window footprint):
 | open_3 | one open 3-run | 256 |
 | rhombus | five 2-runs | 160 |
 | arch | two 2-runs | 64 |
-| bone | one 3-run + four 2-runs | 384 |
-| trapezoid | one 3-run + four 2-runs | 384 |
+| bone | one 3-run + five 2-runs | 416 |
+| trapezoid | one 3-run + five 2-runs | 416 |
 | open_2 | one open 2-run | 32 |
 | closed_3 | one closed 3-run | 64 |
 | triangle | three 2-runs | 96 |
 
 Every α=2.0 weight stays well under the Layer 1 open-four window
 (2048), so no Phase-17-style magnitude inversion is reachable.
+
+(The Stage B sweep ran before a review pass corrected `bone` /
+`trapezoid` from 384 to 416 — it miscounted four 2-runs where there
+are five. Stage B used 384; the ~8 % under-scaling shifts those two
+α-grids slightly but does not change their result — both shapes are
+flat noise across the whole α range, so no rescaling makes a signal
+appear.)
 
 ### Stage B — coordinate descent
 
@@ -445,20 +462,33 @@ at 500 ms/stone vs baseline, colour-balanced. Cell entries are
 | closed_3 | 57/.48 | 46/.37 | 40/.31 | 56/.46 | 60/.50 | 56/.47 | 38/.30 | 1 |
 | triangle | 46/.37 | 47/.38 | 56/.46 | 55/.45 | 55/.45 | 46/.37 | 43/.34 | 0 |
 
-The 8 α=0 cells are baseline-vs-baseline controls — their winrates
-span 40–60 % (mean 51.4 %), calibrating the ~±10 pp noise band of a
-100-game cell. By the pinned rule (highest-winrate α, signal iff
-Wilson LB > 0.50), 7 of 8 shapes show no signal (α*=0). `closed_3`
-alone scrapes the gate at α*=1 (60 %, Wilson LB 0.502) — but 60 % does
-not exceed the control band (`open_2`'s α=0 control also hit 60 %) and
-its α-row is non-monotonic, so the pass is most likely noise. Per the
-pinned methodology it is carried into Stage C for a 200-game re-test.
+The 8 α=0 cells are baseline-vs-baseline controls (candidate and
+baseline both carry all-zero weights — the *same* engine). Their
+winrates span 40–60 % (mean 51.4 %), empirically calibrating the
+noise of a 100-game cell.
 
-### Stage C — combined re-test
+**The signal gate is uncalibrated at n=100.** By the pinned rule
+(highest-winrate α, signal iff Wilson LB > 0.50), `open_2`'s α=0
+control — a zero-weight, same-engine matchup with a true score of
+exactly 0.50 — *itself trips the gate* (60 %, Wilson LB 0.507). When
+a control clears the bar, the bar is inside the noise. `closed_3`'s
+α=1 cell (60 %, Wilson LB 0.502) clears it by 0.002 — well within the
+demonstrated control band — on a non-monotonic α-row. It is not
+evidence of signal; the pinned rule merely carries it to Stage C as
+the mechanical α* (=1).
 
-`closed_3` was the only shape past the Stage B gate (α*=1). Its
-candidate weight (64) and ±25 % scalings were re-tested at 200
-games/cell vs baseline, 500 ms/stone:
+**Multiple comparisons.** 56 cells, each shape gated on its best of 7,
+at a nominal 95 % bound. The family-wise false-positive rate is far
+above 5 %; under the null, ≈1–2 spurious LB > 0.50 passes are
+expected. Exactly 2 were observed (`open_2@0`, `closed_3@1`) — fully
+consistent with pure noise. 7 of 8 shapes show α*=0 outright.
+
+### Stage C — closed_3 re-test
+
+Stage B's α* vector had only `closed_3` non-zero, so Stage C is a
+200-game re-test of `closed_3` (candidate weight 64 = α*1 × anchor)
+and its ±25 % scalings — **not** a multi-shape combination. 500 ms/
+stone vs baseline:
 
 | candidate | closed_3 weight | W-L-D | winrate | Wilson 95 % |
 | --- | --- | --- | --- | --- |
@@ -468,24 +498,49 @@ games/cell vs baseline, 500 ms/stone:
 
 Strongest by Wilson lower bound = combined-0.75 at 0.478 — **below
 0.50**. `closed_3`'s Stage B pass (60 %, LB 0.502 on 100 games)
-regressed to ~54 % at 200 games: a winner's-curse artifact, as
-anticipated. No candidate beats the baseline.
+regressed to ~54 % at 200 games: textbook winner's curse. No
+candidate beats the baseline.
+
+### Stage C interaction test — all shapes together
+
+Coordinate descent holds the other 7 shapes at 0, so it cannot see a
+shape that helps only *in combination*. Because Stage B yielded a
+single-shape α* vector, Stage C above never exercised that path. A
+follow-up cell pair turns **all 8 shapes on together** at a uniform
+α (anchored weights, 200 games/cell, 500 ms/stone vs baseline):
+
+| candidate | α (all shapes) | W-L-D | winrate | Wilson 95 % |
+| --- | --- | --- | --- | --- |
+| uniform-0.5 | 0.5 | 92-90-18 | 50.5 % | [0.436, 0.574] |
+| uniform-1.0 | 1.0 | 71-117-12 | 38.5 % | [0.320, 0.454] |
+
+Turning the whole S1/S2 family on is neutral at α=0.5 and **actively
+harmful** at α=1.0 — the same direction as the Phase 17 ablation
+(all-S1/S2-on lost at 29 % with the old weights). No combination of
+shapes beats the baseline either.
 
 ### Phase 18 verdict — DROP
 
-No S1/S2 shape weight — alone (Stage B) or combined (Stage C) — beats
-the Phase 17 baseline at any α in the swept range. The S1/S2
-detection adds no measurable eval value once the double-counting
-fault is corrected away; corrected weights do not restore positional
-eval.
+No S1/S2 shape weight beats the baseline: not individually (Stage B,
+56 cells), not as `closed_3` re-tested at depth (Stage C), and not as
+the whole family combined (interaction test). At 500 ms/stone the
+swept range bounds the weight effect as **not positive** — neutral at
+best, harmful at full anchored magnitude. (This bounds the effect as
+non-positive; it does not prove it is exactly zero — 200-game cells
+cannot.) Corrected weights do not restore positional eval.
 
 - **`hexo.toml` S1/S2 weights remain `0`.** Phase 18 ships no weight
-  change; eval is byte-identical to Phase 17.
-- **Recommendation:** a future phase removes the S1/S2 detection code
-  (cross-axis matchers, `ThreatCounts` S1/S2 fields, the `eval_s1s2`
-  feature and toggles). Phase 18 itself removes no code.
+  change and no engine-behaviour change — reference node counts are
+  byte-identical pre/post (the runtime override defaults to the
+  compile-time constants).
+- **Recommendation:** a future phase removes the now-confirmed-idle
+  S1/S2 detection code (cross-axis matchers, `ThreatCounts` S1/S2
+  fields, the `eval_s1s2` feature and toggles). Phase 18 itself
+  removes no code. A deeper-time-control confirmation (1 s/stone) is
+  optional but not required — the effect is non-positive across two
+  independent A/B designs.
 - The runtime `Engine.set_eval_shape_weights` override **stays** — it
   is the sweep harness's tuning surface; a future re-tune reuses it.
 
-Stage D (time-control validation) is skipped: it runs only on the
-KEEP path.
+Stage D (dedicated time-control validation) is skipped: it runs only
+on the KEEP path.

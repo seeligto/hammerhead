@@ -38,9 +38,10 @@ closed_4 = 20_000
 # Phase 18 Stage A — Layer 1 anchors. Each weight is restated as
 # weight = alpha * A_shape, where A_shape sums window_k_scores over the
 # shape's maximal straight runs (the Layer 1 footprint). Anchors:
-#   open_3=256  rhombus=160  arch=64  bone=384  trapezoid=384
+#   open_3=256  rhombus=160  arch=64  bone=416  trapezoid=416
 #   open_2=32   closed_3=64  triangle=96
-# The Phase 18 sweep tunes alpha per shape. See SPEC_EVAL.md § Layer 2.
+# Phase 18 swept alpha per shape — verdict DROP, no weight beats the
+# baseline. Weights stay 0. See SPEC_EVAL.md § Phase 18.
 open_3    = 0
 rhombus   = 0
 arch      = 0
