@@ -893,8 +893,9 @@ def cmd_promote(args: argparse.Namespace) -> int:
         print(f"error: {best_python} not found", file=sys.stderr)
         return 1
 
-    current_cmd = _bot_cmd(current_python)
-    best_cmd = _bot_cmd(best_python)
+    tt_mb = promote_mod.max_tt_mb_per_worker()
+    current_cmd = promote_mod.with_tt_bound(_bot_cmd(current_python), tt_mb)
+    best_cmd = promote_mod.with_tt_bound(_bot_cmd(best_python), tt_mb)
 
     cfg = promote_mod.MatchConfig.from_promote_config(
         n_games=args.n,
