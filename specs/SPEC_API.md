@@ -151,8 +151,10 @@ class Engine:
   `best_move` with neither budget set. The SDK translates these into the
   `HammerheadError` family.
 - Bench-only extras (`bench_best_move`, `tt_stats`, feature-gated
-  `set_eval_s1s2`) exist for the benchmark suite — see
-  `specs/SPEC_BENCHMARKS.md`.
+  `set_eval_s1s2` and `set_eval_shape_weights`) exist for the
+  benchmark suite — see `specs/SPEC_BENCHMARKS.md`.
+  `set_eval_shape_weights([i32; 8])` overrides the Layer 2 S1/S2
+  shape weights at runtime; it is the Phase 18 eval-tuning surface.
 
 ### Rust shim (`pybind.rs`)
 

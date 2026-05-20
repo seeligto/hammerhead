@@ -107,23 +107,29 @@ S0 weights chosen so two non-overlapping open-4s (= fork mate via
 Layer 3) outranks any plausible Layer 2 sum. Empirical tuning in
 Phase 10 self-play.
 
+**All S1/S2 `Score` values are `0`.** Phase 17 zeroed them (the
+double-counting fault — see § Layer 2 ablation); the Phase 18 tuning
+sweep found no weight beats the baseline, verdict DROP (see § Phase
+18). The W/S/C tuples below are retained as WSC theory; the `Score`
+column reflects the shipped `hexo.toml` weights.
+
 ### S1 pre-emptives (mate-in-two-moves if undefended)
 
 | Shape | W | S | C | Score |
 |---|---|---|---|---|
-| Open 3 `_XXX_` | 3 | 1 | 2 | 1500 |
-| Rhombus (4-piece diamond) | 3 | 1 | 2 | 1500 |
-| Arch / Banana | 3 | 1 | 2 | 1500 |
-| Bone / Bowtie (5-piece) | 4+ | 1 | 2 | 3000 |
-| Trapezoid / Pentagon | 3+ | 1 | 2 | 2500 |
+| Open 3 `_XXX_` | 3 | 1 | 2 | 0 |
+| Rhombus (4-piece diamond) | 3 | 1 | 2 | 0 |
+| Arch / Banana | 3 | 1 | 2 | 0 |
+| Bone / Bowtie (5-piece) | 4+ | 1 | 2 | 0 |
+| Trapezoid / Pentagon | 3+ | 1 | 2 | 0 |
 
 ### S2 pre-emptives
 
 | Shape | W | S | C | Score |
 |---|---|---|---|---|
-| Open 2 isolated | 2 | 2 | 2 | 200 |
-| Closed 3 | 2 | 2 | 2 | 150 |
-| Triangle (3 mutually adjacent hexes) | 2 | 2 | 2 | 250 |
+| Open 2 isolated | 2 | 2 | 2 | 0 |
+| Closed 3 | 2 | 2 | 2 | 0 |
+| Triangle (3 mutually adjacent hexes) | 2 | 2 | 2 | 0 |
 
 ### Detection method
 

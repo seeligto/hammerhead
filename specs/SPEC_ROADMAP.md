@@ -324,6 +324,35 @@ Resolved Phase 17 candidates:
   no runtime multiplier left to batch.
 - **Layer 2 S1/S2 ablation decision** → resolved by STEP 2/3.
 
+## Phase 18 — Repo Hygiene + Eval Tuning Sweep
+
+**Goal**: untrack accumulated workflow artifacts, then settle whether
+*corrected* S1/S2 shape weights can restore positional eval without
+re-introducing the Phase-16 double-counting fault.
+
+1. **Repo hygiene**: `subagents/`, stale phase notes, and generated
+   bench dumps untracked and `.gitignore`'d. Specs + docs + source +
+   `baseline.json` are the in-repo persistence surface; per-phase
+   scans / reviews / reports live under the now-ignored `subagents/`.
+
+2. **Runtime shape-weight override**: `Engine.set_eval_shape_weights`
+   (`[i32; 8]`) overrides the Layer 2 S1/S2 weights at runtime,
+   defaulting to the compile-time constants (reference node counts
+   byte-identical). Lets the sweep vary weights per A/B cell with no
+   rebuild.
+
+3. **Tuning sweep** (`make tune`, `bench tune-sweep`): coordinate
+   descent + local pairwise A/B. Stage A anchored each weight to its
+   Layer 1 footprint (`weight = α × A_shape`). Stage B swept 8 shapes
+   × 7 α (56 cells, 100 games each); Stage C re-tested the one cell
+   past the gate at 200 games.
+
+**Verdict: DROP.** No S1/S2 weight — isolated or combined — beats the
+Phase 17 baseline at any swept α. `hexo.toml` weights stay 0; Phase
+18 ships no weight or engine-behaviour change. A future phase removes
+the S1/S2 detection code. Full sweep tables in
+`SPEC_EVAL.md § Phase 18`.
+
 ## Phase 19 — Clean SDK / `hammerhead` Package
 
 **Goal**: surface the engine through a clean, documented public Python
@@ -355,7 +384,9 @@ original Phase 19 sketch was dropped — the engine is deterministic.
 
 ## Phase 18 candidates (deferred follow-ups)
 
-- **Eval tuning phase** — Phase 17 zeroed the S1/S2 shape weights
+- **Eval tuning phase** — **resolved by Phase 18, verdict DROP** (no
+  weight beats baseline; see Phase 18 above). Original scope below.
+  Phase 17 zeroed the S1/S2 shape weights
   (ablation A/B was net-negative) but **kept the detection surface**:
   `ThreatCounts` S1/S2 fields, the cross-axis pattern matchers, the
   `creates_s1` predicate, the `eval_s1s2` Cargo feature and the
