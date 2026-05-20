@@ -21,6 +21,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 13 | kill hot HashMaps — `AxisBitmaps` flat array, `Board::pieces` removal, bench harness TT amortization | ✅ done |
 | 14 | deep optimization sweep — release profile, target-cpu, allocator, piece_at refactor, inline sweep, LineBitmap micro-opts, incremental threats, SIMD encode_ternary, PGO, bench infra extensions | ✅ done |
 | 15 | incremental threats + RefCell trim + creates_s0 axis-run cache | ✅ done |
+| 16 | fast bench tiers + proximity flat structure + Layer 2 ablation infra | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -245,27 +246,71 @@ identical node counts at every `(fixture, depth)` before and after.
 
 See `prompts/PHASE_15_PROMPT.md`.
 
-## Phase 16 candidates (deferred follow-ups)
+## Phase 16 — Fast Bench Loop + Proximity Rework + Layer 2 Ablation
 
-- **Proximity HashMap rework** (HOTSPOTS #3,
-  `for_each_in_range<board::add_proximity>`): coord-keyed maps
-  (`Board::proximity_count` / `inner_proximity_count`) don't fit the
-  Phase-13 flat-array playbook cleanly (key space ~65k cells × 4
-  maps ≈ 1 MB; iteration pattern matters). Needs its own design pass.
-- **Persist breakdown capacity across `incremental` calls**
-  (Phase-15 reviewer finding): the current
-  `std::mem::take(breakdown_slot)` in `threats::incremental` leaves
-  `Vec::new()` (cap 0) in the scratch slot; the subsequent
-  `walk_cross_axis_incremental` reallocates capacity for ~N entries
-  on every call. Two-buffer alternation (current / prior) preserves
-  the allocation. ~50-100 ns per incremental reconcile.
+**Goal**: cut the bench feedback loop, kill the proximity HashMaps
+(Phase 15 HOTSPOTS #2), and add infrastructure to A/B test the
+Layer 2 S1/S2 shape contributions.
+
+Four sub-projects, ordered by independence:
+
+1. **Fast bench tiers**: `bench-quick` (~5-15 s, single fixture),
+   `bench-perf` (~30-60 s, two fixtures × two budgets), and a
+   `cycles/node` metric. `bench` (full) is unchanged. See
+   `specs/SPEC_BENCHMARKS.md § Bench tiers`.
+
+2. **Proximity flat structure**: replace `FxHashMap<Coord, u32>`
+   (×2) + `FxHashSet<Coord>` (×2) with bounded-key flat arrays
+   (`ProximityCounts` = two `Box<[u8]>`) and `SparseCellSet`
+   (bitset + insertion-order `Vec` + position index). Same playbook
+   as the Phase 13 `AxisBitmaps` kill. See `SPEC_ENGINE.md
+   § Candidate maintenance`.
+
+3. **Phase 15 reviewer follow-ups**: `mem::take` realloc in the
+   incremental-threats path (two-buffer swap), multi-cluster oracle
+   coverage gap.
+
+4. **Layer 2 ablation infrastructure**: Cargo feature `eval_s1s2`
+   (default ON) + runtime `set_eval_s1s2` toggle + self-play A/B
+   harness. **No removal** — data collection only; the keep/drop
+   decision is Phase 17+. See `SPEC_EVAL.md § Layer 2 ablation`.
+
+**Reference node counts are the regression net.** STEPs 1-3 are
+behaviourally transparent; `make bench reference` must produce
+identical node counts at every `(fixture, depth)`. STEP 4 with the
+default `eval_s1s2` feature ON is also transparent.
+
+See `prompts/PHASE_16_PROMPT.md`.
+
+## Phase 16 resolved follow-ups
+
+- **Proximity HashMap rework** (Phase 15 HOTSPOTS #2): resolved via
+  the flat `ProximityCounts` (`Box<[u8]>` ×2) + `SparseCellSet`
+  (bitset + `Vec` + `member_index`) structures replacing the four
+  coord-keyed maps. See `SPEC_ENGINE.md § Candidate maintenance`.
+- **Persist breakdown capacity across `incremental` calls** (Phase 15
+  reviewer finding): resolved by two-buffer (current / prior)
+  alternation of the threat scratch / cache, so `ThreatSet` capacity
+  survives reconciliation without a `Vec::new()` realloc.
+- **Multi-cluster oracle gap** (Phase 15 reviewer finding): the
+  incremental-threats oracle now stress-tests 2-4 simultaneous dirty
+  centers per reconciliation (`incremental_matches_full_multi_cluster`).
+
+## Phase 17 candidates (deferred follow-ups)
+
 - **`extension_factor` SIMD batch**: inline into Layer-1 SIMD path so
   the per-window extension multiplier runs alongside `encode_ternary`.
+- **`creates_s0` per-axis run cache (take 3)**: the Phase 15 STEP 4
+  variant was reverted (commit 15c9638); revisit with a different
+  caching key.
+- **Per-line `LineContribution` cache**.
 - **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
   collision rate.
 - **Move-ordering bucket refinement**: split bucket 7 (creates_s1)
   by shape strength so bone / trapezoid sort ahead of open-3.
 - **`closed_2` shape detector** for full tempo +0 / -1 cases.
+- **Layer 2 S1/S2 ablation decision**: keep / drop S1/S2, driven by
+  the Phase 16 STEP 4 self-play A/B data.
 - **BotConfig vs SearchConfig time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
   both 1000ms. Fold if Phase 10/11 finds them always coupled.

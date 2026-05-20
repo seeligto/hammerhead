@@ -25,10 +25,15 @@ crate-type = ["cdylib", "rlib"]
 # `tt_stats` and `mimalloc` stay opt-in: stats are a dev affordance
 # (zero-cost when off), and mimalloc was within noise on this host
 # (Phase 14 STEP 3.2). See specs/SPEC_BENCHMARKS.md.
-default   = ["simd_eval"]
+default   = ["simd_eval", "eval_s1s2"]
 tt_stats  = []
 mimalloc  = ["dep:mimalloc"]
 simd_eval = []
+# `eval_s1s2` (Phase 16) gates the Layer 2 S1/S2 shape contributions
+# (open_3 / rhombus / arch / bone / trapezoid / open_2 / closed_3 /
+# triangle). Default ON — behaviour unchanged from Phase 15. See
+# specs/SPEC_EVAL.md § Layer 2 ablation.
+eval_s1s2 = []
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }

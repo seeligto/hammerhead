@@ -67,6 +67,7 @@ class EvalConfig:
     fork_cover2_bonus: int
     tempo_weight: int
     overlap_bonus_x10: int
+    eval_s1s2_default: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +156,24 @@ class BenchBreakdownConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BenchQuickConfig:
+    """Inner-loop bench tier config. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    default_fixture: str
+    default_time_ms: int
+    default_runs: int
+
+
+@dataclass(frozen=True, slots=True)
+class BenchPerfConfig:
+    """Pre-commit bench tier config. See ``specs/SPEC_BENCHMARKS.md``."""
+
+    fixtures: tuple[str, ...]
+    time_ms: tuple[int, ...]
+    runs: int
+
+
+@dataclass(frozen=True, slots=True)
 class BenchConfig:
     """Benchmark suite defaults. See ``specs/SPEC_BENCHMARKS.md``."""
 
@@ -168,6 +187,8 @@ class BenchConfig:
     reference: BenchReferenceConfig
     scaling: BenchScalingConfig
     breakdown: BenchBreakdownConfig
+    quick: BenchQuickConfig
+    perf: BenchPerfConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +264,7 @@ def load() -> HexoConfig:
             fork_cover2_bonus=e["fork_cover2_bonus"],
             tempo_weight=e["tempo_weight"],
             overlap_bonus_x10=e["overlap_bonus_x10"],
+            eval_s1s2_default=bool(e["eval_s1s2_default"]),
         ),
         threats=ThreatsConfig(
             recompute_radius=t["recompute_radius"],
@@ -310,6 +332,16 @@ def load() -> HexoConfig:
             breakdown=BenchBreakdownConfig(
                 fixtures=tuple(bench["breakdown"]["fixtures"]),
                 depth=bench["breakdown"]["depth"],
+            ),
+            quick=BenchQuickConfig(
+                default_fixture=bench["quick"]["default_fixture"],
+                default_time_ms=bench["quick"]["default_time_ms"],
+                default_runs=bench["quick"]["default_runs"],
+            ),
+            perf=BenchPerfConfig(
+                fixtures=tuple(bench["perf"]["fixtures"]),
+                time_ms=tuple(bench["perf"]["time_ms"]),
+                runs=bench["perf"]["runs"],
             ),
         ),
         promote=PromoteConfig(

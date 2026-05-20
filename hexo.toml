@@ -60,6 +60,11 @@ tempo_weight = 50
 # Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
 overlap_bonus_x10 = 15  # 1.5x as integer ratio /10
 
+# Phase 16: Layer 2 S1/S2 ablation — see SPEC_EVAL.md § Layer 2 ablation.
+# Compile-time default (feature `eval_s1s2`). Runtime override available
+# via Engine::set_eval_s1s2(bool) for self-play A/B.
+eval_s1s2_default = true
+
 [engine.threats]
 recompute_radius = 5
 cluster_radius   = 2
@@ -165,6 +170,18 @@ runs       = 5
 # ground truth.
 fixtures   = ["midgame_12", "midgame_30"]
 depth      = 4
+
+[bench.quick]
+# Inner-loop feedback tier (~5-15s). See SPEC_BENCHMARKS.md § Bench tiers.
+default_fixture   = "midgame_12"
+default_time_ms   = 500
+default_runs      = 3
+
+[bench.perf]
+# Pre-commit tier (~30-60s). See SPEC_BENCHMARKS.md § Bench tiers.
+fixtures   = ["midgame_12", "midgame_30"]
+time_ms    = [250, 1000]
+runs       = 5
 
 [promote]
 # Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.

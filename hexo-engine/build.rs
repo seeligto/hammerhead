@@ -419,6 +419,13 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         7,
     );
     emit_window_score_table(out, cfg);
+    // Phase 16: Layer 2 S1/S2 ablation compile-time default.
+    emit_bool(
+        out,
+        cfg,
+        &["engine", "eval", "eval_s1s2_default"],
+        "EVAL_S1S2_DEFAULT",
+    );
 }
 
 /// Emit `WINDOW_SCORE: [i32; 729]` for Layer 1 ternary-encoded windows.
@@ -726,6 +733,13 @@ fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_u8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: u8 = {v};").unwrap();
+}
+
+fn emit_bool(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = get(cfg, path)
+        .as_bool()
+        .unwrap_or_else(|| panic!("hexo.toml {} not a bool", path.join(".")));
+    writeln!(out, "pub const {name}: bool = {v};").unwrap();
 }
 
 fn emit_f32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {

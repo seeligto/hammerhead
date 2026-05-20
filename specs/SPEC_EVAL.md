@@ -284,3 +284,37 @@ Implementation: for each enemy colony cluster, check if own pieces within C/D ri
 open-four: both extension endpoints (size 2). For closed-four: the
 single open extension (size 1). For open-five: both endpoints (size 2).
 For closed-five: the one open endpoint (size 1).
+
+## Layer 2 ablation (Phase 16)
+
+S0 shapes (open_5 / closed_5 / open_4 / closed_4) are **structurally
+required**: ordering uses them for buckets 5-6 (creates/blocks S0),
+search uses them for quiescence + check extension, Layer 3 uses
+them for fork detection. They cannot be ablated without breaking
+search.
+
+S1/S2 shapes (open_3 / rhombus / arch / bone / trapezoid / open_2
+/ closed_3 / triangle) are **eval-only contributions**. They affect
+move ordering at bucket 7 (creates S1) and the static eval score
+via `layer2_shapes`. They do NOT participate in quiescence, check
+extension, or fork detection.
+
+Phase 16 introduces a Cargo feature `eval_s1s2` (default ON) that
+gates S1/S2 contributions. When disabled:
+
+- `ThreatCounts` S1/S2 fields are still computed (cheap) but
+  `layer2_shapes` skips them
+- Ordering bucket 7 (creates S1) is disabled
+- `threats::compute` skips the cross-axis pattern matchers entirely
+  (saves the matches_pattern<2,3> cost for non-S0 shapes)
+
+When enabled (default): behaviour unchanged from Phase 15.
+
+In addition to the compile-time feature, a runtime override
+(`Engine::set_eval_s1s2(bool)`, exposed via PyO3) toggles the S1/S2
+contribution for self-play A/B testing. When the `eval_s1s2` feature
+is OFF the override does not exist; when ON it defaults to `true`.
+
+This is **infrastructure**, not a removal. The decision of whether
+to keep S1/S2 on by default is deferred to Phase 17+ based on
+self-play A/B data collected in Phase 16 STEP 4.

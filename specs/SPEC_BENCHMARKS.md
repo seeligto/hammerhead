@@ -501,3 +501,54 @@ for ground-truth profiling.
   fails if any micro-bench regresses by > 5% at p < 0.01.
 
 Out of scope for v1.
+
+## Bench tiers
+
+Three tiers for different feedback latencies:
+
+### `bench-quick` (~5-15s)
+
+Single-fixture, single-budget NPS+depth check. Used for inner-loop
+iteration during a sub-step.
+
+- Fixture: midgame_12 (configurable via `--fixture`)
+- Time budget: 500 ms
+- Runs: 3
+- Output: `nps_mean / nps_stddev / depth_reached`
+- Comparison: against `.hexo/quick_baseline.json` (last `bench-quick`
+  cached locally; `.hexo/` is gitignored — per-developer, not shared)
+
+CLI:
+    hexo bench quick [--fixture F] [--time-ms T] [--runs N]
+
+Output format (single line, machine-readable + human-friendly):
+    quick: 348k ± 4k NPS, depth 5, 11600 cyc/node (Δ +3.1% vs last)
+
+### `bench-perf` (~30-60s)
+
+Two-fixture, multi-budget check. Used at end of a sub-step before
+commit.
+
+- Fixtures: midgame_12, midgame_30
+- Budgets: 250 ms, 1000 ms
+- Runs: 5 each
+- Output: per-fixture × budget NPS + depth + cycles/node
+
+CLI:
+    hexo bench perf
+
+### `bench-full` (~3-5 min)
+
+Current `make bench all`. Used at the end of a phase + for baseline
+commits. No semantic change from current behaviour.
+
+### `cycles/node` metric
+
+For each NPS measurement, compute `cycles_per_node = (cpu_ghz * 1e9
+* time_s) / nodes`. Reported alongside NPS in all tiers. More
+sensitive than NPS at picking up inner-loop changes — NPS lifts
+from depth-shift can mask per-node regressions, but cycles/node
+is monotonic in per-node work.
+
+The `cpu_ghz` value is auto-detected from `/proc/cpuinfo` on Linux,
+falls back to `4.0` if unavailable. Documented in the output.

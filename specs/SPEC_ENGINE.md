@@ -31,10 +31,9 @@ pub fn hex_distance(a: Coord, b: Coord) -> i16 {
 
 ```rust
 pub struct Board {
-    proximity_count: FxHashMap<Coord, u32>,        // for legality (radius 8)
-    inner_proximity_count: FxHashMap<Coord, u32>,  // for move-gen (radius 2)
-    candidate_cells: FxHashSet<Coord>,
-    inner_candidate_cells: FxHashSet<Coord>,
+    proximity: ProximityCounts,        // flat r8 (legality) + r2 (move-gen) counts
+    candidates: SparseCellSet,         // r8 legal empty cells
+    inner_candidates: SparseCellSet,   // r2 move-gen cells
     history: Vec<Coord>,
     hash: u128,             // 128-bit Zobrist; TT bucket = (hash as u64) & MASK
     ply: u32,
@@ -122,46 +121,67 @@ around `c`. Example: with stones at (0,0) and (8,0), legal cells span up to
 
 ### Candidate maintenance
 
-`candidate_cells` holds the *current* legal empty cells. Maintained
-incrementally:
+Proximity storage uses a **bounded-key flat structure** derived from the
+zobrist window (Phase 16 — replaced the `FxHashMap` / `FxHashSet`
+quartet). The Phase 15 flamegraph showed
+`for_each_in_range<board::add_proximity / remove_proximity>` at the #2
+user-space position: each `place` walks the r=8 neighbourhood (~217
+cells) and probed hashbrown 4× (outer count, inner count, outer set,
+inner set). Flat arrays cut the per-cell cost from ~4 probes to ~4
+array indexes.
 
-- `proximity_count: FxHashMap<Coord, u32>` — for each cell within `r8` of any
-  piece, count how many pieces are within `r8`. Cell is in candidate set iff
-  `proximity_count > 0` AND cell is empty (empty-check is an axis-bitmap
-  probe; `Board` no longer owns a `pieces` map).
-- `place(c)`: for every `d` in the `r8` hex around `c`, increment
-  `proximity_count[d]`. If `proximity_count[d]` rose from 0 and `d` is empty,
-  insert into candidates. Remove `c` itself from candidates. After proximity
-  / hash / history updates: `axes.set(c, player)`, then set
+```
+PROX_COORD_RANGE = 2 * ZOBRIST_WINDOW + 1          // 255 at default W=127
+PROX_FIELD_SIZE  = PROX_COORD_RANGE * PROX_COORD_RANGE   // ~65k cells
+
+struct ProximityCounts {
+    outer: Box<[u8; PROX_FIELD_SIZE]>,   // r=8 legality refcount
+    inner: Box<[u8; PROX_FIELD_SIZE]>,   // r=2 move-gen refcount
+}
+```
+
+`idx(c) = (c.q + ZOBRIST_WINDOW) * PROX_COORD_RANGE + (c.r +
+ZOBRIST_WINDOW)`. `u8` is sufficient: `hex_area(8) ≈ 217 < 255`.
+`inc_*` uses `saturating_add` so a pathological position cannot wrap;
+`debug_assert!` on `== 255` flags it in dev builds.
+
+Candidate iteration uses `SparseCellSet` (`board/sparse_cell_set.rs`):
+
+```
+struct SparseCellSet {
+    present_bitset: Box<[u64]>,   // 1 bit per cell — O(1) contains
+    members: Vec<Coord>,          // insertion order; iteration source
+    member_index: Box<[u16]>,     // members[member_index[idx(c)]] == c;
+                                  // u16::MAX = absent
+}
+```
+
+`insert` is O(1) (bit-set + push + index store). `remove` is O(1):
+`member_index` locates the slot, `swap_remove` pops it (the swapped
+survivor's index is patched). `contains` is one bitset probe.
+`swap_remove` perturbs iteration order — callers must be
+order-insensitive (verified by the STEP 2.1 callsite scan).
+
+`candidates` holds the *current* legal empty cells; `inner_candidates`
+the r=2 move-gen cells. Maintained incrementally:
+
+- `place(c)`: for every `d` in the `r8` hex around `c`,
+  `proximity.inc_outer(d)`; if it rose from 0 and `d` is empty,
+  `candidates.insert(d)`. Same at r=2 into `proximity.inner` /
+  `inner_candidates`. Remove `c` itself from both sets. After
+  proximity / hash / history updates: `axes.set(c, player)`, then
   `winner = Some(player)` iff `is_winning_move(self, c, player)`.
-- `undo(c)`: reverse. Before any other rollback: `axes.clear(c, player)`
-  and clear `winner` if the undone move was the winning one. Then decrement
-  counts; remove from candidates when count hits 0. Re-insert `c` if its
-  remaining proximity count > 0 (other pieces still in range).
-- `ply == 0` special case: candidates = `{(0, 0)}` when board empty.
+- `undo(c)`: reverse. Before any other rollback: `axes.clear(c,
+  player)` and clear `winner` if the undone move was the winning one.
+  Then `dec_outer` / `dec_inner`; remove from the matching set when a
+  count hits 0. Re-insert `c` into each set whose remaining count > 0.
+- `ply == 0` special case: candidates = `{(0, 0)}` when board empty;
+  `inner_candidates` cleared (origin re-eligible via outer logic).
 
-The inner refcount (`inner_proximity_count` / `inner_candidate_cells`) is
-maintained with exactly the same algorithm at radius
-`MOVE_GEN_INNER_RADIUS`:
-
-```
-place(c):
-    (existing r8 steps...)
-    for each d in for_each_in_range(c, INNER_RADIUS):
-        increment inner_proximity_count[d]
-        if rose from 0 and d not in pieces: add to inner_candidate_cells
-    Remove c from inner_candidate_cells.
-
-undo():
-    (existing r8 rollback...)
-    for each d in for_each_in_range(c, INNER_RADIUS):
-        decrement inner_proximity_count[d]
-        if zero: remove from inner_candidate_cells (and from the count map)
-    If c is still inner-adjacent to surviving pieces, re-add to
-    inner_candidate_cells.
-    If pieces now empty: clear inner_candidate_cells (origin re-eligible
-    via the outer candidate logic; `place(ORIGIN)` will repopulate inner).
-```
+Memory cost at default `ZOBRIST_WINDOW = 127`: two `u8` count fields
+(~64 KB each), two `SparseCellSet` (bitset ~8 KB + `member_index`
+~130 KB each) — ~400 KB per `Board`. Negligible vs the 64 MB TT and
+there is exactly one live `Board` (search uses make/undo, not clone).
 
 ## Move Generation (`moves.rs`)
 
