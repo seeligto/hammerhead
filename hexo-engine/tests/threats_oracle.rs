@@ -255,6 +255,75 @@ fn incremental_handles_overflow_fallback() {
     );
 }
 
+#[test]
+fn incremental_matches_full_multi_cluster() {
+    // Phase 16: stress 2..=MAX_INCREMENTAL_CENTERS simultaneous dirty
+    // centers per reconciliation. Places `k` stones without a threats
+    // read between them, so the next read reconciles `k` dirty centers
+    // at once — the multi-cluster case the Phase 15 oracle under-tested.
+    use hexo_engine_core::config::MAX_INCREMENTAL_CENTERS;
+    const MULTI_SEED: u64 = 0xC0FF_EED1_5C0D_E5A1_u64;
+
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(MULTI_SEED);
+    let mut scratch = ThreatScratch::default();
+
+    for k in [2usize, 3, MAX_INCREMENTAL_CENTERS] {
+        let mut board = build_midgame_12();
+        for _ in 0..1000 {
+            // Place up to `k` stones without reading threats between.
+            let mut placed = 0usize;
+            for _ in 0..k {
+                let legal = moves::generate(&board, 8);
+                if legal.is_empty() {
+                    break;
+                }
+                let mv = legal[(rng.next_u64() as usize) % legal.len()];
+                board.place(mv).unwrap();
+                placed += 1;
+                if board.winner().is_some() {
+                    // Don't probe past a terminal position.
+                    board.undo().unwrap();
+                    placed -= 1;
+                    break;
+                }
+            }
+            if placed == 0 {
+                board = build_midgame_12();
+                continue;
+            }
+            // Read: incremental reconciles `placed` dirty centers.
+            let inc_x = board.threats(Player::X).clone();
+            let inc_o = board.threats(Player::O).clone();
+            let full_x =
+                threats::compute_with_scratch(&board, Player::X, &mut scratch, &[], None);
+            let full_o =
+                threats::compute_with_scratch(&board, Player::O, &mut scratch, &[], None);
+            assert!(
+                threat_set_equiv(&inc_x, &full_x),
+                "X multi-cluster drift (k={k}, ply {})\ndirty centers: {:?}\n{}",
+                board.ply(),
+                board.threats_dirty_centers_for_test(),
+                report_diff(&inc_x, &full_x, "X"),
+            );
+            assert!(
+                threat_set_equiv(&inc_o, &full_o),
+                "O multi-cluster drift (k={k}, ply {})\ndirty centers: {:?}\n{}",
+                board.ply(),
+                board.threats_dirty_centers_for_test(),
+                report_diff(&inc_o, &full_o, "O"),
+            );
+            // Undo back, then read to reset the dirty accumulator (those
+            // reads reconcile `placed` undo-dirty centers — also multi-
+            // cluster).
+            for _ in 0..placed {
+                board.undo().unwrap();
+            }
+            let _ = board.threats(Player::X);
+            let _ = board.threats(Player::O);
+        }
+    }
+}
+
 type Builder = fn() -> Board;
 
 #[test]
