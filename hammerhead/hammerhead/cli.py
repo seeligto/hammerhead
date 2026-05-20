@@ -28,6 +28,7 @@ from hammerhead_engine import Engine
 
 from . import benchmark as bench
 from . import promote as promote_mod
+from . import tune as tune_mod
 from .config import CONFIG
 from .game import GameRecord
 
@@ -199,6 +200,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_perf(args)
     if sub == "ablation":
         return _bench_ablation(args)
+    if sub == "tune-sweep":
+        return _bench_tune_sweep(args)
     if sub == "all":
         return _bench_all(args)
     if sub == "diff":
@@ -478,6 +481,77 @@ def _bench_ablation(args: argparse.Namespace) -> int:
         f"  Wilson 95%: [{r.wilson_lo * 100:.1f}%, {r.wilson_hi * 100:.1f}%]"
     )
     print(f"  Verdict: {r.verdict}")
+    return 0
+
+
+def _parse_anchors(spec: str) -> dict[str, int]:
+    """Parse ``shape=int,shape=int`` into a dict of Layer 1 anchors."""
+    anchors: dict[str, int] = {}
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        key, sep, val = part.partition("=")
+        if not sep:
+            raise ValueError(f"bad anchor spec {part!r} (want shape=int)")
+        anchors[key.strip()] = int(val.strip())
+    return anchors
+
+
+def _parse_cell(spec: str) -> tuple[str, tuple[int, ...]]:
+    """Parse ``LABEL=w0,w1,...,w7`` into ``(label, weights)``."""
+    label, sep, vec = spec.partition("=")
+    if not sep:
+        raise ValueError(f"bad cell spec {spec!r} (want LABEL=w0,...,w7)")
+    weights = tuple(int(x) for x in vec.split(",") if x.strip())
+    return label.strip(), weights
+
+
+def _bench_tune_sweep(args: argparse.Namespace) -> int:
+    """Phase 18 — S1/S2 eval-weight tuning sweep (coordinate descent)."""
+    seed_base = int(str(args.seed_base), 0)
+    stage = args.stage
+
+    if args.cell:
+        cells = [
+            tune_mod.vector_cell(
+                label, weights, stage=stage, seed_base=seed_base, cell_index=i
+            )
+            for i, (label, weights) in enumerate(_parse_cell(c) for c in args.cell)
+        ]
+    else:
+        shapes = [s.strip() for s in args.shapes.split(",") if s.strip()]
+        alphas = [float(a) for a in args.alphas.split(",") if a.strip()]
+        anchors = _parse_anchors(args.anchors)
+        cells = tune_mod.coordinate_descent_cells(
+            shapes, alphas, anchors, stage=stage, seed_base=seed_base
+        )
+
+    if args.out:
+        out_path = Path(args.out)
+    else:
+        _ensure_results_dir()
+        _, date = _isodate_now()
+        out_path = _RESULTS_DIR / f"tune-{date}-{_git_sha()}.json"
+
+    results = tune_mod.run_tune_sweep(
+        cells,
+        games=args.games,
+        time_ms=args.time_ms,
+        n_workers=args.workers,
+        out_path=out_path,
+        stage=stage,
+        max_plies=args.max_plies,
+        opening_plies=args.opening_plies,
+    )
+    print(f"\ntune sweep complete: {len(results)} cells → {out_path}")
+    if results:
+        best = max(results, key=lambda c: c["wilson_lb"])
+        print(
+            f"  best wilson-LB cell: {best['label']}  "
+            f"{best['wins']}-{best['losses']}-{best['draws']} (W-L-D)  "
+            f"wilson [{best['wilson_lb']:.3f}, {best['wilson_ub']:.3f}]"
+        )
     return 0
 
 
@@ -1119,6 +1193,51 @@ def _build_parser() -> argparse.ArgumentParser:
         default=_default_workers(),
         help="parallel ablation workers (0 = auto: cpu_count() - 2)",
     )
+
+    bs = bsub.add_parser(
+        "tune-sweep",
+        help="Phase 18 S1/S2 eval-weight tuning sweep (coordinate descent)",
+    )
+    bs.add_argument("--stage", default="B", help="sweep stage label (A/B/C/D)")
+    bs.add_argument(
+        "--shapes",
+        default=",".join(tune_mod.SHAPE_NAMES),
+        help="comma-separated shapes to sweep (grid mode)",
+    )
+    bs.add_argument(
+        "--alphas",
+        default="0,0.25,0.5,0.75,1.0,1.5,2.0",
+        help="comma-separated alpha grid (grid mode)",
+    )
+    bs.add_argument(
+        "--anchors",
+        default="",
+        help="comma-separated shape=anchor Layer 1 anchors (grid mode)",
+    )
+    bs.add_argument(
+        "--cell",
+        action="append",
+        default=[],
+        help="explicit cell LABEL=w0,...,w7 (repeatable; Stage C/D)",
+    )
+    bs.add_argument("--games", type=int, default=100)
+    bs.add_argument("--time-ms", type=int, default=500)
+    bs.add_argument(
+        "--workers",
+        type=int,
+        default=_default_workers(),
+        help="parallel game workers (0 = auto: cpu_count() - 2)",
+    )
+    bs.add_argument(
+        "--seed-base",
+        default=hex(tune_mod.DEFAULT_SEED_BASE),
+        help="seed base for deterministic per-cell seeds",
+    )
+    bs.add_argument(
+        "--out", default=None, help="output JSON (default: tune-<iso>-<sha>.json)"
+    )
+    bs.add_argument("--max-plies", type=int, default=200)
+    bs.add_argument("--opening-plies", type=int, default=4)
 
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")
     bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)

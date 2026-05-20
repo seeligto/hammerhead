@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help build clean rebuild test lint fmt check vs promote install \
-        ablation bench bench-quick bench-perf bench-micro bench-micro-quick \
+        ablation tune bench bench-quick bench-perf bench-micro bench-micro-quick \
         bench-diff bench-baseline flamegraph pgo
 
 ENGINE    := hammerhead-engine
@@ -26,6 +26,12 @@ N_WORKERS ?= 0
 #   make bench-diff A=baseline B=20260519-103022-abc1234
 BENCH_TIME_MS ?= 1000
 TARGET        ?= all
+
+# Phase 18 (eval-weight tuning sweep) defaults — override on the command line:
+#   make tune STAGE=B N_GAMES=100 TIME_MS=500 N_WORKERS=12 \
+#       TUNE_ARGS="--anchors open_3=256,rhombus=512,..."
+STAGE     ?= B
+TUNE_ARGS ?=
 
 help: ## show available targets
 	@echo "Hammerhead — Makefile targets:"
@@ -121,3 +127,8 @@ promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
 	@$(VPY) -m hammerhead.cli promote \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
 	    --workers $(N_WORKERS)
+
+tune: ## [Phase 18] S1/S2 eval-weight tuning sweep — STAGE, N_GAMES, TUNE_ARGS
+	@$(VPY) -m hammerhead.cli bench tune-sweep \
+	    --stage $(STAGE) --games $(N_GAMES) --time-ms $(TIME_MS) \
+	    --workers $(N_WORKERS) $(TUNE_ARGS)
