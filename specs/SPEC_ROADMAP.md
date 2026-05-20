@@ -22,6 +22,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 14 | deep optimization sweep — release profile, target-cpu, allocator, piece_at refactor, inline sweep, LineBitmap micro-opts, incremental threats, SIMD encode_ternary, PGO, bench infra extensions | ✅ done |
 | 15 | incremental threats + RefCell trim + creates_s0 axis-run cache | ✅ done |
 | 16 | fast bench tiers + proximity flat structure + Layer 2 ablation infra | ✅ done |
+| 17 | parallel match harness + S1/S2 ablation decision + Layer 1 8-cell window table (scalar + AVX2) | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -296,27 +297,53 @@ See `prompts/PHASE_16_PROMPT.md`.
   incremental-threats oracle now stress-tests 2-4 simultaneous dirty
   centers per reconciliation (`incremental_matches_full_multi_cluster`).
 
-## Phase 17 candidates (deferred follow-ups)
+## Phase 17 — Parallel Harness + S1/S2 Decision + Layer 1 Extension
 
-- **`extension_factor` SIMD batch**: inline into Layer-1 SIMD path so
-  the per-window extension multiplier runs alongside `encode_ternary`.
+**Goal**: parallelize the match harness, settle the S1/S2 ablation
+at scale, and replace the Layer-1 (6-cell × runtime extension
+factor) scan with a single 8-cell ternary lookup whose table
+pre-multiplies the factor.
+
+1. **Parallel match harness**: `make vs` runs games across a
+   process pool (N = cpu_count() - 2 by default). A 200-game match
+   at 1 s/stone finishes in minutes, not hours. See
+   `SPEC_BENCHMARKS.md § Parallel match harness`.
+
+2. **S1/S2 ablation re-verified at scale** (200 games @ 500 ms,
+   conditional 100 games @ 1 s) via the new harness. Decision
+   matrix in the Phase 17 prompt; verdict committed.
+
+3. **Layer 1 8-cell window table**: `WINDOW_SCORE_8: [i32; 6561]`
+   codegen'd by `build.rs`, factor folded in. Eliminates the
+   boundary `is_set` probes and the runtime multiply. Scalar +
+   AVX2 encode paths, both gated by a 6561-entry identity test.
+
+Resolved Phase 17 candidates:
+- **`extension_factor` SIMD batch** → resolved by STEP 4/5: the
+  factor is folded into `WINDOW_SCORE_8` at build time, so there is
+  no runtime multiplier left to batch.
+- **Layer 2 S1/S2 ablation decision** → resolved by STEP 2/3.
+
+## Phase 18 candidates (deferred follow-ups)
+
+- **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
+  collision rate.
+- **Move-ordering bucket refinement** (post-S1/S2 cleanup).
 - **`creates_s0` per-axis run cache (take 3)**: the Phase 15 STEP 4
   variant was reverted (commit 15c9638); revisit with a different
   caching key.
 - **Per-line `LineContribution` cache**.
-- **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
-  collision rate.
-- **Move-ordering bucket refinement**: split bucket 7 (creates_s1)
-  by shape strength so bone / trapezoid sort ahead of open-3.
-- **`closed_2` shape detector** for full tempo +0 / -1 cases.
-- **Layer 2 S1/S2 ablation decision**: keep / drop S1/S2, driven by
-  the Phase 16 STEP 4 self-play A/B data.
 - **BotConfig vs SearchConfig time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
-  both 1000ms. Fold if Phase 10/11 finds them always coupled.
+  both 1000ms. Fold if always coupled.
 - **`find_pv` eviction tolerance**: best-effort; returns shorter PV
   if TT loses entries between root and walk.
-- **Radius-theory colony discounting** in eval.
+- **Radius-theory colony discounting** in eval (if anyone still
+  wants it).
+- **LMR retune** now that perf headroom exists for deeper search.
+- **Algorithm work**: revisit null-move pruning under two-stone
+  parity.
+- **`closed_2` shape detector** for full tempo +0 / -1 cases.
 - **Lazy-SMP parallel search**.
 - **Opening book**, **endgame tables**, **WebSocket live integration**.
 

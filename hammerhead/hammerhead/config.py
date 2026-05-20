@@ -174,6 +174,17 @@ class BenchPerfConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BenchVsConfig:
+    """Parallel match harness config (Phase 17). See
+    ``specs/SPEC_BENCHMARKS.md`` § Parallel match harness."""
+
+    default_n_workers: int
+    max_tt_mb_per_worker: int
+    default_time_ms: int
+    default_n_games: int
+
+
+@dataclass(frozen=True, slots=True)
 class BenchConfig:
     """Benchmark suite defaults. See ``specs/SPEC_BENCHMARKS.md``."""
 
@@ -189,6 +200,7 @@ class BenchConfig:
     breakdown: BenchBreakdownConfig
     quick: BenchQuickConfig
     perf: BenchPerfConfig
+    vs: BenchVsConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +354,12 @@ def load() -> HexoConfig:
                 fixtures=tuple(bench["perf"]["fixtures"]),
                 time_ms=tuple(bench["perf"]["time_ms"]),
                 runs=bench["perf"]["runs"],
+            ),
+            vs=BenchVsConfig(
+                default_n_workers=bench["vs"]["default_n_workers"],
+                max_tt_mb_per_worker=bench["vs"]["max_tt_mb_per_worker"],
+                default_time_ms=bench["vs"]["default_time_ms"],
+                default_n_games=bench["vs"]["default_n_games"],
             ),
         ),
         promote=PromoteConfig(

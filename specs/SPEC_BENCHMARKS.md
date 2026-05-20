@@ -552,3 +552,40 @@ is monotonic in per-node work.
 
 The `cpu_ghz` value is auto-detected from `/proc/cpuinfo` on Linux,
 falls back to `4.0` if unavailable. Documented in the output.
+
+## Parallel match harness (Phase 17)
+
+`make vs` parallelizes games across cores. The two engines per game
+stay in-process via the existing subprocess-Bot model, but multiple
+games run concurrently in worker processes.
+
+Worker model: a pool of N worker processes, each playing a
+configurable batch of games (default: ceil(total / N) games per
+worker). Workers receive game configs (opening, side assignment,
+seed) via a queue, return per-game records (result, plies,
+fastpath/timeout flags) via a result queue. Coordinator aggregates
+results and computes Wilson CI / Elo CI / SPRT decision.
+
+N defaults to `max(1, cpu_count() - 2)` (leaves headroom for OS +
+coordinator). Override via `N_WORKERS` env var or `--workers` CLI
+arg.
+
+Reproducibility: with `--seed SEED`, the assignment of (opening,
+side, RNG-stream-seed) → game-index is deterministic across runs
+and across worker counts. Two runs at the same total game count
+and seed produce identical match records (modulo timer noise; the
+engine's search is deterministic at fixed depth but a time-limited
+search depends on wall-clock).
+
+Memory bound: 2 engines per game × 64 MB TT per engine × N workers
+~ N × 128 MB resident. At default N=14 on a 16-core host: ~1.8 GB.
+Cap configurable via `MAX_TT_MB_PER_WORKER` (default 64).
+
+Wall-clock target: a 200-game match at 1000 ms/stone (~120 plies/
+game, ~240 s/game sequential) finishes in
+   ceil(200 / N) × 240 s = ~15 × 240 s / 1 worker
+   ≈ 60 minutes / 14 workers ≈ 4 minutes wall-clock.
+
+CLI / Makefile:
+   make vs N_GAMES=200 TIME_MS=1000 N_WORKERS=14
+   make vs N_GAMES=50 TIME_MS=500 TEST=sprt   # SPRT mode unchanged

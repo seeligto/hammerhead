@@ -183,6 +183,14 @@ fixtures   = ["midgame_12", "midgame_30"]
 time_ms    = [250, 1000]
 runs       = 5
 
+[bench.vs]
+# Parallel match harness (Phase 17). See SPEC_BENCHMARKS.md
+# § Parallel match harness. Python-only (subprocess driver).
+default_n_workers       = 0          # 0 = auto: cpu_count() - 2
+max_tt_mb_per_worker    = 64
+default_time_ms         = 500
+default_n_games         = 50
+
 [promote]
 # Promotion harness — see specs/SPEC_ROADMAP.md § Phase 11.
 # Python-only (subprocess driver). Rust does not consume these.
