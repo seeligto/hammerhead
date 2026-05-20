@@ -15,6 +15,7 @@ operate on identical positions.
 from __future__ import annotations
 
 import json
+import random
 import statistics
 import time
 from dataclasses import asdict, dataclass
@@ -451,6 +452,146 @@ def _run_one_game(time_per_stone_ms: int, max_plies: int) -> int:
             mirror.observe(m)
             plies += 1
     return plies
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layer 2 S1/S2 ablation A/B — Phase 16
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class AblationResult:
+    """Outcome of a Layer 2 S1/S2 ablation self-play A/B. See
+    ``specs/SPEC_EVAL.md`` § Layer 2 ablation."""
+
+    games: int
+    time_per_stone_ms: int
+    opening_plies: int
+    s1s2_wins: int
+    s1s2_losses: int
+    draws: int
+    s1s2_winrate: float
+    wilson_lo: float
+    wilson_hi: float
+    verdict: str
+
+
+def _random_opening(bx: Bot, bo: Bot, rng: random.Random, opening_plies: int) -> int:
+    """Play up to ``opening_plies`` random legal moves, mirrored to both
+    bots. Returns the count actually played. Distinct openings make the
+    otherwise-deterministic engines produce distinct games."""
+    played = 0
+    for _ in range(opening_plies):
+        if bx.winner() is not None:
+            break
+        move: Optional[tuple[int, int]] = None
+        for _ in range(200):
+            cand = (rng.randint(-6, 6), rng.randint(-6, 6))
+            try:
+                bx.observe(cand)
+            except Exception:
+                continue
+            move = cand
+            break
+        if move is None:
+            break
+        bo.observe(move)
+        played += 1
+    return played
+
+
+def _run_ablation_game(
+    time_per_stone_ms: int,
+    max_plies: int,
+    s1s2_is_x: bool,
+    opening_plies: int,
+    rng: random.Random,
+) -> Optional[int]:
+    """One ablation game. The S1/S2-enabled engine plays X iff
+    ``s1s2_is_x``. Returns 0 (X win), 1 (O win), or None (draw / cap)."""
+    bx = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
+    bo = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
+    if not hasattr(bx.engine, "set_eval_s1s2"):
+        raise RuntimeError(
+            "engine built without the eval_s1s2 feature — rebuild with "
+            "the default feature set to run the ablation A/B"
+        )
+    bx.engine.set_eval_s1s2(s1s2_is_x)
+    bo.engine.set_eval_s1s2(not s1s2_is_x)
+
+    plies = _random_opening(bx, bo, rng, opening_plies)
+    while plies < max_plies:
+        if bx.winner() is not None or bo.winner() is not None:
+            break
+        side = bx.to_move()
+        active, mirror = (bx, bo) if side == 0 else (bo, bx)
+        m = active.play_stone()
+        mirror.observe(m)
+        plies += 1
+        if active.winner() is not None or mirror.winner() is not None:
+            break
+        if active.halfmove() == 1 and plies < max_plies:
+            m = active.play_stone()
+            mirror.observe(m)
+            plies += 1
+    return bx.winner()
+
+
+def bench_ablation(
+    games: int = 50,
+    time_per_stone_ms: int = 500,
+    max_plies: int = 200,
+    opening_plies: int = 4,
+    seed: int = 0xAB1A_7104,
+) -> AblationResult:
+    """Self-play A/B: S1/S2-enabled eval vs S1/S2-disabled eval.
+
+    Colors alternate per game; each game starts from a distinct seeded
+    random opening (the engines are otherwise deterministic). Reports
+    the S1/S2-enabled side's winrate — draws count ½ — with a Wilson
+    95% CI. **Data collection only**: the keep/drop decision is
+    deferred to Phase 17. See ``specs/SPEC_EVAL.md`` § Layer 2 ablation.
+    """
+    if games < 1:
+        raise ValueError("games must be >= 1")
+    from hexo.promote import wilson_interval
+
+    rng = random.Random(seed)
+    s1s2_wins = 0
+    s1s2_losses = 0
+    draws = 0
+    for g in range(games):
+        s1s2_is_x = g % 2 == 0
+        winner = _run_ablation_game(
+            time_per_stone_ms, max_plies, s1s2_is_x, opening_plies, rng
+        )
+        if winner is None:
+            draws += 1
+        elif (winner == 0) == s1s2_is_x:
+            s1s2_wins += 1
+        else:
+            s1s2_losses += 1
+    score = s1s2_wins + 0.5 * draws
+    winrate = score / games
+    lo, hi = wilson_interval(score, games)
+    if lo > 0.5:
+        verdict = "KEEP"
+    elif hi < 0.5:
+        verdict = "DROP"
+    else:
+        verdict = "INCONCLUSIVE"
+    return AblationResult(
+        games=games,
+        time_per_stone_ms=time_per_stone_ms,
+        opening_plies=opening_plies,
+        s1s2_wins=s1s2_wins,
+        s1s2_losses=s1s2_losses,
+        draws=draws,
+        s1s2_winrate=winrate,
+        wilson_lo=lo,
+        wilson_hi=hi,
+        verdict=verdict,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

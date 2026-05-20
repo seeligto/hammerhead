@@ -66,6 +66,16 @@ def test_bench_quick_rejects_zero_runs():
         bench.bench_quick(fixture="empty", time_ms=10, runs=0)
 
 
+def test_bench_ablation_smoke():
+    r = bench.bench_ablation(games=2, time_per_stone_ms=10, opening_plies=2)
+    assert isinstance(r, bench.AblationResult)
+    assert r.games == 2
+    assert r.s1s2_wins + r.s1s2_losses + r.draws == 2
+    assert 0.0 <= r.s1s2_winrate <= 1.0
+    assert 0.0 <= r.wilson_lo <= r.wilson_hi <= 1.0
+    assert r.verdict in {"KEEP", "DROP", "INCONCLUSIVE"}
+
+
 def test_bench_perf_smoke():
     rows = bench.bench_perf(
         fixtures=["empty", "single_origin"], time_ms_buckets=[10], runs=2

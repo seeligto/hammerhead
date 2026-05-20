@@ -4,8 +4,8 @@ Subcommands:
 
 * ``play``     — human vs bot REPL
 * ``selfplay`` — bot vs bot, log winners
-* ``bench``    — benchmark suite (micro/quick/perf/nps/depth/threats/
-  selfplay/reference/scaling/breakdown/all/diff)
+* ``bench``    — benchmark suite (micro/quick/perf/ablation/nps/depth/
+  threats/selfplay/reference/scaling/breakdown/all/diff)
 * ``analyze``  — placeholder until BSN parser ships
 * ``bot``      — line-based subprocess protocol (Phase 11 harness)
 """
@@ -181,6 +181,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_quick(args)
     if sub == "perf":
         return _bench_perf(args)
+    if sub == "ablation":
+        return _bench_ablation(args)
     if sub == "all":
         return _bench_all(args)
     if sub == "diff":
@@ -437,6 +439,28 @@ def _bench_perf(args: argparse.Namespace) -> int:
         )
     _PERF_CACHE.parent.mkdir(parents=True, exist_ok=True)
     _PERF_CACHE.write_text(json.dumps([asdict(r) for r in rows], indent=2))
+    return 0
+
+
+def _bench_ablation(args: argparse.Namespace) -> int:
+    """Layer 2 S1/S2 ablation self-play A/B (Phase 16)."""
+    r = bench.bench_ablation(
+        games=args.games,
+        time_per_stone_ms=args.time_ms,
+    )
+    print(
+        f"ablation: {r.games} games at {r.time_per_stone_ms}ms/stone, "
+        f"S1/S2 vs no-S1/S2"
+    )
+    print(
+        f"  S1/S2 wins: {r.s1s2_wins} / {r.games} "
+        f"({r.s1s2_winrate * 100:.1f}%)  "
+        f"[losses {r.s1s2_losses}, draws {r.draws}]"
+    )
+    print(
+        f"  Wilson 95%: [{r.wilson_lo * 100:.1f}%, {r.wilson_hi * 100:.1f}%]"
+    )
+    print(f"  Verdict: {r.verdict}")
     return 0
 
 
@@ -1023,6 +1047,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "perf",
         help="two-fixture × multi-budget NPS+cyc/node check (~30-60s)",
     )
+
+    bs = bsub.add_parser(
+        "ablation",
+        help="Layer 2 S1/S2 ablation self-play A/B (Phase 16)",
+    )
+    bs.add_argument("--games", type=int, default=50)
+    bs.add_argument("--time-ms", type=int, default=500)
 
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")
     bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
