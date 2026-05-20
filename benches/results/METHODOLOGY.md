@@ -75,3 +75,23 @@ Any change that touches `search`, `eval`, `threats`, `moves`,
 ordering or pruning. Node-count drift = behaviour change. Explain or
 revert. The Phase 14 "deep optimization sweep" was perf-only by
 contract: zero drift was the floor.
+
+## Tiered bench workflow
+
+Use the right tier for the iteration loop:
+
+| Tier | Time | When |
+|---|---|---|
+| `make bench-quick` | 5-15 s | After every code edit during a sub-step |
+| `make bench-micro-quick TARGET=X` | 5-10 s | When iterating on one module |
+| `make bench-perf` | 30-60 s | End of sub-step, before commit |
+| `make bench` (full) | 3-5 min | End of phase, before baseline commit |
+
+cycles/node is the sensitive metric. NPS can move from depth shifts;
+cycles/node is monotonic in per-node work. If cycles/node drops but
+NPS doesn't change, the change is real but small (search depth
+ratchet hides it). If NPS drops but cycles/node holds, something
+non-per-node-work is happening — investigate.
+
+The quick / perf tiers cache the last run under `.hexo/`
+(gitignored, per-developer) and print a `Δ vs last` against it.
