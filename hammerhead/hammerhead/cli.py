@@ -772,8 +772,33 @@ def _handle_bot_line(eng: Engine, line: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _detect_cli_module(venv_python: Path) -> str:
+    """Name of the bot CLI package installed in ``venv_python``'s venv.
+
+    `hammerhead` after the project rename; `hexo` for a pre-rename
+    `.bestref` worktree. The promotion harness compares the current
+    engine against a possibly-older worktree build, so the two sides
+    may carry different package names.
+    """
+    # `-P` keeps the cwd off sys.path: the repo root holds a `hammerhead/`
+    # project directory that Python would otherwise pick up as an implicit
+    # namespace package, masking what is actually installed in the venv.
+    for mod in ("hammerhead", "hexo"):
+        rc = subprocess.call(
+            [str(venv_python), "-P", "-c", f"import {mod}.cli"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if rc == 0:
+            return mod
+    raise FileNotFoundError(
+        f"no bot CLI package (hammerhead / hexo) found in {venv_python}"
+    )
+
+
 def _bot_cmd(venv_python: Path) -> list[str]:
-    return [str(venv_python), "-m", "hammerhead.cli", "bot"]
+    module = _detect_cli_module(venv_python)
+    return [str(venv_python), "-m", f"{module}.cli", "bot"]
 
 
 def _print_match_result(res: promote_mod.MatchResult, cfg: promote_mod.MatchConfig) -> None:

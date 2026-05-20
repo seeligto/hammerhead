@@ -58,7 +58,11 @@ class SubprocessBot:
         except BotProtocolError:
             self.close()
             raise
-        if banner != "hammerhead bot ready":
+        # The promotion harness compares the current engine against a
+        # possibly-older `.bestref` worktree, which may predate the
+        # hexo→hammerhead rename and emit `hexo bot ready`. Accept any
+        # `<name> bot ready` banner rather than a single literal.
+        if not banner.endswith("bot ready"):
             self.close()
             raise BotProtocolError(
                 f"unexpected banner from {cmd!r}: {banner!r}"
