@@ -27,16 +27,23 @@ open_4   = 60_000
 closed_4 = 20_000
 
 # S1 (pre-emptives, mate-in-two if undefended)
-open_3    = 1500
-rhombus   = 1500
-arch      = 1500
-bone      = 3000
-trapezoid = 2500
+# Phase 17: zeroed out. The 200-game ablation A/B (S1/S2-enabled vs
+# disabled) scored 29.0% [Wilson 23.2-35.6%] for the enabled side —
+# the S1/S2 contributions are net-negative at these weights. Detection
+# is retained (cross-axis matchers, ThreatCounts fields, the eval_s1s2
+# feature + set_eval_s1s2 toggle); only the eval weights are zeroed,
+# leaving a tunable surface for a dedicated eval-tuning phase. See
+# SPEC_EVAL.md § Layer 2 ablation and SPEC_ROADMAP.md Phase 18+.
+open_3    = 0
+rhombus   = 0
+arch      = 0
+bone      = 0
+trapezoid = 0
 
-# S2 (slower pre-emptives)
-open_2    = 200
-closed_3  = 150
-triangle  = 250
+# S2 (slower pre-emptives) — zeroed in Phase 17, same rationale.
+open_2    = 0
+closed_3  = 0
+triangle  = 0
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
