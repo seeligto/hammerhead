@@ -677,7 +677,7 @@ def run_match_parallel(
                     elo_high=cfg.sprt_elo_high,
                 )
 
-            if len(results) % progress_every == 0:
+            if len(results) % progress_every == 0 or len(results) == cfg.n_games:
                 llr_s = f"  llr={llr:+.3f}" if llr is not None else ""
                 print(
                     f"progress: {len(results)}/{cfg.n_games} games  "
