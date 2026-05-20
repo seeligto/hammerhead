@@ -22,7 +22,7 @@ if [[ "${HEXO_SKIP_PGO:-0}" == "1" ]]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PGO_DATA="${REPO_ROOT}/hexo-engine/target/pgo"
+PGO_DATA="${REPO_ROOT}/hammerhead-engine/target/pgo"
 
 # Sanity-check toolchain. Prefer rustup's bundled llvm-profdata when
 # available — its format version matches rustc's bundled LLVM, which
@@ -62,7 +62,7 @@ mkdir -p "${PGO_DATA}"
 echo "pgo: pass 1 — building instrumented engine"
 RUSTFLAGS="-Cprofile-generate=${PGO_DATA}" \
   "${MATURIN}" develop --release \
-  --manifest-path "${REPO_ROOT}/hexo-engine/Cargo.toml"
+  --manifest-path "${REPO_ROOT}/hammerhead-engine/Cargo.toml"
 
 echo "pgo: pass 2 — running training workload"
 HEXO_PGO_DATA="${PGO_DATA}" "${PY}" "${REPO_ROOT}/scripts/pgo_training.py"
@@ -75,6 +75,6 @@ echo "pgo: pass 3 — merging profiles (${LLVM_PROFDATA})"
 echo "pgo: pass 4 — rebuilding with profile-use"
 RUSTFLAGS="-Cprofile-use=${PGO_DATA}/merged.profdata -Cllvm-args=-pgo-warn-missing-function" \
   "${MATURIN}" develop --release \
-  --manifest-path "${REPO_ROOT}/hexo-engine/Cargo.toml"
+  --manifest-path "${REPO_ROOT}/hammerhead-engine/Cargo.toml"
 
 echo "pgo: done."

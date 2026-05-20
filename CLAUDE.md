@@ -144,7 +144,7 @@ specs/
 prompts/
   PHASE_{4..11}_PROMPT.md       Claude Code prompts, one per phase
 
-hexo-engine/                    Rust crate
+hammerhead-engine/               Rust crate
   src/                          {coords, board, zobrist, axis_bitmap,
                                  moves, win, threats, eval, tt,
                                  ordering, search, pybind, config}.rs
@@ -152,8 +152,8 @@ hexo-engine/                    Rust crate
   src/bin/bench_drain.rs        criterion → JSON consolidator
   tests/                        per-module unit tests
 
-hexo/                           Python package
-  hexo/                         {bot, game, cli, config, benchmark,
+hammerhead/                      Python package
+  hammerhead/                   {bot, game, cli, config, benchmark,
                                  promote, notation}.py
   tests/                        Python integration tests
 

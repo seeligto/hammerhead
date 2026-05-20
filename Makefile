@@ -3,8 +3,8 @@
         bench bench-quick bench-perf bench-micro bench-micro-quick \
         bench-diff bench-baseline flamegraph pgo
 
-ENGINE    := hexo-engine
-PY        := hexo
+ENGINE    := hammerhead-engine
+PY        := hammerhead
 VENV      := .venv
 VPY       := $(VENV)/bin/python
 VPYTEST   := $(VENV)/bin/pytest
@@ -30,7 +30,7 @@ help: ## show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-build: ## maturin develop --release + pip install -e hexo (uses .venv)
+build: ## maturin develop --release + pip install -e hammerhead (uses .venv)
 	cd $(ENGINE) && $(abspath $(VMATURIN)) develop --release
 	$(VPY) -m pip install -e $(PY)
 
@@ -68,13 +68,13 @@ check: lint test ## lint + test (CI gate)
 # ──────────────────────────────────────────────────────────────────────────────
 
 bench: ## full sweep, write canonical JSON to benches/results/
-	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
+	@$(VPY) -m hammerhead.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 
 bench-quick: ## [Phase 16] inner-loop NPS+depth+cyc/node check (~5-15s)
-	@$(VPY) -m hexo.cli bench quick
+	@$(VPY) -m hammerhead.cli bench quick
 
 bench-perf: ## [Phase 16] two-fixture × multi-budget NPS+cyc/node (~30-60s)
-	@$(VPY) -m hexo.cli bench perf
+	@$(VPY) -m hammerhead.cli bench perf
 
 bench-micro: ## criterion benches for one TARGET (default: all) + drain
 	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET)
@@ -87,10 +87,10 @@ bench-micro-quick: ## [Phase 16] fast criterion for one TARGET (~5-10s, no drain
 	    --sample-size 10 --measurement-time 1 --warm-up-time 0.5
 
 bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/results/)
-	@$(VPY) -m hexo.cli bench diff $(A) $(B)
+	@$(VPY) -m hammerhead.cli bench diff $(A) $(B)
 
 bench-baseline: ## refresh benches/results/baseline.json from the latest run
-	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
+	@$(VPY) -m hammerhead.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 	@latest=$$(ls -t benches/results/*.json | grep -v baseline | head -1); \
 	    cp "$$latest" benches/results/baseline.json; \
 	    echo "baseline updated from $$latest"
@@ -108,10 +108,10 @@ pgo: ## [Phase 14] profile-guided optimization build (requires llvm-tools-previe
 
 vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
 	@./scripts/setup_worktree.sh
-	@$(VPY) -m hexo.cli promote --dry-run \
+	@$(VPY) -m hammerhead.cli promote --dry-run \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)
 
 promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
 	@./scripts/setup_worktree.sh
-	@$(VPY) -m hexo.cli promote \
+	@$(VPY) -m hammerhead.cli promote \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)

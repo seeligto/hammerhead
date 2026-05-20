@@ -44,7 +44,7 @@ done
 # cargo-flamegraph doesn't expose the intermediate perf.data, so we drive
 # perf + inferno directly. This also lets us emit both the SVG and the
 # folded-stack text without re-running the workload.
-cd "${REPO_ROOT}/hexo-engine"
+cd "${REPO_ROOT}/hammerhead-engine"
 
 # Build the bench binary with debug symbols (configured in [profile.bench]).
 cargo bench --bench bench_search --no-run >/dev/null

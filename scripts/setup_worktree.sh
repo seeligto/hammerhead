@@ -80,10 +80,10 @@ unset VIRTUAL_ENV PYTHONHOME
 # shellcheck source=/dev/null
 . "$VENV_NAME/bin/activate"
 
-cd hexo-engine
+cd hammerhead-engine
 maturin develop --release --quiet
 cd ..
-pip install -q -e hexo
+pip install -q -e hammerhead
 
 deactivate
 
