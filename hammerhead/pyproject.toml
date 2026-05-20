@@ -5,11 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hammerhead"
 version = "0.1.0"
-description = "Hammerhead — HeXO minimax bot, Python wrapper"
-requires-python = ">=3.10"
+description = "Hammerhead — minimax engine SDK for HeXO, the hexagonal 6-in-a-row game"
+requires-python = ">=3.11"
 dependencies = [
   "hammerhead_engine",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest", "pdoc"]
 
 [project.scripts]
 hammerhead = "hammerhead.cli:main"
@@ -17,3 +20,7 @@ hammerhead = "hammerhead.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["hammerhead*"]
+
+[tool.setuptools.package-data]
+# PEP 561 marker — ship the inline type hints to consumers.
+hammerhead = ["py.typed"]
