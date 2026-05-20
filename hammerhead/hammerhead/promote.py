@@ -18,7 +18,10 @@ Public surface
 from __future__ import annotations
 
 import math
+import multiprocessing
+import os
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -473,3 +476,167 @@ def run_match(
                 break
 
     return _summarize(results, cfg, verdict, llr)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parallel match harness (Phase 17)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class GameConfig:
+    """One game's deterministic assignment within a parallel match.
+
+    The (game_idx → colour) mapping is fixed by ``build_game_configs``,
+    so a match at a given ``n_games`` is reproducible across runs and
+    worker counts (modulo timer noise — see SPEC_BENCHMARKS).
+    """
+
+    game_idx: int
+    current_is_x: bool
+    time_ms: int
+    max_plies: int
+
+
+@dataclass(frozen=True, slots=True)
+class ParallelGameResult:
+    """Worker → coordinator record for one completed game.
+
+    Field-compatible with :class:`GameResult` for ``_summarize`` and
+    ``on_game`` callbacks, plus ``game_idx`` / ``wall_seconds`` / ``notes``.
+    """
+
+    game_idx: int
+    winner: Optional[str]  # "current" | "best" | None for draw
+    plies: int
+    current_was_x: bool
+    wall_seconds: float
+    notes: str  # "" on success; error text on crash / timeout
+
+
+def build_game_configs(cfg: MatchConfig) -> list[GameConfig]:
+    """Deterministic ``game_idx → GameConfig`` assignment for a match.
+
+    Colour assignment mirrors the sequential :func:`run_match`: with
+    ``color_balance``, even game indices play ``current`` as X.
+    """
+    return [
+        GameConfig(
+            game_idx=i,
+            current_is_x=(i % 2 == 0) if cfg.color_balance else True,
+            time_ms=cfg.time_ms_per_stone,
+            max_plies=cfg.max_plies,
+        )
+        for i in range(cfg.n_games)
+    ]
+
+
+# Worker-process globals, populated by `_worker_init` (one call per worker).
+_WORKER_CURRENT_CMD: list[str] = []
+_WORKER_BEST_CMD: list[str] = []
+
+
+def _worker_init(current_cmd: list[str], best_cmd: list[str]) -> None:
+    """Pool initializer — broadcast the two engine commands once per worker."""
+    global _WORKER_CURRENT_CMD, _WORKER_BEST_CMD
+    _WORKER_CURRENT_CMD = current_cmd
+    _WORKER_BEST_CMD = best_cmd
+
+
+def _play_one_game_in_worker(gc: GameConfig) -> ParallelGameResult:
+    """Worker entry point. Spawns two fresh engine subprocesses, plays one
+    game, returns the result.
+
+    Fresh engines per game is the simple correctness model: subprocess
+    startup (~10-100 ms) is < 0.1 % of a 1 s/stone game. A crash is
+    captured in ``notes`` rather than killing the pool — the coordinator
+    excludes noted games from the tally.
+    """
+    start = time.monotonic()
+    try:
+        with SubprocessBot(_WORKER_CURRENT_CMD) as a, SubprocessBot(_WORKER_BEST_CMD) as b:
+            r = play_one_game(
+                a,
+                b,
+                a_is_x=gc.current_is_x,
+                time_ms=gc.time_ms,
+                max_plies=gc.max_plies,
+            )
+        return ParallelGameResult(
+            game_idx=gc.game_idx,
+            winner=r.winner,
+            plies=r.plies,
+            current_was_x=r.current_was_x,
+            wall_seconds=time.monotonic() - start,
+            notes="",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ParallelGameResult(
+            game_idx=gc.game_idx,
+            winner=None,
+            plies=0,
+            current_was_x=gc.current_is_x,
+            wall_seconds=time.monotonic() - start,
+            notes=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def resolve_worker_count(n_workers: int, n_games: int) -> int:
+    """Resolve ``n_workers`` (0 = auto: ``cpu_count() - 2``), capped at
+    ``n_games`` — more workers than games is wasted process startup."""
+    if n_workers <= 0:
+        n_workers = max(1, (os.cpu_count() or 2) - 2)
+    return max(1, min(n_workers, n_games))
+
+
+def run_match_parallel(
+    current_cmd: list[str],
+    best_cmd: list[str],
+    cfg: MatchConfig,
+    *,
+    n_workers: int = 0,
+) -> MatchResult:
+    """Play ``cfg.n_games`` games across a process pool; aggregate.
+
+    Games run concurrently in worker processes (``n_workers`` of them,
+    0 = auto). Each game still keeps its two engines in-process to the
+    worker via the subprocess-Bot model. Results are sorted by
+    ``game_idx`` before summary so the aggregate is order-independent.
+    """
+    if cfg.opening_diversity:
+        raise NotImplementedError(
+            "opening_diversity is reserved for follow-up; "
+            "disable [promote].opening_diversity for v1"
+        )
+    if cfg.n_games < 1:
+        raise ValueError("n_games must be >= 1")
+
+    n_workers = resolve_worker_count(n_workers, cfg.n_games)
+    configs = build_game_configs(cfg)
+    results: list[ParallelGameResult] = []
+
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(
+        processes=n_workers,
+        initializer=_worker_init,
+        initargs=(current_cmd, best_cmd),
+    ) as pool:
+        for r in pool.imap_unordered(_play_one_game_in_worker, configs):
+            results.append(r)
+            if r.notes:
+                print(f"game {r.game_idx + 1}: FAILED — {r.notes}", flush=True)
+
+    ok = sorted(
+        (r for r in results if not r.notes), key=lambda r: r.game_idx
+    )
+    failed = [r for r in results if r.notes]
+    if failed:
+        print(
+            f"warning: {len(failed)} game(s) failed; excluded from the tally",
+            flush=True,
+        )
+    game_results = [
+        GameResult(winner=r.winner, plies=r.plies, current_was_x=r.current_was_x)
+        for r in ok
+    ]
+    return _summarize(game_results, cfg, "continuing", None)

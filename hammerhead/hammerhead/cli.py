@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -801,6 +802,14 @@ def _bot_cmd(venv_python: Path) -> list[str]:
     return [str(venv_python), "-m", f"{module}.cli", "bot"]
 
 
+def _default_workers() -> int:
+    """Default ``--workers``: ``N_WORKERS`` env var, else 0 (auto)."""
+    try:
+        return int(os.environ.get("N_WORKERS", "0") or "0")
+    except ValueError:
+        return 0
+
+
 def _print_match_result(res: promote_mod.MatchResult, cfg: promote_mod.MatchConfig) -> None:
     print()
     print(f"games:    {res.games_played}")
@@ -826,13 +835,6 @@ def _print_match_result(res: promote_mod.MatchResult, cfg: promote_mod.MatchConf
     print(f"verdict:  {res.final_verdict}")
 
 
-def _on_game(i: int, r: promote_mod.GameResult, llr: Optional[float]) -> None:
-    side = "X" if r.current_was_x else "O"
-    winner = r.winner if r.winner is not None else "draw"
-    llr_s = f"  llr={llr:+.3f}" if llr is not None else ""
-    print(f"game {i + 1}: current={side} → {winner} ({r.plies} plies){llr_s}")
-
-
 def cmd_match(args: argparse.Namespace) -> int:
     """Generic two-binary match. ``current_cmd`` and ``best_cmd`` are
     shell-quoted strings split via :mod:`shlex`."""
@@ -847,13 +849,16 @@ def cmd_match(args: argparse.Namespace) -> int:
         time_ms_per_stone=args.time_ms,
         test=args.test,
     )
+    workers = promote_mod.resolve_worker_count(args.workers, cfg.n_games)
     print(
         f"match: n={cfg.n_games} time_ms={cfg.time_ms_per_stone} "
-        f"test={cfg.test} color_balance={cfg.color_balance}"
+        f"test={cfg.test} color_balance={cfg.color_balance} workers={workers}"
     )
     print(f"  current: {current_cmd}")
     print(f"  best:    {best_cmd}")
-    res = promote_mod.run_match(current_cmd, best_cmd, cfg, on_game=_on_game)
+    res = promote_mod.run_match_parallel(
+        current_cmd, best_cmd, cfg, n_workers=args.workers
+    )
     _print_match_result(res, cfg)
     return 0 if res.final_verdict == "PROMOTE" else 1
 
@@ -897,11 +902,15 @@ def cmd_promote(args: argparse.Namespace) -> int:
         test=args.test,
     )
     head_sha = _git_sha()
+    workers = promote_mod.resolve_worker_count(args.workers, cfg.n_games)
     print(
         f"promote: current={head_sha} vs best={best_sha[:8]} "
-        f"n={cfg.n_games} time_ms={cfg.time_ms_per_stone} test={cfg.test}"
+        f"n={cfg.n_games} time_ms={cfg.time_ms_per_stone} test={cfg.test} "
+        f"workers={workers}"
     )
-    res = promote_mod.run_match(current_cmd, best_cmd, cfg, on_game=_on_game)
+    res = promote_mod.run_match_parallel(
+        current_cmd, best_cmd, cfg, n_workers=args.workers
+    )
     _print_match_result(res, cfg)
 
     if res.final_verdict == "PROMOTE":
@@ -1121,6 +1130,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("sprt", "wilson", "raw"),
         default=CONFIG.promote.default_test,
     )
+    sp.add_argument(
+        "--workers",
+        type=int,
+        default=_default_workers(),
+        help="parallel match workers (0 = auto: cpu_count() - 2)",
+    )
     sp.set_defaults(fn=cmd_match)
 
     sp = sub.add_parser(
@@ -1144,6 +1159,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="run match but do not write .bestref on PROMOTE",
+    )
+    sp.add_argument(
+        "--workers",
+        type=int,
+        default=_default_workers(),
+        help="parallel match workers (0 = auto: cpu_count() - 2)",
     )
     sp.set_defaults(fn=cmd_promote)
 

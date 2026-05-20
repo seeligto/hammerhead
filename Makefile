@@ -11,12 +11,14 @@ VPYTEST   := $(VENV)/bin/pytest
 VMATURIN  := $(VENV)/bin/maturin
 
 # Phase 11 (promotion harness) defaults — override on the command line:
-#   make vs N_GAMES=500 TIME_MS=2000 TEST=wilson
+#   make vs N_GAMES=500 TIME_MS=2000 TEST=wilson N_WORKERS=14
 N_GAMES   ?= 200
 TIME_MS   ?= 1000
 TEST      ?= sprt
 ELO_LOW   ?= 0
 ELO_HIGH  ?= 5
+# Phase 17 parallel match harness — 0 = auto (cpu_count() - 2):
+N_WORKERS ?= 0
 
 # Phase 10 (benchmark suite) defaults — override on the command line:
 #   make bench BENCH_TIME_MS=2000
@@ -109,9 +111,11 @@ pgo: ## [Phase 14] profile-guided optimization build (requires llvm-tools-previe
 vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
 	@./scripts/setup_worktree.sh
 	@$(VPY) -m hammerhead.cli promote --dry-run \
-	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)
+	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
+	    --workers $(N_WORKERS)
 
 promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
 	@./scripts/setup_worktree.sh
 	@$(VPY) -m hammerhead.cli promote \
-	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST)
+	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
+	    --workers $(N_WORKERS)
