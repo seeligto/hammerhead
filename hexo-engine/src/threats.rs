@@ -144,6 +144,15 @@ pub struct ThreatScratch {
     cross_axis_x: Vec<(Coord, CrossAxisContribution)>,
     /// Cross-axis breakdown from the last compute for `Player::O`.
     cross_axis_o: Vec<(Coord, CrossAxisContribution)>,
+    /// Phase 16: alternating back-buffers for the incremental path.
+    /// `incremental` swaps `cross_axis_x` ⇄ `cross_axis_x_spare` so the
+    /// prior breakdown moves to the spare slot and the recovered spare
+    /// (which keeps its capacity) is the fresh write target — no
+    /// realloc. The old `mem::take` left a cap-0 `Vec` and re-grew it
+    /// on every reconcile.
+    cross_axis_x_spare: Vec<(Coord, CrossAxisContribution)>,
+    /// Back-buffer for `cross_axis_o`. See [`Self::cross_axis_x_spare`].
+    cross_axis_o_spare: Vec<(Coord, CrossAxisContribution)>,
 }
 
 impl ThreatScratch {
@@ -170,6 +179,8 @@ impl ThreatScratch {
         self.pieces.clear();
         self.cross_axis_x.clear();
         self.cross_axis_o.clear();
+        self.cross_axis_x_spare.clear();
+        self.cross_axis_o_spare.clear();
     }
 }
 
@@ -276,7 +287,9 @@ fn full_recompute(board: &Board, player: Player, scratch: &mut ThreatScratch) ->
 /// `collect_stone1_defense` uses `.find()`). Cross-axis pattern
 /// matching runs only for anchors within `THREAT_CLUSTER_RADIUS` of
 /// any dirty center; other anchors inherit their contribution from
-/// the scratch breakdown (via `mem::take` swap to avoid a clone).
+/// the scratch breakdown, which alternates between two retained
+/// buffers (`cross_axis_*` ⇄ `cross_axis_*_spare`) so neither the
+/// prior nor the fresh breakdown reallocates.
 fn incremental(
     board: &Board,
     player: Player,
@@ -299,19 +312,29 @@ fn incremental(
     // where the speedup lives.
     walk_linear_runs(board, player, &scratch.pieces, &mut scratch.seen, &mut out);
 
-    // Swap the prior breakdown out of scratch (zero-cost), then
-    // refill scratch with the new breakdown using `prior` as lookup.
-    let breakdown_slot = match player {
-        Player::X => &mut scratch.cross_axis_x,
-        Player::O => &mut scratch.cross_axis_o,
+    // Two-buffer alternation (Phase 16): swap the live breakdown into
+    // the spare slot — it becomes the `prior` lookup — then clear the
+    // recovered spare (capacity retained) and write the fresh breakdown
+    // into it. The pre-Phase-16 `mem::take` left a cap-0 `Vec`, forcing
+    // a re-grow on every reconcile.
+    match player {
+        Player::X => std::mem::swap(&mut scratch.cross_axis_x, &mut scratch.cross_axis_x_spare),
+        Player::O => std::mem::swap(&mut scratch.cross_axis_o, &mut scratch.cross_axis_o_spare),
+    }
+    let (prior_breakdown, breakdown_slot): (
+        &[(Coord, CrossAxisContribution)],
+        &mut Vec<(Coord, CrossAxisContribution)>,
+    ) = match player {
+        Player::X => (&scratch.cross_axis_x_spare, &mut scratch.cross_axis_x),
+        Player::O => (&scratch.cross_axis_o_spare, &mut scratch.cross_axis_o),
     };
-    let prior_breakdown = std::mem::take(breakdown_slot);
+    breakdown_slot.clear();
     walk_cross_axis_incremental(
         board,
         player,
         &scratch.pieces,
         centers,
-        &prior_breakdown,
+        prior_breakdown,
         &mut out.counts,
         breakdown_slot,
     );
