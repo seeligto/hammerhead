@@ -130,58 +130,79 @@ cells) and probed hashbrown 4× (outer count, inner count, outer set,
 inner set). Flat arrays cut the per-cell cost from ~4 probes to ~4
 array indexes.
 
+The structures live in `src/proximity.rs`:
+
 ```
-PROX_COORD_RANGE = 2 * ZOBRIST_WINDOW + 1          // 255 at default W=127
-PROX_FIELD_SIZE  = PROX_COORD_RANGE * PROX_COORD_RANGE   // ~65k cells
+PROX_HALF        = ZOBRIST_WINDOW + MAX_PIECE_DISTANCE   // 135 at W=127
+PROX_COORD_RANGE = 2 * PROX_HALF + 1                     // 271
+PROX_FIELD_SIZE  = PROX_COORD_RANGE * PROX_COORD_RANGE   // ~73k cells
 
 struct ProximityCounts {
-    outer: Box<[u8; PROX_FIELD_SIZE]>,   // r=8 legality refcount
-    inner: Box<[u8; PROX_FIELD_SIZE]>,   // r=2 move-gen refcount
+    outer: Box<[u8]>,   // r=8 legality refcount, len PROX_FIELD_SIZE
+    inner: Box<[u8]>,   // r=2 move-gen refcount, len PROX_FIELD_SIZE
 }
 ```
 
-`idx(c) = (c.q + ZOBRIST_WINDOW) * PROX_COORD_RANGE + (c.r +
-ZOBRIST_WINDOW)`. `u8` is sufficient: `hex_area(8) ≈ 217 < 255`.
-`inc_*` uses `saturating_add` so a pathological position cannot wrap;
-`debug_assert!` on `== 255` flags it in dev builds.
+`prox_idx(c) = (c.q + PROX_HALF) * PROX_COORD_RANGE + (c.r +
+PROX_HALF)`. The `MAX_PIECE_DISTANCE` term in `PROX_HALF` is required:
+`add_proximity` touches empty cells up to `MAX_PIECE_DISTANCE` beyond a
+placed piece, and a piece at the zobrist-window edge would push those
+cells past `2 * ZOBRIST_WINDOW + 1`. `u8` is sufficient: a cell's
+count is the number of pieces within range, bounded by
+`hex_area(8) ≈ 217 < 255`. `add_proximity` bumps via `saturating_add`;
+a `debug_assert!` on `== 255` flags a pathological position. A `0`
+count means "no piece in range" — there is no absent/present
+distinction, so the old `remove_proximity` panic-on-missing invariant
+is gone (a `debug_assert` covers underflow).
 
-Candidate iteration uses `SparseCellSet` (`board/sparse_cell_set.rs`):
+Candidate iteration uses `SparseCellSet` (same file):
 
 ```
 struct SparseCellSet {
-    present_bitset: Box<[u64]>,   // 1 bit per cell — O(1) contains
-    members: Vec<Coord>,          // insertion order; iteration source
-    member_index: Box<[u16]>,     // members[member_index[idx(c)]] == c;
-                                  // u16::MAX = absent
+    members: Vec<Coord>,   // live cells, swap-perturbed insertion order
+    slot:    Box<[u32]>,   // slot[prox_idx(c)] = members-position + 1;
+                           // 0 = absent (the +1 bias frees 0 as sentinel)
 }
 ```
 
-`insert` is O(1) (bit-set + push + index store). `remove` is O(1):
-`member_index` locates the slot, `swap_remove` pops it (the swapped
-survivor's index is patched). `contains` is one bitset probe.
-`swap_remove` perturbs iteration order — callers must be
-order-insensitive (verified by the STEP 2.1 callsite scan).
+`insert` is O(1) (push + slot store). `remove` is O(1): `slot` locates
+the member, `swap_remove` pops it, and the swapped survivor's slot is
+patched. `contains` is one `slot` probe. `iter` walks the contiguous
+`members` `Vec` — cache-friendly, no hashing. `swap_remove` perturbs
+iteration order; every caller is order-insensitive **for correctness**
+(verified by the STEP 2.1 callsite scan), though the change of order
+does shift alpha-beta tie-break decisions — see note below.
 
 `candidates` holds the *current* legal empty cells; `inner_candidates`
 the r=2 move-gen cells. Maintained incrementally:
 
-- `place(c)`: for every `d` in the `r8` hex around `c`,
-  `proximity.inc_outer(d)`; if it rose from 0 and `d` is empty,
+- `place(c)`: for every `d` in the `r8` hex around `c`, bump
+  `proximity.outer[prox_idx(d)]`; if it rose from 0 and `d` is empty,
   `candidates.insert(d)`. Same at r=2 into `proximity.inner` /
   `inner_candidates`. Remove `c` itself from both sets. After
   proximity / hash / history updates: `axes.set(c, player)`, then
   `winner = Some(player)` iff `is_winning_move(self, c, player)`.
 - `undo(c)`: reverse. Before any other rollback: `axes.clear(c,
   player)` and clear `winner` if the undone move was the winning one.
-  Then `dec_outer` / `dec_inner`; remove from the matching set when a
+  Then decrement the counts; remove from the matching set when a
   count hits 0. Re-insert `c` into each set whose remaining count > 0.
 - `ply == 0` special case: candidates = `{(0, 0)}` when board empty;
   `inner_candidates` cleared (origin re-eligible via outer logic).
 
 Memory cost at default `ZOBRIST_WINDOW = 127`: two `u8` count fields
-(~64 KB each), two `SparseCellSet` (bitset ~8 KB + `member_index`
-~130 KB each) — ~400 KB per `Board`. Negligible vs the 64 MB TT and
-there is exactly one live `Board` (search uses make/undo, not clone).
+(~73 KB each) and two `SparseCellSet` (`slot` ~290 KB each) — ~730 KB
+per `Board`. Negligible vs the 64 MB TT, and there is exactly one live
+`Board` (search uses make/undo, never clone).
+
+> **Phase 16 node-count note.** The flat `inner_candidates` iterates
+> in a different order than the old `FxHashSet`. `moves::generate`
+> feeds that order into `order_moves`, whose stable sort breaks
+> priority ties — and the `MOVE_GEN_CAP` truncation drops tied moves —
+> by generation order. So the proximity rework shifts which
+> equally-rated move is searched first, which changes alpha-beta node
+> counts. This is **not** a strength change (verified by `make vs`);
+> the Phase 16 reference baseline was refreshed to the post-rework
+> counts.
 
 ## Move Generation (`moves.rs`)
 

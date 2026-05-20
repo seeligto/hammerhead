@@ -7,9 +7,9 @@
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
+use crate::proximity::{ProximityCounts, SparseCellSet, prox_idx};
 use crate::threats::{self, ThreatScratch, ThreatSet};
 use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
-use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::cell::{Cell, Ref, RefCell};
 use thiserror::Error;
@@ -47,19 +47,22 @@ pub enum BoardError {
     NoHistory,
 }
 
-/// Initial capacity for piece-keyed maps. Avoids rehashing during a typical
-/// game (`HeXO` games rarely exceed ~256 stones).
+/// Initial capacity for the history vectors. Avoids reallocation during a
+/// typical game (`HeXO` games rarely exceed ~256 stones).
 const INITIAL_MAP_CAPACITY: usize = 256;
 
 /// `HeXO` board state.
 pub struct Board {
-    /// Per-cell count of pieces within `MAX_PIECE_DISTANCE`. Drives legality.
-    proximity_count: FxHashMap<Coord, u32>,
-    /// Per-cell count of pieces within `MOVE_GEN_INNER_RADIUS`. Drives the
-    /// default-radius move generator without scanning every legal cell.
-    inner_proximity_count: FxHashMap<Coord, u32>,
-    candidate_cells: FxHashSet<Coord>,
-    inner_candidate_cells: FxHashSet<Coord>,
+    /// Per-cell proximity refcounts: outer (r=8, legality) + inner
+    /// (r=2, move-gen), as flat `u8` arrays. Phase 16 replaced the
+    /// coord-keyed `FxHashMap` pair. See `SPEC_ENGINE.md
+    /// § Candidate maintenance`.
+    proximity: ProximityCounts,
+    /// Currently-legal empty cells (outer r=8). Phase 16 flat structure
+    /// replacing the `FxHashSet`.
+    candidates: SparseCellSet,
+    /// Move-gen cells (inner r=2). Phase 16 flat structure.
+    inner_candidates: SparseCellSet,
     history: Vec<Coord>,
     /// Player parallel to `history`: `history_players[i]` is the player
     /// whose stone was placed at `history[i]`. Phase 13 replaced the
@@ -131,23 +134,12 @@ impl Board {
     /// ([`Z_TURN_X`]).
     #[must_use]
     pub fn new() -> Self {
-        let mut candidate_cells: FxHashSet<Coord> =
-            FxHashSet::with_capacity_and_hasher(INITIAL_MAP_CAPACITY, FxBuildHasher::default());
-        candidate_cells.insert(ORIGIN);
+        let mut candidates = SparseCellSet::new();
+        candidates.insert(ORIGIN);
         Self {
-            proximity_count: FxHashMap::with_capacity_and_hasher(
-                INITIAL_MAP_CAPACITY,
-                FxBuildHasher::default(),
-            ),
-            inner_proximity_count: FxHashMap::with_capacity_and_hasher(
-                INITIAL_MAP_CAPACITY,
-                FxBuildHasher::default(),
-            ),
-            candidate_cells,
-            inner_candidate_cells: FxHashSet::with_capacity_and_hasher(
-                INITIAL_MAP_CAPACITY,
-                FxBuildHasher::default(),
-            ),
+            proximity: ProximityCounts::new(),
+            candidates,
+            inner_candidates: SparseCellSet::new(),
             history: Vec::with_capacity(INITIAL_MAP_CAPACITY),
             history_players: Vec::with_capacity(INITIAL_MAP_CAPACITY),
             hash: Z_TURN_X,
@@ -169,11 +161,10 @@ impl Board {
 
     /// Reset to fresh state. Keeps the Zobrist table allocated.
     pub fn reset(&mut self) {
-        self.proximity_count.clear();
-        self.inner_proximity_count.clear();
-        self.candidate_cells.clear();
-        self.candidate_cells.insert(ORIGIN);
-        self.inner_candidate_cells.clear();
+        self.proximity.clear();
+        self.candidates.clear();
+        self.candidates.insert(ORIGIN);
+        self.inner_candidates.clear();
         self.history.clear();
         self.history_players.clear();
         self.hash = Z_TURN_X;
@@ -215,23 +206,23 @@ impl Board {
 
         let player = self.side_to_move;
 
-        self.candidate_cells.remove(&c);
-        self.inner_candidate_cells.remove(&c);
+        self.candidates.remove(c);
+        self.inner_candidates.remove(c);
         // `axes.set` must happen before `add_proximity` so the occupancy
         // probe inside the proximity loop sees the new stone (replaces the
         // old `pieces.insert(c, player)` that preceded `add_proximity`).
         self.axes.set(c, player);
 
         add_proximity(
-            &mut self.proximity_count,
-            &mut self.candidate_cells,
+            &mut self.proximity.outer,
+            &mut self.candidates,
             c,
             MAX_PIECE_DISTANCE,
             &self.axes,
         );
         add_proximity(
-            &mut self.inner_proximity_count,
-            &mut self.inner_candidate_cells,
+            &mut self.proximity.inner,
+            &mut self.inner_candidates,
             c,
             MOVE_GEN_INNER_RADIUS,
             &self.axes,
@@ -277,14 +268,14 @@ impl Board {
         self.retreat_parity();
 
         remove_proximity(
-            &mut self.proximity_count,
-            &mut self.candidate_cells,
+            &mut self.proximity.outer,
+            &mut self.candidates,
             c,
             MAX_PIECE_DISTANCE,
         );
         remove_proximity(
-            &mut self.inner_proximity_count,
-            &mut self.inner_candidate_cells,
+            &mut self.proximity.inner,
+            &mut self.inner_candidates,
             c,
             MOVE_GEN_INNER_RADIUS,
         );
@@ -294,16 +285,16 @@ impl Board {
             // dropped it when its outer count fell to 0, so reinstate it here.
             // The inner set stays empty — move-gen short-circuits on
             // `ply == 0` before consulting it.
-            self.candidate_cells.clear();
-            self.candidate_cells.insert(ORIGIN);
-            self.inner_candidate_cells.clear();
+            self.candidates.clear();
+            self.candidates.insert(ORIGIN);
+            self.inner_candidates.clear();
         } else {
             // c is empty again; re-add if still within range of some piece.
-            if self.proximity_count.get(&c).copied().unwrap_or(0) > 0 {
-                self.candidate_cells.insert(c);
+            if self.proximity.outer_at(c) > 0 {
+                self.candidates.insert(c);
             }
-            if self.inner_proximity_count.get(&c).copied().unwrap_or(0) > 0 {
-                self.inner_candidate_cells.insert(c);
+            if self.proximity.inner_at(c) > 0 {
+                self.inner_candidates.insert(c);
             }
         }
 
@@ -383,14 +374,14 @@ impl Board {
     /// otherwise it is every empty cell within `MAX_PIECE_DISTANCE` of some
     /// piece. Maintained incrementally by `place` / `undo`.
     pub fn candidates(&self) -> impl Iterator<Item = Coord> + '_ {
-        self.candidate_cells.iter().copied()
+        self.candidates.iter()
     }
 
     /// Empty cells within `MOVE_GEN_INNER_RADIUS` of some piece. Backs the
     /// default-radius move generator. Empty on an empty board (the move
     /// generator handles the empty-board case explicitly).
     pub fn inner_candidates(&self) -> impl Iterator<Item = Coord> + '_ {
-        self.inner_candidate_cells.iter().copied()
+        self.inner_candidates.iter()
     }
 
     /// All placed pieces, in insertion order. Phase 13 replaced the prior
@@ -431,7 +422,7 @@ impl Board {
     /// Internal radius check. Assumes ply >= 1.
     #[inline]
     fn is_legal_internal(&self, c: Coord) -> bool {
-        self.proximity_count.get(&c).copied().unwrap_or(0) > 0
+        self.proximity.outer_at(c) > 0
     }
 
     /// Advance `(side_to_move, halfmove)` one stone forward and XOR the
@@ -600,22 +591,22 @@ impl Board {
     /// responsible for legality. **Do not call from production code.**
     #[doc(hidden)]
     pub fn place_for_test(&mut self, c: Coord, player: Player) {
-        self.candidate_cells.remove(&c);
-        self.inner_candidate_cells.remove(&c);
+        self.candidates.remove(c);
+        self.inner_candidates.remove(c);
         // Mirror `place`: axes.set before add_proximity so the occupancy
         // probe inside the proximity loop sees the new stone.
         self.axes.set(c, player);
 
         add_proximity(
-            &mut self.proximity_count,
-            &mut self.candidate_cells,
+            &mut self.proximity.outer,
+            &mut self.candidates,
             c,
             MAX_PIECE_DISTANCE,
             &self.axes,
         );
         add_proximity(
-            &mut self.inner_proximity_count,
-            &mut self.inner_candidate_cells,
+            &mut self.proximity.inner,
+            &mut self.inner_candidates,
             c,
             MOVE_GEN_INNER_RADIUS,
             &self.axes,
@@ -744,46 +735,49 @@ fn prev_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
     }
 }
 
-/// Increment proximity counts around `center` and insert any cell whose count
-/// rose from 0 into `candidates` (if it's not already occupied).
+/// Increment the flat proximity `count` field around `center` and insert
+/// any cell whose count rose from 0 into `candidates` (if it's empty).
 ///
-/// Used to maintain both the outer (`r8`, legality) and inner
-/// (`MOVE_GEN_INNER_RADIUS`, move-gen) refcounts via the exact same algorithm.
+/// Used for both the outer (`r8`, legality) and inner
+/// (`MOVE_GEN_INNER_RADIUS`, move-gen) fields. `u8` counts are bumped
+/// with `saturating_add`; `hex_area(8) ≈ 217 < 255`, so a real position
+/// never saturates — the `debug_assert` flags a pathological one.
 #[inline]
 fn add_proximity(
-    counts: &mut FxHashMap<Coord, u32>,
-    candidates: &mut FxHashSet<Coord>,
+    count: &mut [u8],
+    candidates: &mut SparseCellSet,
     center: Coord,
     radius: i16,
     axes: &AxisBitmaps,
 ) {
     for_each_in_range(center, radius, |d| {
-        let count = counts.entry(d).or_insert(0);
-        let was_zero = *count == 0;
-        *count += 1;
+        let i = prox_idx(d);
+        let was_zero = count[i] == 0;
+        count[i] = count[i].saturating_add(1);
+        debug_assert!(count[i] != u8::MAX, "proximity count overflow at {d:?}");
         if d != center && was_zero && !axes.is_occupied(d) {
             candidates.insert(d);
         }
     });
 }
 
-/// Decrement proximity counts around `center`. When a count reaches 0 the
-/// entry is removed from `counts` and (if present) from `candidates`.
+/// Decrement the flat proximity `count` field around `center`. When a
+/// count reaches 0 the cell is removed from `candidates`. A 0 count is
+/// simply "no piece in range" — there is no separate presence entry to
+/// drop, so the old panic-on-missing invariant becomes a `debug_assert`.
 #[inline]
 fn remove_proximity(
-    counts: &mut FxHashMap<Coord, u32>,
-    candidates: &mut FxHashSet<Coord>,
+    count: &mut [u8],
+    candidates: &mut SparseCellSet,
     center: Coord,
     radius: i16,
 ) {
     for_each_in_range(center, radius, |d| {
-        let entry = counts
-            .get_mut(&d)
-            .expect("invariant: proximity_count entry exists for neighbour");
-        *entry -= 1;
-        if *entry == 0 {
-            counts.remove(&d);
-            candidates.remove(&d);
+        let i = prox_idx(d);
+        debug_assert!(count[i] > 0, "proximity count underflow at {d:?}");
+        count[i] -= 1;
+        if count[i] == 0 {
+            candidates.remove(d);
         }
     });
 }
