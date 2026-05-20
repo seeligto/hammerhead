@@ -15,12 +15,12 @@ name = "hammerhead_engine_core"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# `simd_eval` ships in `default` after the Phase 14 STEP 8 byte-
-# identical certification (`eval::tests::ternary_table_identity_729`
-# matches scalar across every legal 6-cell window) plus the
-# reference node-count regression net. The dispatcher does runtime
-# AVX2 detection and falls back to scalar transparently when the
-# host lacks AVX2, so non-x86 / older-x86 targets are unaffected.
+# `simd_eval` ships in `default`, byte-identity certified against the
+# scalar encode (Phase 17: `eval::tests::simd_8cell_matches_scalar_all_6561`
+# matches across every legal 8-cell window) plus the reference
+# node-count regression net. The dispatcher does runtime AVX2
+# detection and falls back to scalar transparently when the host
+# lacks AVX2, so non-x86 / older-x86 targets are unaffected.
 #
 # `tt_stats` and `mimalloc` stay opt-in: stats are a dev affordance
 # (zero-cost when off), and mimalloc was within noise on this host
