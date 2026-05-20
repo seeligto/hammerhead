@@ -15,6 +15,8 @@ operate on identical positions.
 from __future__ import annotations
 
 import json
+import multiprocessing
+import os
 import random
 import statistics
 import time
@@ -571,6 +573,115 @@ def bench_ablation(
             s1s2_wins += 1
         else:
             s1s2_losses += 1
+    score = s1s2_wins + 0.5 * draws
+    winrate = score / games
+    lo, hi = wilson_interval(score, games)
+    if lo > 0.5:
+        verdict = "KEEP"
+    elif hi < 0.5:
+        verdict = "DROP"
+    else:
+        verdict = "INCONCLUSIVE"
+    return AblationResult(
+        games=games,
+        time_per_stone_ms=time_per_stone_ms,
+        opening_plies=opening_plies,
+        s1s2_wins=s1s2_wins,
+        s1s2_losses=s1s2_losses,
+        draws=draws,
+        s1s2_winrate=winrate,
+        wilson_lo=lo,
+        wilson_hi=hi,
+        verdict=verdict,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _AblationGameConfig:
+    """One ablation game's deterministic assignment (Phase 17 parallel)."""
+
+    game_idx: int
+    s1s2_is_x: bool
+    time_per_stone_ms: int
+    max_plies: int
+    opening_plies: int
+    seed: int
+
+
+def _play_one_ablation_game(gc: _AblationGameConfig) -> str:
+    """Worker entry — one ablation game. Returns the outcome categorised
+    from the S1/S2-enabled engine's POV: ``"win"`` / ``"loss"`` / ``"draw"``."""
+    rng = random.Random(gc.seed)
+    winner = _run_ablation_game(
+        gc.time_per_stone_ms,
+        gc.max_plies,
+        gc.s1s2_is_x,
+        gc.opening_plies,
+        rng,
+    )
+    if winner is None:
+        return "draw"
+    return "win" if (winner == 0) == gc.s1s2_is_x else "loss"
+
+
+def bench_ablation_parallel(
+    games: int = 200,
+    time_per_stone_ms: int = 500,
+    max_plies: int = 200,
+    opening_plies: int = 4,
+    seed: int = 0xAB1A_7104,
+    n_workers: int = 0,
+    progress_every: int = 20,
+) -> AblationResult:
+    """Parallel Layer 2 S1/S2 ablation A/B (Phase 17).
+
+    Same A/B as :func:`bench_ablation` — S1/S2-enabled vs S1/S2-disabled
+    eval, colour alternating per game — run across a process pool.
+    Per-game RNG seeds are drawn up front from ``seed``, so the openings
+    (and hence the result set) are reproducible for a given
+    ``(seed, games)`` pair regardless of worker count or completion
+    order. Draws count ½; the verdict follows the same Wilson rule.
+    """
+    if games < 1:
+        raise ValueError("games must be >= 1")
+    from hammerhead.promote import wilson_interval
+
+    if n_workers <= 0:
+        n_workers = max(1, (os.cpu_count() or 2) - 2)
+    n_workers = max(1, min(n_workers, games))
+
+    master = random.Random(seed)
+    configs = [
+        _AblationGameConfig(
+            game_idx=g,
+            s1s2_is_x=(g % 2 == 0),
+            time_per_stone_ms=time_per_stone_ms,
+            max_plies=max_plies,
+            opening_plies=opening_plies,
+            seed=master.getrandbits(64),
+        )
+        for g in range(games)
+    ]
+
+    s1s2_wins = s1s2_losses = draws = 0
+    done = 0
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=n_workers) as pool:
+        for outcome in pool.imap_unordered(_play_one_ablation_game, configs):
+            if outcome == "win":
+                s1s2_wins += 1
+            elif outcome == "loss":
+                s1s2_losses += 1
+            else:
+                draws += 1
+            done += 1
+            if done % progress_every == 0:
+                print(
+                    f"progress: {done}/{games} games  "
+                    f"S1/S2 {s1s2_wins}-{s1s2_losses}-{draws} (W-L-D)",
+                    flush=True,
+                )
+
     score = s1s2_wins + 0.5 * draws
     winrate = score / games
     lo, hi = wilson_interval(score, games)

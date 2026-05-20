@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help build clean rebuild test lint fmt check vs promote install \
-        bench bench-quick bench-perf bench-micro bench-micro-quick \
+        ablation bench bench-quick bench-perf bench-micro bench-micro-quick \
         bench-diff bench-baseline flamegraph pgo
 
 ENGINE    := hammerhead-engine
@@ -107,6 +107,10 @@ pgo: ## [Phase 14] profile-guided optimization build (requires llvm-tools-previe
 # Phase 11 — promotion harness. See specs/SPEC_ROADMAP.md § Phase 11.
 # Reads .bestref; builds a worktree at that SHA via scripts/setup_worktree.sh.
 # ──────────────────────────────────────────────────────────────────────────────
+
+ablation: ## [Phase 17] S1/S2 ablation A/B, N_GAMES games — parallel
+	@$(VPY) -m hammerhead.cli bench ablation \
+	    --games $(N_GAMES) --time-ms $(TIME_MS) --workers $(N_WORKERS)
 
 vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
 	@./scripts/setup_worktree.sh

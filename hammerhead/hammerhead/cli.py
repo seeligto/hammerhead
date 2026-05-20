@@ -444,10 +444,11 @@ def _bench_perf(args: argparse.Namespace) -> int:
 
 
 def _bench_ablation(args: argparse.Namespace) -> int:
-    """Layer 2 S1/S2 ablation self-play A/B (Phase 16)."""
-    r = bench.bench_ablation(
+    """Layer 2 S1/S2 ablation self-play A/B (Phase 16; parallel since 17)."""
+    r = bench.bench_ablation_parallel(
         games=args.games,
         time_per_stone_ms=args.time_ms,
+        n_workers=args.workers,
     )
     print(
         f"ablation: {r.games} games at {r.time_per_stone_ms}ms/stone, "
@@ -1085,10 +1086,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     bs = bsub.add_parser(
         "ablation",
-        help="Layer 2 S1/S2 ablation self-play A/B (Phase 16)",
+        help="Layer 2 S1/S2 ablation self-play A/B (Phase 16; parallel)",
     )
     bs.add_argument("--games", type=int, default=50)
     bs.add_argument("--time-ms", type=int, default=500)
+    bs.add_argument(
+        "--workers",
+        type=int,
+        default=_default_workers(),
+        help="parallel ablation workers (0 = auto: cpu_count() - 2)",
+    )
 
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")
     bs.add_argument("--time-ms", type=int, default=CONFIG.bench.default_time_ms)
