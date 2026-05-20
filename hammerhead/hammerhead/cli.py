@@ -1,4 +1,4 @@
-"""``hexo`` CLI entry point.
+"""``hammerhead`` CLI entry point.
 
 Subcommands:
 
@@ -52,7 +52,7 @@ def _name(p: Optional[int]) -> str:
 def cmd_play(args: argparse.Namespace) -> int:
     cfg = BotConfig(time_per_move_ms=args.time_ms)
     bot = Bot(cfg)
-    print("hexo REPL. Bot plays X. Enter your stones as 'q r' (comma-separated).")
+    print("hammerhead REPL. Bot plays X. Enter your stones as 'q r' (comma-separated).")
     print("Type 'quit' to exit.")
     while bot.winner() is None:
         moves = bot.play_turn()
@@ -713,7 +713,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
 def cmd_bot(args: argparse.Namespace) -> int:
     eng = Engine(tt_size_mb=args.tt_size_mb)
-    sys.stdout.write("hexo bot ready\n")
+    sys.stdout.write("hammerhead bot ready\n")
     sys.stdout.flush()
     for raw in sys.stdin:
         line = raw.strip()
@@ -926,7 +926,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="hexo")
+    p = argparse.ArgumentParser(prog="hammerhead")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sp = sub.add_parser("play", help="human vs bot REPL")

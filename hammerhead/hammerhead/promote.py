@@ -1,7 +1,7 @@
 """Phase 11 promotion harness.
 
 Run a match between two engine binaries (each spoken to via the Phase 9
-``hexo bot`` subprocess protocol) and decide whether the candidate is
+``hammerhead bot`` subprocess protocol) and decide whether the candidate is
 strong enough to promote.
 
 See ``specs/SPEC_ROADMAP.md`` § Phase 11 and ``specs/SPEC_API.md`` for
@@ -9,7 +9,7 @@ the protocol contract.
 
 Public surface
 --------------
-- ``SubprocessBot`` — line-protocol wrapper around one ``hexo bot`` child.
+- ``SubprocessBot`` — line-protocol wrapper around one ``hammerhead bot`` child.
 - ``run_match`` — drive an N-game match; returns ``MatchResult``.
 - ``wilson_interval``, ``winrate_to_elo``, ``sprt_llr`` — pure-function
   statistics (covered by unit tests).
@@ -38,7 +38,7 @@ class BotProtocolError(RuntimeError):
 
 
 class SubprocessBot:
-    """Manages one ``hexo bot`` child via stdin/stdout lines.
+    """Manages one ``hammerhead bot`` child via stdin/stdout lines.
 
     Use as a context manager so the child is reaped even on exceptions.
     """
@@ -58,7 +58,7 @@ class SubprocessBot:
         except BotProtocolError:
             self.close()
             raise
-        if banner != "hexo bot ready":
+        if banner != "hammerhead bot ready":
             self.close()
             raise BotProtocolError(
                 f"unexpected banner from {cmd!r}: {banner!r}"

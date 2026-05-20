@@ -100,7 +100,7 @@ def test_sprt_balanced_stays_between_bounds() -> None:
 
 
 def _bot_cmd() -> list[str]:
-    # Both sides spawn the same hexo bot. tt-size-mb=4 keeps startup quick.
+    # Both sides spawn the same hammerhead bot. tt-size-mb=4 keeps startup quick.
     return [sys.executable, "-m", "hammerhead.cli", "bot", "--tt-size-mb", "4"]
 
 
@@ -199,7 +199,7 @@ def test_match_config_override_precedence() -> None:
 
 
 def test_cli_help_smoke() -> None:
-    """``hexo match`` and ``hexo promote`` parse their argv at all."""
+    """``hammerhead match`` and ``hammerhead promote`` parse their argv at all."""
     for sub in ("match", "promote"):
         r = subprocess.run(
             [sys.executable, "-m", "hammerhead.cli", sub, "--help"],
@@ -207,7 +207,7 @@ def test_cli_help_smoke() -> None:
             text=True,
             timeout=10,
         )
-        assert r.returncode == 0, f"hexo {sub} --help failed: {r.stderr}"
+        assert r.returncode == 0, f"hammerhead {sub} --help failed: {r.stderr}"
         assert "--time-ms" in r.stdout
         assert "--test" in r.stdout
 

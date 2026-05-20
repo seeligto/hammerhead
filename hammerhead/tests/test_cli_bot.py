@@ -1,4 +1,4 @@
-"""Subprocess-protocol integration test for ``hexo bot``."""
+"""Subprocess-protocol integration test for ``hammerhead bot``."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 @contextmanager
 def _bot_proc() -> Iterator[subprocess.Popen[str]]:
-    """Spawn a ``hexo bot`` subprocess and guarantee its pipes close.
+    """Spawn a ``hammerhead bot`` subprocess and guarantee its pipes close.
 
     Plain ``Popen.__exit__`` waits then drops references, but the pipe
     objects themselves only close on GC — pytest with ``-W error`` then
@@ -53,7 +53,7 @@ def _wait_ready(proc: subprocess.Popen[str]) -> str:
 
 def test_subprocess_protocol_round_trip() -> None:
     with _bot_proc() as proc:
-        assert _wait_ready(proc) == "hexo bot ready"
+        assert _wait_ready(proc) == "hammerhead bot ready"
         assert _send(proc, "reset") == "ok"
         assert _send(proc, "ply") == "0"
         assert _send(proc, "to_move") == "X"
@@ -84,7 +84,7 @@ def test_subprocess_protocol_round_trip() -> None:
 
 def test_subprocess_unknown_command() -> None:
     with _bot_proc() as proc:
-        assert _wait_ready(proc) == "hexo bot ready"
+        assert _wait_ready(proc) == "hammerhead bot ready"
         resp = _send(proc, "frobnicate")
         assert resp.startswith("error: unknown command")
         # Session must continue.
@@ -95,7 +95,7 @@ def test_subprocess_unknown_command() -> None:
 
 def test_subprocess_error_is_surfaced() -> None:
     with _bot_proc() as proc:
-        assert _wait_ready(proc) == "hexo bot ready"
+        assert _wait_ready(proc) == "hammerhead bot ready"
         # First move must be at origin.
         resp = _send(proc, "place 5 5")
         assert resp.startswith("error:")
@@ -108,7 +108,7 @@ def test_subprocess_error_is_surfaced() -> None:
 @pytest.mark.parametrize("malformed", ["place", "place 1", "best_move", "best_move foo"])
 def test_subprocess_malformed_commands_emit_error(malformed: str) -> None:
     with _bot_proc() as proc:
-        assert _wait_ready(proc) == "hexo bot ready"
+        assert _wait_ready(proc) == "hammerhead bot ready"
         resp = _send(proc, malformed)
         assert resp.startswith("error:")
         _send(proc, "quit")

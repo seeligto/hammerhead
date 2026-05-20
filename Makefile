@@ -26,7 +26,7 @@ BENCH_TIME_MS ?= 1000
 TARGET        ?= all
 
 help: ## show available targets
-	@echo "HeXO bot — Makefile targets:"
+	@echo "Hammerhead — Makefile targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 

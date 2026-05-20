@@ -20,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 
 if sys.version_info < (3, 11):
-    raise RuntimeError("hexo requires Python >= 3.11 (tomllib)")
+    raise RuntimeError("hammerhead requires Python >= 3.11 (tomllib)")
 
 
 CONFIG_FILENAME = "hexo.toml"
