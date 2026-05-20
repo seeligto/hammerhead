@@ -34,6 +34,13 @@ closed_4 = 20_000
 # feature + set_eval_s1s2 toggle); only the eval weights are zeroed,
 # leaving a tunable surface for a dedicated eval-tuning phase. See
 # SPEC_EVAL.md § Layer 2 ablation and SPEC_ROADMAP.md Phase 18+.
+#
+# Phase 18 Stage A — Layer 1 anchors. Each weight is restated as
+# weight = alpha * A_shape, where A_shape sums window_k_scores over the
+# shape's maximal straight runs (the Layer 1 footprint). Anchors:
+#   open_3=256  rhombus=160  arch=64  bone=384  trapezoid=384
+#   open_2=32   closed_3=64  triangle=96
+# The Phase 18 sweep tunes alpha per shape. See SPEC_EVAL.md § Layer 2.
 open_3    = 0
 rhombus   = 0
 arch      = 0
