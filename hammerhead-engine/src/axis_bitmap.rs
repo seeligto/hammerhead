@@ -165,59 +165,6 @@ impl LineBitmap {
         out
     }
 
-    /// Emit `count` consecutive 6-bit windows starting at `start_pos`
-    /// into `out[..count]`. Equivalent to calling [`window6`] in a loop
-    /// but extracts each 6-bit window straight out of the underlying
-    /// `u64` storage, sharing the `(word_index, bit_offset)` math
-    /// across windows. The Layer-1 eval window scan calls this once
-    /// per `(axis, line)` instead of `window6` per position.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `out.len() < count`.
-    #[inline]
-    pub fn windows6_run(&self, start_pos: i16, count: usize, out: &mut [u8]) {
-        assert!(out.len() >= count, "windows6_run out slice too short");
-        let out = &mut out[..count];
-        if out.is_empty() {
-            return;
-        }
-        if self.words.is_empty() {
-            out.fill(0);
-            return;
-        }
-        let base = i32::from(self.base_pos);
-        let nbits = (self.words.len() as i32) * 64;
-        for (k, slot) in out.iter_mut().enumerate() {
-            let pos = i32::from(start_pos.wrapping_add(k as i16));
-            let rel = pos - base;
-            // Window6 reads bits [pos, pos+5]. If the entire window
-            // sits outside the populated range, emit 0 fast.
-            if rel + 6 <= 0 || rel >= nbits {
-                *slot = 0;
-                continue;
-            }
-            // Fast path: window fully inside the populated range with
-            // bits drawn from at most two adjacent words.
-            if rel >= 0 && rel + 6 <= nbits {
-                let wi = (rel / 64) as usize;
-                let bi = (rel % 64) as u32;
-                let lo = self.words[wi] >> bi;
-                let bits = if bi <= 58 {
-                    lo
-                } else {
-                    lo | (self.words[wi + 1] << (64 - bi))
-                };
-                *slot = (bits as u8) & 0x3F;
-                continue;
-            }
-            // Slow path: window straddles the populated range
-            // boundary. Fall back to bit-at-a-time so out-of-range
-            // positions read as 0 (mirroring `get`).
-            *slot = self.window6(pos as i16);
-        }
-    }
-
     /// 8-bit window. Bit `i` (LSB-first) is `get(pos + i)`. Used by the
     /// Phase-17 Layer-1 8-cell window scan.
     #[inline]
@@ -233,11 +180,10 @@ impl LineBitmap {
     }
 
     /// Emit `count` consecutive 8-bit windows starting at `start_pos`
-    /// into `out[..count]`. The 8-cell analogue of [`windows6_run`] —
-    /// extracts each 8-bit window straight out of the underlying `u64`
-    /// storage, sharing the `(word_index, bit_offset)` math across
-    /// windows. The Phase-17 Layer-1 scan calls this once per
-    /// `(axis, line)`.
+    /// into `out[..count]`. Extracts each 8-bit window straight out of
+    /// the underlying `u64` storage, sharing the `(word_index,
+    /// bit_offset)` math across windows. The Layer-1 eval window scan
+    /// calls this once per `(axis, line)`.
     ///
     /// # Panics
     ///
