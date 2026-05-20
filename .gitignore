@@ -18,13 +18,26 @@ Cargo.lock
 refs/
 *.pdf
 
-# Benchmark output (Phase 10) — only baseline.json + HOTSPOTS.md are
-# committed. Flamegraph SVGs are kept for the phase-of-record capture
-# referenced by HOTSPOTS.md; intermediate folded-stack dumps stay local.
+# Benchmark output (Phase 10) — only baseline.json is committed.
+# Run JSONs (incl. Phase 18 tune-*.json sweeps) and intermediate
+# folded-stack dumps stay local. One flamegraph SVG is kept: the
+# phase-of-record capture referenced by HOTSPOTS.md.
 benches/results/*.json
 !benches/results/baseline.json
 benches/results/flamegraph-*.folded.txt
+benches/results/flamegraph-*.svg
+!benches/results/flamegraph-*-4740d65.svg
+benches/results/PHASE14_NOTES.md
 target/criterion/
+
+# Workflow artifacts — never committed (Phase 18 hygiene).
+subagents/
+/tmp/
+/prompts/
+/NEXT_SESSION.md
+/HANDOFF.md
+/phase*-summary.md
+/phase*-report.md
 
 # Bench-tier local cache (Phase 16) — per-developer quick/perf baselines.
 .hexo/
