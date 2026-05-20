@@ -321,10 +321,7 @@ fn incremental(
         Player::X => std::mem::swap(&mut scratch.cross_axis_x, &mut scratch.cross_axis_x_spare),
         Player::O => std::mem::swap(&mut scratch.cross_axis_o, &mut scratch.cross_axis_o_spare),
     }
-    let (prior_breakdown, breakdown_slot): (
-        &[(Coord, CrossAxisContribution)],
-        &mut Vec<(Coord, CrossAxisContribution)>,
-    ) = match player {
+    let (prior_breakdown, breakdown_slot) = match player {
         Player::X => (&scratch.cross_axis_x_spare, &mut scratch.cross_axis_x),
         Player::O => (&scratch.cross_axis_o_spare, &mut scratch.cross_axis_o),
     };
@@ -572,6 +569,7 @@ fn is_isolated_open_two(
 /// is the offset list of the other three stones relative to the anchor at
 /// `(0,0)`. The anchor is the lex-min stone of the rhombus; offsets are all
 /// strictly lex-positive so each rhombus is enumerated exactly once.
+#[cfg(feature = "eval_s1s2")]
 const RHOMBUS_PATTERNS: &[[(i16, i16); 3]] = &[
     // axes (Q, R): {(0,0), (1,0), (0,1), (1,1)}
     [(1, 0), (0, 1), (1, 1)],
@@ -583,6 +581,7 @@ const RHOMBUS_PATTERNS: &[[(i16, i16); 3]] = &[
 
 /// 3 mutually-adjacent stones. Two orientations (upward / downward).
 /// Anchor = lex-min stone.
+#[cfg(feature = "eval_s1s2")]
 const TRIANGLE_PATTERNS: &[[(i16, i16); 2]] = &[
     // Upward: {(0,0), (1,0), (0,1)}
     [(1, 0), (0, 1)],
@@ -592,6 +591,7 @@ const TRIANGLE_PATTERNS: &[[(i16, i16); 2]] = &[
 
 /// 3-piece arches (L-shape): two adjacent pairs, one distance-2 pair.
 /// Anchor = lex-min stone. Patterns enumerated by axis-pair / chirality.
+#[cfg(feature = "eval_s1s2")]
 const ARCH_PATTERNS: &[[(i16, i16); 2]] = &[
     // {(0,0), (1,0), (1,1)}
     [(1, 0), (1, 1)],
@@ -604,6 +604,7 @@ const ARCH_PATTERNS: &[[(i16, i16); 2]] = &[
 ];
 
 /// 5-piece trapezoid: parallel long-edge pair plus short closing edge.
+#[cfg(feature = "eval_s1s2")]
 const TRAPEZOID_PATTERNS: &[[(i16, i16); 4]] = &[
     // axes Q-long, R-short:
     [(1, 0), (2, 0), (0, 1), (1, 1)],
@@ -614,6 +615,7 @@ const TRAPEZOID_PATTERNS: &[[(i16, i16); 4]] = &[
 ];
 
 /// 5-piece bone / bowtie: two triangles sharing an edge.
+#[cfg(feature = "eval_s1s2")]
 const BONE_PATTERNS: &[[(i16, i16); 4]] = &[
     [(1, 0), (0, 1), (-1, 1), (1, -1)],
     [(1, 0), (1, -1), (2, -1), (0, 1)],
@@ -624,33 +626,45 @@ const BONE_PATTERNS: &[[(i16, i16); 4]] = &[
 /// per-shape match count contributed by this anchor.
 #[inline]
 fn anchor_cross_axis(board: &Board, player: Player, anchor: Coord) -> CrossAxisContribution {
-    let mut contrib = CrossAxisContribution::default();
-    for pat in TRIANGLE_PATTERNS {
-        if matches_pattern(board, player, anchor, pat) {
-            contrib.triangle = contrib.triangle.saturating_add(1);
-        }
+    // Phase 16: the cross-axis pattern matchers are the bulk of the
+    // S1/S2 detection cost. When the `eval_s1s2` feature is off they
+    // are skipped entirely and the contribution collapses to zero.
+    // See `SPEC_EVAL.md § Layer 2 ablation`.
+    #[cfg(not(feature = "eval_s1s2"))]
+    {
+        let _ = (board, player, anchor);
+        CrossAxisContribution::default()
     }
-    for pat in ARCH_PATTERNS {
-        if matches_pattern(board, player, anchor, pat) {
-            contrib.arch = contrib.arch.saturating_add(1);
+    #[cfg(feature = "eval_s1s2")]
+    {
+        let mut contrib = CrossAxisContribution::default();
+        for pat in TRIANGLE_PATTERNS {
+            if matches_pattern(board, player, anchor, pat) {
+                contrib.triangle = contrib.triangle.saturating_add(1);
+            }
         }
-    }
-    for pat in RHOMBUS_PATTERNS {
-        if matches_pattern(board, player, anchor, pat) {
-            contrib.rhombus = contrib.rhombus.saturating_add(1);
+        for pat in ARCH_PATTERNS {
+            if matches_pattern(board, player, anchor, pat) {
+                contrib.arch = contrib.arch.saturating_add(1);
+            }
         }
-    }
-    for pat in BONE_PATTERNS {
-        if matches_pattern(board, player, anchor, pat) {
-            contrib.bone = contrib.bone.saturating_add(1);
+        for pat in RHOMBUS_PATTERNS {
+            if matches_pattern(board, player, anchor, pat) {
+                contrib.rhombus = contrib.rhombus.saturating_add(1);
+            }
         }
-    }
-    for pat in TRAPEZOID_PATTERNS {
-        if matches_pattern(board, player, anchor, pat) {
-            contrib.trapezoid = contrib.trapezoid.saturating_add(1);
+        for pat in BONE_PATTERNS {
+            if matches_pattern(board, player, anchor, pat) {
+                contrib.bone = contrib.bone.saturating_add(1);
+            }
         }
+        for pat in TRAPEZOID_PATTERNS {
+            if matches_pattern(board, player, anchor, pat) {
+                contrib.trapezoid = contrib.trapezoid.saturating_add(1);
+            }
+        }
+        contrib
     }
-    contrib
 }
 
 #[inline]
@@ -724,6 +738,7 @@ fn prior_cross_axis(
         .map(|&(_, contrib)| contrib)
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[inline]
 fn matches_pattern<const N: usize>(
     board: &Board,
