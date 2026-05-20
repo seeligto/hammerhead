@@ -1,4 +1,4 @@
-# HeXO Config Spec
+# Hammerhead Config Spec
 
 ## Principle
 
@@ -19,10 +19,10 @@ stay in their respective `Cargo.toml` / `pyproject.toml`.
 
 ## What does NOT live in `hexo.toml`
 
-- Crate dep versions → `hexo-engine/Cargo.toml`
-- Python deps / build backend → `hexo/pyproject.toml`, `hexo-engine/pyproject.toml`
-- Cargo profile flags → `hexo-engine/Cargo.toml` `[profile.release]`
-- Rust edition / rust-version → `hexo-engine/Cargo.toml`
+- Crate dep versions → `hammerhead-engine/Cargo.toml`
+- Python deps / build backend → `hammerhead/pyproject.toml`, `hammerhead-engine/pyproject.toml`
+- Cargo profile flags → `hammerhead-engine/Cargo.toml` `[profile.release]`
+- Rust edition / rust-version → `hammerhead-engine/Cargo.toml`
 
 Rationale: keeping build metadata where build tools expect it avoids brittle
 codegen of `Cargo.toml` and respects each ecosystem's conventions. The user-
@@ -53,10 +53,10 @@ See `hexo.toml` for the full schema.
 
 ## Rust side: build-time codegen
 
-`hexo-engine/build.rs` reads `../hexo.toml` at compile time and emits
+`hammerhead-engine/build.rs` reads `../hexo.toml` at compile time and emits
 `$OUT_DIR/config_generated.rs` containing `pub const` definitions.
 
-`hexo-engine/src/config.rs` does nothing but `include!` that file.
+`hammerhead-engine/src/config.rs` does nothing but `include!` that file.
 
 Other modules reference values as `crate::config::OPEN_5_SCORE`,
 `crate::config::DEFAULT_TT_SIZE_MB`, etc. No magic numbers anywhere else.
@@ -65,7 +65,7 @@ Cargo `cargo:rerun-if-changed=../hexo.toml` ensures rebuilds on edits.
 
 ## Python side: runtime load via `tomllib`
 
-`hexo/hexo/config.py`:
+`hammerhead/hammerhead/config.py`:
 
 - Resolves `hexo.toml` by walking parents from `__file__` (or `$HEXO_CONFIG` env override).
 - Parses once at import; cached via `functools.lru_cache`.
@@ -73,7 +73,7 @@ Cargo `cargo:rerun-if-changed=../hexo.toml` ensures rebuilds on edits.
 - Module-level `CONFIG: HexoConfig` for convenient access.
 
 ```python
-from hexo.config import CONFIG
+from hammerhead.config import CONFIG
 CONFIG.eval.open_5             # 8000
 CONFIG.search.default_time_ms  # 1000
 ```
@@ -81,8 +81,8 @@ CONFIG.search.default_time_ms  # 1000
 ## Adding a new constant
 
 1. Add the key to `hexo.toml` under the appropriate `[engine.*]` table.
-2. Add an `emit_*` call in `hexo-engine/build.rs`.
-3. Add the field to the matching dataclass in `hexo/hexo/config.py`.
+2. Add an `emit_*` call in `hammerhead-engine/build.rs`.
+3. Add the field to the matching dataclass in `hammerhead/hammerhead/config.py`.
 4. Use `crate::config::NAME` from Rust, `CONFIG.section.name` from Python.
 
 ## Invariants

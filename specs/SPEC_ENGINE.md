@@ -1,4 +1,4 @@
-# HeXO Engine — Internals Spec
+# Hammerhead Engine — Internals Spec
 
 ## Tuning constants
 

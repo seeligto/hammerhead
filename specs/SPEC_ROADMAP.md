@@ -1,4 +1,4 @@
-# HeXO Bot — Implementation Roadmap
+# Hammerhead — Implementation Roadmap
 
 Save as `specs/SPEC_ROADMAP.md`.
 
@@ -377,8 +377,8 @@ After the STEP 5 baseline landed, an independent reviewer flagged:
 **Goal**: comprehensive bench infrastructure for optimization cycles.
 
 Two tiers:
-- **Rust criterion** micro-benches per module (`hexo-engine/benches/`).
-- **Python harness** macro-benches (`hexo/hexo/benchmark.py`).
+- **Rust criterion** micro-benches per module (`hammerhead-engine/benches/`).
+- **Python harness** macro-benches (`hammerhead/hammerhead/benchmark.py`).
 
 Outputs canonical JSON to `benches/results/<isodate>-<sha>.json`. Diff
 tool compares two result sets. `make bench`, `make bench-micro`,
@@ -394,15 +394,15 @@ No new features. No algorithmic changes. Sweeps warnings, adds the
 reference node-count table, gates TT instrumentation behind a Cargo
 feature, captures a flamegraph, and commits the live `baseline.json`.
 
-- Cargo target rename: `[lib] name = "hexo_engine_core"` (was
-  `hexo_engine`). The PyO3 module name (`hexo_engine`) is independent
+- Cargo target rename: `[lib] name = "hammerhead_engine_core"` (was
+  `hammerhead_engine`). The PyO3 module name (`hammerhead_engine`) is independent
   of the cargo target name and stays unchanged; maturin emits the
   cdylib under the module name via `pyproject.toml [tool.maturin]
   module-name`. Resolves the `cargo bench` filename-collision warning
-  (cdylib and rlib both produced `libhexo_engine.so`).
+  (cdylib and rlib both produced `libhammerhead_engine.so`).
 - Warning sweep: every `make` target completes warning-free. Python
   pytest runs with `-W error`.
-- `hexo bench reference` subcommand (see `SPEC_BENCHMARKS.md
+- `hammerhead bench reference` subcommand (see `SPEC_BENCHMARKS.md
   § Reference node-counts`).
 - TT statistics behind Cargo feature `tt_stats` (see
   `SPEC_BENCHMARKS.md § TT statistics`).
@@ -456,8 +456,8 @@ promoting.
 
 - Git worktree at `.worktree-best/` checked out at `.bestref` SHA.
 - Per-worktree venv builds the baseline engine.
-- Subprocess protocol via `hexo bot` (Phase 9).
-- `hexo/hexo/promote.py` — SPRT / Wilson / raw tests.
+- Subprocess protocol via `hammerhead bot` (Phase 9).
+- `hammerhead/hammerhead/promote.py` — SPRT / Wilson / raw tests.
 - `make vs`, `make promote` replace the Phase-9 stubs.
 
 Tuning lives in `hexo.toml § [promote]` (Python-only — Rust does not
@@ -475,9 +475,9 @@ TT/history state.
   strength.
 - If `.bestref` SHA differs from the worktree's HEAD, the worktree is
   removed and recreated at the new SHA. The per-worktree venv is then
-  rebuilt via `maturin develop --release` and `pip install -e hexo`.
+  rebuilt via `maturin develop --release` and `pip install -e hammerhead`.
 - `HEXO_SKIP_BUILD=1` short-circuits the build step (used by the
-  idempotency test in `hexo/tests/test_promote.py`).
+  idempotency test in `hammerhead/tests/test_promote.py`).
 
 ### SPRT details
 

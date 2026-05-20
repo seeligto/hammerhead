@@ -1,4 +1,4 @@
-# HeXO Bot — Benchmark Spec
+# Hammerhead — Benchmark Spec
 
 Save as `specs/SPEC_BENCHMARKS.md`.
 
@@ -31,7 +31,7 @@ two result sets.
 Layout:
 
 ```
-hexo-engine/
+hammerhead-engine/
 ├── benches/
 │   ├── bench_board.rs
 │   ├── bench_axis_bitmap.rs
@@ -80,7 +80,7 @@ Every bench file follows:
 //! Run via `make bench TARGET=<module>` or `cargo bench --bench bench_<module>`.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use hexo_engine::*;
+use hammerhead_engine::*;
 
 mod common;
 use common::positions;
@@ -167,7 +167,7 @@ emit a single canonical JSON via a custom drain. Layout:
 ```
 
 Drain implementation: a tiny `bench_drain` binary in
-`hexo-engine/src/bin/bench_drain.rs` that walks `target/criterion/` and
+`hammerhead-engine/src/bin/bench_drain.rs` that walks `target/criterion/` and
 collects results into `benches/results/<isodate>-<sha>.json`. Called by
 `make bench` at the end of the criterion run.
 
@@ -175,8 +175,8 @@ Schema versioned. Diff tool refuses to compare across schema versions.
 
 ## Python macro-benches
 
-`hexo/hexo/benchmark.py` exposes a small library. CLI exposes
-`hexo bench` subcommand (already stub'd Phase 9; extended here).
+`hammerhead/hammerhead/benchmark.py` exposes a small library. CLI exposes
+`hammerhead bench` subcommand (already stub'd Phase 9; extended here).
 
 ### Library API
 
@@ -241,19 +241,19 @@ fixtures.
 
 ### CLI subcommands
 
-Extend `hexo/hexo/cli.py`:
+Extend `hammerhead/hammerhead/cli.py`:
 
 ```
-hexo bench micro [--target NAME]    # runs criterion; calls bench_drain
-hexo bench nps      --time-ms 1000 --fixture midgame_12 [--runs 3]
-hexo bench depth    --time-ms 1000 --fixture midgame_12
-hexo bench threats  --fixture midgame_30 [--samples 1000]
-hexo bench selfplay --time-ms 200 --games 5 [--max-plies 200]
-hexo bench all      [--time-ms 1000]
-hexo bench diff <run_a.json> <run_b.json>
+hammerhead bench micro [--target NAME]    # runs criterion; calls bench_drain
+hammerhead bench nps      --time-ms 1000 --fixture midgame_12 [--runs 3]
+hammerhead bench depth    --time-ms 1000 --fixture midgame_12
+hammerhead bench threats  --fixture midgame_30 [--samples 1000]
+hammerhead bench selfplay --time-ms 200 --games 5 [--max-plies 200]
+hammerhead bench all      [--time-ms 1000]
+hammerhead bench diff <run_a.json> <run_b.json>
 ```
 
-`hexo bench all` runs everything and writes
+`hammerhead bench all` runs everything and writes
 `benches/results/<isodate>-<sha>.json`.
 
 ### Output schema (Python macro layer)
@@ -282,7 +282,7 @@ Single canonical JSON file per run, extending the Rust schema with a
 
 ## Diff tool
 
-`hexo bench diff <a.json> <b.json>` — table output:
+`hammerhead bench diff <a.json> <b.json>` — table output:
 
 ```
 metric                            baseline    candidate    delta    pct
@@ -302,17 +302,17 @@ For macro benches without per-sample data: report delta only, no p-value.
 
 ```make
 bench:
-	@$(VENV)/bin/python -m hexo.cli bench all --time-ms $(BENCH_TIME_MS)
+	@$(VENV)/bin/python -m hammerhead.cli bench all --time-ms $(BENCH_TIME_MS)
 
 bench-micro:
-	@cd hexo-engine && cargo bench --bench bench_$(TARGET)
+	@cd hammerhead-engine && cargo bench --bench bench_$(TARGET)
 
 bench-diff:
-	@$(VENV)/bin/python -m hexo.cli bench diff \
+	@$(VENV)/bin/python -m hammerhead.cli bench diff \
 	    benches/results/$(A).json benches/results/$(B).json
 
 bench-baseline:
-	@$(VENV)/bin/python -m hexo.cli bench all --time-ms 1000
+	@$(VENV)/bin/python -m hammerhead.cli bench all --time-ms 1000
 	@cp benches/results/$$(ls -t benches/results/ | head -1) \
 	    benches/results/baseline.json
 ```
@@ -355,7 +355,7 @@ Do not bench:
 
 ## Reference node-counts (Phase 12)
 
-`hexo bench reference` produces a deterministic node-count table:
+`hammerhead bench reference` produces a deterministic node-count table:
 search at fixed depths `1..=N` on specific fixtures, no time budget,
 TT cleared between runs. Each call uses a freshly-constructed
 `Engine`, so move ordering, killer slots, and history all start from
@@ -418,7 +418,7 @@ wrapper `PyEngine.tt_stats() -> dict` (always present; `probes` etc.
 read as `0` when the feature is off, so callers can branch on
 `probes == 0` to detect "no stats" rather than guarding the import).
 
-`hexo bench reference --tt-stats` and `hexo bench nps --tt-stats`
+`hammerhead bench reference --tt-stats` and `hammerhead bench nps --tt-stats`
 read the snapshot after the run and include hit rate (`hits/probes`)
 in the canonical JSON. Production builds (cdylib via `maturin
 develop --release`) do not enable the feature. Dev / regression
@@ -430,7 +430,7 @@ fresh `Engine` starts at zero regardless of generation cycles.
 
 ## ms-time scaling table (Phase 14)
 
-`hexo bench scaling` produces a table of `(fixture, time_budget_ms) →
+`hammerhead bench scaling` produces a table of `(fixture, time_budget_ms) →
 (depth_reached, nodes, NPS)`. Time budgets: `[1, 10, 50, 100, 250,
 500, 1000]` ms. Fixtures: same default set as reference. Each cell
 is the median over `runs` runs (cold TT each run — fresh Engine).
@@ -465,7 +465,7 @@ band.
 
 ## Per-function cycles breakdown (Phase 14)
 
-`hexo bench breakdown` runs each fixture at depth 4 (fixed, no time
+`hammerhead bench breakdown` runs each fixture at depth 4 (fixed, no time
 budget) and estimates the share of total search cycles spent in each
 top-level module by combining criterion micro-bench medians with
 calls-per-search counts. Reported as a table:
@@ -519,7 +519,7 @@ iteration during a sub-step.
   cached locally; `.hexo/` is gitignored — per-developer, not shared)
 
 CLI:
-    hexo bench quick [--fixture F] [--time-ms T] [--runs N]
+    hammerhead bench quick [--fixture F] [--time-ms T] [--runs N]
 
 Output format (single line, machine-readable + human-friendly):
     quick: 348k ± 4k NPS, depth 5, 11600 cyc/node (Δ +3.1% vs last)
@@ -535,7 +535,7 @@ commit.
 - Output: per-fixture × budget NPS + depth + cycles/node
 
 CLI:
-    hexo bench perf
+    hammerhead bench perf
 
 ### `bench-full` (~3-5 min)
 

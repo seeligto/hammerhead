@@ -1,4 +1,4 @@
-# HeXO Eval Spec
+# Hammerhead Eval Spec
 
 ## Approach
 

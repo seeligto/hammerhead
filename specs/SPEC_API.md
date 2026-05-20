@@ -1,13 +1,13 @@
-# HeXO API Spec
+# Hammerhead API Spec
 
-Authoritative surface for the Rust `hexo_engine` PyO3 module, the Python
-`hexo.bot` wrapper, the `hexo` CLI subcommands, and the line-based
+Authoritative surface for the Rust `hammerhead_engine` PyO3 module, the Python
+`hammerhead.bot` wrapper, the `hammerhead` CLI subcommands, and the line-based
 subprocess protocol consumed by the Phase 11 promotion harness.
 
-## PyO3 module (`hexo_engine`)
+## PyO3 module (`hammerhead_engine`)
 
 ```python
-from hexo_engine import Engine
+from hammerhead_engine import Engine
 
 eng = Engine(tt_size_mb=64)
 eng.place((0, 0))                    # X first stone
@@ -73,7 +73,7 @@ pub struct PyEngine {
 }
 ```
 
-## Python `Bot` (`hexo.bot`)
+## Python `Bot` (`hammerhead.bot`)
 
 High-level convenience over one `Engine`.
 
@@ -101,7 +101,7 @@ class Bot:
 The "play 1 or 2" decision is driven by the engine's `halfmove`: after
 the first stone, if `halfmove == 1` the same side continues.
 
-## Subprocess protocol (`hexo bot`)
+## Subprocess protocol (`hammerhead bot`)
 
 One command per line, one line per response. Used by the Phase 11
 promotion harness. Coordinates are integers `q r`, space-separated.
@@ -123,31 +123,31 @@ Errors are emitted as `error: <message>` on a single line. The session
 continues unless the offending command was `quit`. Unknown commands
 return `error: unknown command <CMD>`.
 
-Startup: the process emits `hexo bot ready` to stdout once and flushes
+Startup: the process emits `hammerhead bot ready` to stdout once and flushes
 before reading the first command, so clients can synchronize on it.
 
-## CLI (`hexo`)
+## CLI (`hammerhead`)
 
 ```bash
-hexo play                            # human vs bot REPL
-hexo selfplay -n N                   # bot vs bot, log winners
-hexo bench [--time-ms T]             # NPS smoke
-hexo analyze <bsn>                   # placeholder (BSN parsing is Phase 12+)
-hexo bot [--tt-size-mb MB]           # subprocess protocol (above)
-hexo match CURRENT BEST              # generic two-binary match (Phase 11)
-hexo promote [--dry-run]             # current vs .bestref worktree (Phase 11)
+hammerhead play                            # human vs bot REPL
+hammerhead selfplay -n N                   # bot vs bot, log winners
+hammerhead bench [--time-ms T]             # NPS smoke
+hammerhead analyze <bsn>                   # placeholder (BSN parsing is Phase 12+)
+hammerhead bot [--tt-size-mb MB]           # subprocess protocol (above)
+hammerhead match CURRENT BEST              # generic two-binary match (Phase 11)
+hammerhead promote [--dry-run]             # current vs .bestref worktree (Phase 11)
 ```
 
 The match commands accept ``--n N --time-ms T --test sprt|wilson|raw``.
 Exit codes: ``0`` if the final verdict is ``PROMOTE``; ``1`` otherwise
-(``REJECT`` or ``INCONCLUSIVE``). ``hexo promote`` rewrites and commits
+(``REJECT`` or ``INCONCLUSIVE``). ``hammerhead promote`` rewrites and commits
 ``.bestref`` atomically on ``PROMOTE`` unless ``--dry-run`` is set; on
 commit failure the file is rolled back to its prior contents.
 
 ## Build
 
 ```
-make build    # maturin develop --release + pip install -e ../hexo
+make build    # maturin develop --release + pip install -e ../hammerhead
 make test     # cargo test --release + pytest
 make check    # lint + test
 ```
@@ -161,8 +161,8 @@ make check    # lint + test
 
 ## Versioning
 
-Engine version in `hexo-engine/Cargo.toml`. Re-exported as
-`hexo_engine.__version__`.
+Engine version in `hammerhead-engine/Cargo.toml`. Re-exported as
+`hammerhead_engine.__version__`.
 
-BSN / HXN / BKE parsers (`hexo.notation`) are deferred to a later
-phase. Until they land, `hexo analyze` is a stub.
+BSN / HXN / BKE parsers (`hammerhead.notation`) are deferred to a later
+phase. Until they land, `hammerhead analyze` is a stub.

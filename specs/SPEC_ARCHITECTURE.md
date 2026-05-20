@@ -1,4 +1,4 @@
-# HeXO Bot — Architecture Spec
+# Hammerhead — Architecture Spec
 
 ## Goal
 
@@ -15,7 +15,7 @@ Minimax engine. Beat SealBot. Fast. Clean.
 ```
 hexo.toml                   single source of truth for engine tuning (SPEC_CONFIG.md)
 
-hexo-engine/                Rust crate
+hammerhead-engine/          Rust crate
 ├── Cargo.toml
 ├── pyproject.toml          maturin build config
 ├── build.rs                reads ../hexo.toml, codegens src/config_generated.rs
@@ -40,9 +40,9 @@ hexo-engine/                Rust crate
     ├── eval_tests.rs
     └── search_tests.rs
 
-hexo/                       Python package
+hammerhead/                 Python package
 ├── pyproject.toml
-├── hexo/
+├── hammerhead/
 │   ├── __init__.py
 │   ├── config.py           reads ../hexo.toml via tomllib (SPEC_CONFIG.md)
 │   ├── bot.py              high-level Bot class
@@ -112,7 +112,7 @@ Note: Rust edition 2026 does not exist. The most recent stable edition is
 
 ```
 pip install maturin
-cd hexo-engine
+cd hammerhead-engine
 maturin develop --release   # builds Rust, installs Python module
 ```
 

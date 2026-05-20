@@ -1,4 +1,4 @@
-# HeXO Minimax Bot
+# Hammerhead
 
 Rust core + PyO3 bindings + Python interface. Minimax engine for
 [HeXO](https://hexo.did.science/), the 2-stones-per-turn hexagonal
@@ -19,7 +19,7 @@ Minimax + alpha-beta. WSC threat eval. Fast NPS. Win.
 ## Build
 
 ```bash
-make build         # maturin develop --release + pip install -e hexo
+make build         # maturin develop --release + pip install -e hammerhead
 make test          # cargo test + pytest
 make check         # lint + test
 ```
@@ -28,10 +28,10 @@ Manual equivalent:
 
 ```bash
 pip install maturin
-cd hexo-engine
+cd hammerhead-engine
 maturin develop --release
-pip install -e ../hexo
-pytest hexo/tests
+pip install -e ../hammerhead
+pytest hammerhead/tests
 ```
 
 ## Development
@@ -47,15 +47,15 @@ make lint          # clippy with pedantic
 After `make build`:
 
 ```bash
-hexo play                       # human vs bot REPL
-hexo selfplay -n 10             # bot vs bot, 10 games
-hexo bench --time-ms 1000       # NPS smoke
-hexo bot                        # subprocess protocol (Phase 11 harness)
-hexo match A_CMD B_CMD          # generic two-binary match
-hexo promote [--dry-run]        # current vs .bestref worktree
+hammerhead play                       # human vs bot REPL
+hammerhead selfplay -n 10             # bot vs bot, 10 games
+hammerhead bench --time-ms 1000       # NPS smoke
+hammerhead bot                        # subprocess protocol (Phase 11 harness)
+hammerhead match A_CMD B_CMD          # generic two-binary match
+hammerhead promote [--dry-run]        # current vs .bestref worktree
 ```
 
-The `hexo bot` subcommand exposes a line-oriented stdin/stdout protocol
+The `hammerhead bot` subcommand exposes a line-oriented stdin/stdout protocol
 used by the promotion harness. See `specs/SPEC_API.md` for the command
 list.
 
@@ -82,8 +82,8 @@ See [SPEC_CONFIG](specs/SPEC_CONFIG.md).
 ## Layout
 
 - `hexo.toml` source of truth for engine tuning
-- `hexo-engine/` Rust core, PyO3 bindings
-- `hexo/` Python wrapper, bot, CLI, benchmarks
+- `hammerhead-engine/` Rust core, PyO3 bindings
+- `hammerhead/` Python wrapper, bot, CLI, benchmarks
 - `specs/` source-of-truth specs
 
 ## Specs
