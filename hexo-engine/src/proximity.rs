@@ -149,6 +149,61 @@ impl SparseCellSet {
     }
 }
 
+/// Outer (r=8, legality) and inner (r=2, move-gen) per-cell proximity
+/// refcounts as flat `u8` arrays.
+///
+/// `u8` is sufficient: a cell's count is the number of pieces within
+/// range, bounded by `hex_area(8) ≈ 217 < 255`. `place` bumps via
+/// `saturating_add` so a pathological position cannot wrap; a
+/// `debug_assert` flags it in dev builds. A `0` count is exactly
+/// "no piece in range" — the flat array has no absent/present
+/// distinction, which removes the old `remove_proximity`
+/// panic-on-missing invariant.
+pub struct ProximityCounts {
+    /// r=8 legality refcount, indexed by [`prox_idx`].
+    pub(crate) outer: Box<[u8]>,
+    /// r=2 move-gen refcount, indexed by [`prox_idx`].
+    pub(crate) inner: Box<[u8]>,
+}
+
+impl Default for ProximityCounts {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProximityCounts {
+    /// Two zeroed flat fields. Allocated once; reused across [`Self::clear`].
+    #[must_use]
+    #[cold]
+    pub fn new() -> Self {
+        Self {
+            outer: vec![0u8; PROX_FIELD_SIZE].into_boxed_slice(),
+            inner: vec![0u8; PROX_FIELD_SIZE].into_boxed_slice(),
+        }
+    }
+
+    /// Zero both fields, keeping the allocations.
+    pub fn clear(&mut self) {
+        self.outer.fill(0);
+        self.inner.fill(0);
+    }
+
+    /// Outer (r=8) refcount at `c`. `> 0` ⟺ `c` is within legality range.
+    #[inline]
+    #[must_use]
+    pub fn outer_at(&self, c: Coord) -> u8 {
+        self.outer[prox_idx(c)]
+    }
+
+    /// Inner (r=2) refcount at `c`. `> 0` ⟺ `c` is move-gen-adjacent.
+    #[inline]
+    #[must_use]
+    pub fn inner_at(&self, c: Coord) -> u8 {
+        self.inner[prox_idx(c)]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +270,23 @@ mod tests {
         // Reusable after clear.
         assert!(s.insert(c(1, 1)));
         assert!(s.contains(c(1, 1)));
+    }
+
+    #[test]
+    fn proximity_counts_start_zero() {
+        let p = ProximityCounts::new();
+        assert_eq!(p.outer_at(c(0, 0)), 0);
+        assert_eq!(p.inner_at(c(13, -8)), 0);
+    }
+
+    #[test]
+    fn proximity_counts_clear_zeroes_field() {
+        let mut p = ProximityCounts::new();
+        p.outer[prox_idx(c(2, 2))] = 7;
+        p.inner[prox_idx(c(-3, 1))] = 4;
+        p.clear();
+        assert_eq!(p.outer_at(c(2, 2)), 0);
+        assert_eq!(p.inner_at(c(-3, 1)), 0);
     }
 
     #[test]
