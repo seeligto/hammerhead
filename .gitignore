@@ -26,6 +26,9 @@ benches/results/*.json
 benches/results/flamegraph-*.folded.txt
 target/criterion/
 
+# Bench-tier local cache (Phase 16) — per-developer quick/perf baselines.
+.hexo/
+
 # Promotion harness (Phase 11) — worktree of the locked best engine.
 .worktree-best/
 

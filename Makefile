@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help build clean rebuild test lint fmt check vs promote install \
-        bench bench-micro bench-diff bench-baseline flamegraph pgo
+        bench bench-quick bench-perf bench-micro bench-micro-quick \
+        bench-diff bench-baseline flamegraph pgo
 
 ENGINE    := hexo-engine
 PY        := hexo
@@ -68,6 +69,9 @@ check: lint test ## lint + test (CI gate)
 
 bench: ## full sweep, write canonical JSON to benches/results/
 	@$(VPY) -m hexo.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
+
+bench-quick: ## [Phase 16] inner-loop NPS+depth+cyc/node check (~5-15s)
+	@$(VPY) -m hexo.cli bench quick
 
 bench-micro: ## criterion benches for one TARGET (default: all) + drain
 	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET)

@@ -50,6 +50,17 @@ def test_detect_cpu_ghz_positive():
     assert bench.detect_cpu_ghz() > 0.0
 
 
+def test_bench_quick_smoke():
+    r = bench.bench_quick(fixture="empty", time_ms=10, runs=2)
+    assert isinstance(r, bench.QuickResult)
+    assert r.fixture == "empty"
+    assert r.time_ms == 10
+    assert r.runs == 2
+    assert r.nps_mean > 0.0
+    assert r.cycles_per_node_mean > 0.0
+    assert r.depth_reached >= 1
+
+
 def test_bench_threat_latency_positive_times():
     r = bench.bench_threat_latency(fixture="midgame_12", n_calls=10)
     assert isinstance(r, bench.ThreatLatencyResult)

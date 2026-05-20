@@ -15,6 +15,7 @@ operate on identical positions.
 from __future__ import annotations
 
 import json
+import statistics
 import time
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -45,6 +46,20 @@ class DepthAtTimeResult:
     fixture: str
     time_ms: int
     depth_reached: int
+
+
+@dataclass(frozen=True, slots=True)
+class QuickResult:
+    """One ``bench-quick`` / ``bench-perf`` cell. See
+    ``specs/SPEC_BENCHMARKS.md`` § Bench tiers."""
+
+    fixture: str
+    time_ms: int
+    nps_mean: float
+    nps_stddev: float
+    cycles_per_node_mean: float
+    depth_reached: int
+    runs: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +249,82 @@ def cycles_per_node(
     if nodes == 0:
         return float("inf")
     return (ghz * 1e9 * time_s) / nodes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tiered bench — quick (inner loop) + perf (pre-commit). Phase 16.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def bench_quick(
+    fixture: str = "midgame_12",
+    time_ms: int = 500,
+    runs: int = 3,
+    tt_size_mb: Optional[int] = None,
+) -> QuickResult:
+    """Single-fixture, multi-run NPS+depth+cycles/node check.
+
+    Each run rebuilds the engine (cold TT). Aggregates: NPS mean /
+    stddev, mean cycles/node, median depth reached. The inner-loop
+    feedback tier — completes in ~5-15 s at the default 500 ms budget.
+    """
+    if runs < 1:
+        raise ValueError("runs must be >= 1")
+    cpu_ghz = detect_cpu_ghz()
+    nps_values: list[float] = []
+    cpn_values: list[float] = []
+    depths: list[int] = []
+    for _ in range(runs):
+        eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
+        _q, _r, _score, depth, nodes, t_ms = eng.bench_best_move(
+            time_ms=time_ms
+        )
+        nodes = int(nodes)
+        elapsed_s = max(int(t_ms), 1) / 1000.0
+        nps_values.append(nodes / elapsed_s)
+        cpn_values.append(cycles_per_node(nodes, elapsed_s, cpu_ghz))
+        depths.append(int(depth))
+    return QuickResult(
+        fixture=fixture,
+        time_ms=time_ms,
+        nps_mean=statistics.mean(nps_values),
+        nps_stddev=statistics.stdev(nps_values) if runs > 1 else 0.0,
+        cycles_per_node_mean=statistics.mean(cpn_values),
+        depth_reached=int(statistics.median(depths)),
+        runs=runs,
+    )
+
+
+def bench_perf(
+    fixtures: Optional[list[str]] = None,
+    time_ms_buckets: Optional[list[int]] = None,
+    runs: Optional[int] = None,
+    tt_size_mb: Optional[int] = None,
+) -> list[QuickResult]:
+    """Two-fixture × multi-budget NPS+cycles/node sweep.
+
+    The pre-commit tier: one :class:`QuickResult` per
+    ``(fixture, time_ms)`` cell. Defaults come from ``[bench.perf]``.
+    """
+    fx = fixtures if fixtures is not None else list(CONFIG.bench.perf.fixtures)
+    budgets = (
+        time_ms_buckets
+        if time_ms_buckets is not None
+        else list(CONFIG.bench.perf.time_ms)
+    )
+    n = runs if runs is not None else CONFIG.bench.perf.runs
+    out: list[QuickResult] = []
+    for fixture in fx:
+        for budget in budgets:
+            out.append(
+                bench_quick(
+                    fixture=fixture,
+                    time_ms=budget,
+                    runs=n,
+                    tt_size_mb=tt_size_mb,
+                )
+            )
+    return out
 
 
 def bench_threat_latency(

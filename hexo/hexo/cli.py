@@ -4,7 +4,8 @@ Subcommands:
 
 * ``play``     — human vs bot REPL
 * ``selfplay`` — bot vs bot, log winners
-* ``bench``    — benchmark suite (micro/nps/depth/threats/selfplay/all/diff)
+* ``bench``    — benchmark suite (micro/quick/perf/nps/depth/threats/
+  selfplay/reference/scaling/breakdown/all/diff)
 * ``analyze``  — placeholder until BSN parser ships
 * ``bot``      — line-based subprocess protocol (Phase 11 harness)
 """
@@ -127,6 +128,10 @@ def cmd_selfplay(args: argparse.Namespace) -> int:
 _REPO_ROOT = CONFIG.source_path.parent
 _RESULTS_DIR = _REPO_ROOT / CONFIG.bench.results_dir
 
+# Per-developer, per-checkout bench-tier cache (.hexo/ is gitignored).
+_QUICK_CACHE = _REPO_ROOT / ".hexo" / "quick_baseline.json"
+_PERF_CACHE = _REPO_ROOT / ".hexo" / "perf_baseline.json"
+
 
 def _git_sha() -> str:
     try:
@@ -172,6 +177,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_scaling(args)
     if sub == "breakdown":
         return _bench_breakdown(args)
+    if sub == "quick":
+        return _bench_quick(args)
+    if sub == "perf":
+        return _bench_perf(args)
     if sub == "all":
         return _bench_all(args)
     if sub == "diff":
@@ -366,6 +375,79 @@ def _bench_breakdown(args: argparse.Namespace) -> int:
             f"  {r.pct_cycles:>9.2f}%"
         )
     return 0
+
+
+def _bench_quick(args: argparse.Namespace) -> int:
+    """Inner-loop tier: single fixture, one budget, multi-run."""
+    qcfg = CONFIG.bench.quick
+    r = bench.bench_quick(
+        fixture=args.fixture or qcfg.default_fixture,
+        time_ms=args.time_ms or qcfg.default_time_ms,
+        runs=args.runs or qcfg.default_runs,
+    )
+    delta = ""
+    prev = _read_json(_QUICK_CACHE)
+    if (
+        isinstance(prev, dict)
+        and prev.get("fixture") == r.fixture
+        and prev.get("time_ms") == r.time_ms
+        and prev.get("nps_mean")
+    ):
+        pct = (r.nps_mean - prev["nps_mean"]) / prev["nps_mean"] * 100.0
+        sign = "+" if pct >= 0 else ""
+        delta = f" (Δ {sign}{pct:.1f}% vs last)"
+    print(
+        f"quick: {r.nps_mean / 1000:.0f}k ± {r.nps_stddev / 1000:.0f}k NPS, "
+        f"depth {r.depth_reached}, "
+        f"{r.cycles_per_node_mean:.0f} cyc/node{delta}"
+    )
+    _QUICK_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _QUICK_CACHE.write_text(json.dumps(asdict(r), indent=2))
+    return 0
+
+
+def _bench_perf(args: argparse.Namespace) -> int:
+    """Pre-commit tier: two fixtures × two budgets, multi-run."""
+    del args  # config-driven, no flags
+    rows = bench.bench_perf()
+    prev_rows = _read_json(_PERF_CACHE)
+    prev_map: dict[tuple[str, int], dict] = {}
+    if isinstance(prev_rows, list):
+        for p in prev_rows:
+            if isinstance(p, dict) and "fixture" in p and "time_ms" in p:
+                prev_map[(p["fixture"], p["time_ms"])] = p
+    header = (
+        f"{'fixture':<14} {'budget':>8}  {'nps_mean':>10}  "
+        f"{'cyc/node':>9}  {'depth':>5}  {'Δ vs last':>10}"
+    )
+    print(header)
+    print("─" * len(header))
+    for r in rows:
+        prev = prev_map.get((r.fixture, r.time_ms))
+        if prev and prev.get("nps_mean"):
+            pct = (r.nps_mean - prev["nps_mean"]) / prev["nps_mean"] * 100.0
+            sign = "+" if pct >= 0 else ""
+            delta = f"{sign}{pct:.1f}%"
+        else:
+            delta = "—"
+        print(
+            f"{r.fixture:<14} {str(r.time_ms) + 'ms':>8}  "
+            f"{r.nps_mean / 1000:>9.0f}k  {r.cycles_per_node_mean:>9.0f}  "
+            f"{r.depth_reached:>5}  {delta:>10}"
+        )
+    _PERF_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _PERF_CACHE.write_text(json.dumps([asdict(r) for r in rows], indent=2))
+    return 0
+
+
+def _read_json(path: Path):
+    """Best-effort JSON load; returns ``None`` on missing / corrupt file."""
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def _bench_all(args: argparse.Namespace) -> int:
@@ -916,6 +998,30 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="fixed search depth; defaults to [bench.breakdown]",
+    )
+
+    bs = bsub.add_parser(
+        "quick", help="inner-loop NPS+depth+cyc/node check (~5-15s)"
+    )
+    bs.add_argument(
+        "--fixture", default=None, help="fixture; defaults to [bench.quick]"
+    )
+    bs.add_argument(
+        "--time-ms",
+        type=int,
+        default=None,
+        help="time budget; defaults to [bench.quick]",
+    )
+    bs.add_argument(
+        "--runs",
+        type=int,
+        default=None,
+        help="number of runs; defaults to [bench.quick]",
+    )
+
+    bsub.add_parser(
+        "perf",
+        help="two-fixture × multi-budget NPS+cyc/node check (~30-60s)",
     )
 
     bs = bsub.add_parser("all", help="full sweep → canonical JSON")
