@@ -61,6 +61,22 @@ def test_bench_quick_smoke():
     assert r.depth_reached >= 1
 
 
+def test_bench_quick_rejects_zero_runs():
+    with pytest.raises(ValueError):
+        bench.bench_quick(fixture="empty", time_ms=10, runs=0)
+
+
+def test_bench_perf_smoke():
+    rows = bench.bench_perf(
+        fixtures=["empty", "single_origin"], time_ms_buckets=[10], runs=2
+    )
+    assert len(rows) == 2
+    assert all(isinstance(r, bench.QuickResult) for r in rows)
+    assert {r.fixture for r in rows} == {"empty", "single_origin"}
+    assert all(r.nps_mean > 0.0 for r in rows)
+    assert all(r.cycles_per_node_mean > 0.0 for r in rows)
+
+
 def test_bench_threat_latency_positive_times():
     r = bench.bench_threat_latency(fixture="midgame_12", n_calls=10)
     assert isinstance(r, bench.ThreatLatencyResult)

@@ -73,6 +73,9 @@ bench: ## full sweep, write canonical JSON to benches/results/
 bench-quick: ## [Phase 16] inner-loop NPS+depth+cyc/node check (~5-15s)
 	@$(VPY) -m hexo.cli bench quick
 
+bench-perf: ## [Phase 16] two-fixture × multi-budget NPS+cyc/node (~30-60s)
+	@$(VPY) -m hexo.cli bench perf
+
 bench-micro: ## criterion benches for one TARGET (default: all) + drain
 	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET)
 	@cd $(ENGINE) && cargo build --release --example bench_drain
