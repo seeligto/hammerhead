@@ -172,6 +172,7 @@ fn blocks_opp_s0_outranks_creates_s1() {
 // 6. Killer placement: beats history, loses to bucket-4+
 // ────────────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn killer_beats_history_loses_to_s1() {
     let mut b = Board::new();
@@ -192,6 +193,30 @@ fn killer_beats_history_loses_to_s1() {
     assert_eq!(moves[0], s1_cell, "creates_s1 (bucket 4) wins");
     assert_eq!(moves[1], killer_cell, "killer (bucket 3) beats history");
     assert_eq!(moves[2], history_cell, "history (bucket 1) last");
+}
+
+/// Phase 16: with the `eval_s1s2` feature off the creates-S1 bucket is
+/// gone, so the S1 cell falls through to bucket 1 — the killer still
+/// wins and the two bucket-1 moves sort by history score.
+#[cfg(not(feature = "eval_s1s2"))]
+#[test]
+fn killer_beats_history_s1_falls_through() {
+    let mut b = Board::new();
+    x_at(&mut b, &[(0, 5), (1, 5)]);
+    x_at(&mut b, &[(0, 0)]);
+    let mut state = OrderingState::new();
+    let killer_cell = mv(20, 20);
+    let history_cell = mv(30, 30);
+    let s1_cell = mv(2, 5);
+    let mut killers = KillerSlot::default();
+    killers.push(killer_cell);
+    state.history.insert((history_cell, Player::X), 42);
+    let c = ctx(&b, Player::X, None, &killers, &state.history, &[]);
+    let mut moves = list(&[history_cell, killer_cell, s1_cell]);
+    order_moves(&mut moves, &c);
+    assert_eq!(moves[0], killer_cell, "killer (bucket 3) wins");
+    assert_eq!(moves[1], history_cell, "history 42 beats history 0");
+    assert_eq!(moves[2], s1_cell, "creates_s1 ablated → bucket 1, history 0");
 }
 
 // ────────────────────────────────────────────────────────────────────────

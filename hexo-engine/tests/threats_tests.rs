@@ -198,8 +198,13 @@ fn rotation_preserves_counts() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 13-17: cross-axis shapes
+//
+// Phase 16: these detect S1/S2 cross-axis shapes, which are compiled
+// out when the `eval_s1s2` feature is off (`anchor_cross_axis` returns
+// a zero contribution). The tests are gated to match.
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn triangle_upward() {
     let mut b = fresh();
@@ -208,6 +213,7 @@ fn triangle_upward() {
     assert_eq!(t.counts.triangle, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn triangle_downward() {
     let mut b = fresh();
@@ -216,6 +222,7 @@ fn triangle_downward() {
     assert_eq!(t.counts.triangle, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn rhombus_qr() {
     let mut b = fresh();
@@ -224,6 +231,7 @@ fn rhombus_qr() {
     assert_eq!(t.counts.rhombus, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn rhombus_qs() {
     let mut b = fresh();
@@ -232,6 +240,7 @@ fn rhombus_qs() {
     assert_eq!(t.counts.rhombus, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn arch_pattern() {
     let mut b = fresh();
@@ -241,6 +250,7 @@ fn arch_pattern() {
     assert_eq!(t.counts.arch, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn trapezoid_pattern() {
     let mut b = fresh();
@@ -249,6 +259,7 @@ fn trapezoid_pattern() {
     assert_eq!(t.counts.trapezoid, 1);
 }
 
+#[cfg(feature = "eval_s1s2")]
 #[test]
 fn bone_pattern() {
     let mut b = fresh();
