@@ -9,6 +9,7 @@ pub mod coords;
 pub mod eval;
 pub mod moves;
 pub mod ordering;
+pub mod proximity;
 pub mod pybind;
 pub mod search;
 pub mod threats;
