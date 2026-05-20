@@ -361,19 +361,19 @@ Phase 17 took a **hybrid** path rather than ripping the code out:
   all `0`. `layer2_shapes` therefore contributes the S0 shapes only.
 - **`tempo_score` removed** (it read the `open_3` S1 metric — see
   § Tempo).
-- **Ordering bucket kept** — the creates-S1 ordering bucket is a pure
-  move-ordering heuristic, not an eval term. The ablation A/B toggled
-  only the eval contribution (`set_eval_s1s2`, a runtime flag read by
-  `eval()`); the ordering bucket is gated by the compile-time
-  `eval_s1s2` feature and was active for *both* ablation sides. Under
-  alpha-beta, move ordering never changes the move chosen at a fixed
-  depth — it only affects cutoff speed — so the verdict says nothing
-  against it, and disabling it would only cost search depth. It stays.
+- **Ordering bucket disabled** — the creates-S1 bucket (encoding
+  value 4) no longer fires; a creates-S1 move falls through to the
+  killer / history buckets. A back-to-back A/B (`bench perf`,
+  bucket-on vs bucket-off builds) confirmed this is the faster
+  configuration: ~9 % higher NPS on `midgame_12` with identical
+  search depth. In the midgame nearly every move makes some 3-run, so
+  the bucket is too unselective to earn its per-move `creates_s1`
+  probe cost.
 - **Detection retained** — `ThreatCounts` keeps all S1/S2 fields, the
   cross-axis pattern matchers (`anchor_cross_axis`) still run, the
-  `creates_s1` predicate stays live (ordering bucket), and the
-  `eval_s1s2` Cargo feature + `Engine::set_eval_s1s2` toggle stay in
-  place.
+  `creates_s1` predicate is kept (unused, behind the feature), and
+  the `eval_s1s2` Cargo feature + `Engine::set_eval_s1s2` toggle stay
+  in place.
 
 Rationale: the investigation found the *detection* sound and the
 *weights* mis-tuned (double-counting against Layer 1, magnitudes on
