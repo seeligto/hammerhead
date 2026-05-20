@@ -11,7 +11,9 @@ Three layers:
 2. Shape detection (named WSC patterns)
 3. Fork detection (multi-threat overlap)
 
-Plus advisory tempo term.
+(Phase 5–16 also carried an advisory tempo term; Phase 17 dropped it
+together with the S1/S2 contributions — see § Tempo and § Layer 2
+ablation.)
 
 ## Layer 1: Window Scan
 
@@ -213,18 +215,20 @@ Disjoint quads (separated, no shared piece): defender handles sequentially. Sum 
 
 Overlapping quads (V/T/Y/L/scissors): score × 1.5 bonus.
 
-## Tempo (advisory)
+## Tempo (advisory) — removed in Phase 17
 
-Per uncreative172 / webcatlliope tempo notation:
-- Each unblocked open_3 contributes `+1` tempo.
-- Each isolated open_2 or closed_3 contributes `+0` (no eval impact).
-- Each closed_2 attached to opponent strength contributes `-1`.
+Phases 5–16 carried an advisory tempo term:
 
-Tempo score = `tempo_weight * (X_tempo - O_tempo)`.
-`tempo_weight` ≪ Layer 2 weights — real tempo emerges from search depth.
+> Tempo score = `tempo_weight * (X.open_3 - O.open_3)` (only the
+> open_3 delta term shipped; the `+0` / `-1` cases were deferred).
 
-Phase 5 v1 covers only the open_3 delta term; the `+0` / `-1` terms are
-deferred until the shape detector exposes the matching counts.
+Phase 17 removed `tempo_score` entirely. It was derived from the
+`open_3` count — an S1 metric — and the S1/S2 ablation A/B found the
+S1/S2 family net-negative (see § Layer 2 ablation). With S1/S2
+contributions zeroed, keeping a single open_3-derived term in
+isolation had no justification, so the function and its callsite were
+dropped. `tempo_weight` remains in `hexo.toml` (unused) for a future
+eval-tuning phase.
 
 ## Eval Pseudocode
 
@@ -247,7 +251,6 @@ pub fn eval(board: &Board) -> i32 {
     score += layer1_window_scan(board);
     score += layer2_shapes(&tx.counts) - layer2_shapes(&to.counts);
     score += fork_x - fork_o;
-    score += tempo_score(&tx, &to);
     score
 }
 ```
@@ -346,7 +349,35 @@ via the parallel ablation harness:
 The Wilson upper bound (35.6 %) is well below 50 %, so the decision
 matrix yields **DROP** outright — Match 2 (100 games @ 1 s) was not
 needed. The signal is stronger and tighter than the Phase 16 probe.
-
-S1/S2 is removed in Phase 17 STEP 3 — see § Layer 2 (post-Phase-17)
-above and `subagents/scans/phase17-s1s2-investigation.md` for the
+See `subagents/scans/phase17-s1s2-investigation.md` for the
 why-it-hurts analysis.
+
+### Phase 17 implementation — hybrid removal (contributions zeroed)
+
+Phase 17 took a **hybrid** path rather than ripping the code out:
+
+- **S1/S2 shape weights zeroed** in `hexo.toml` — `open_3`, `rhombus`,
+  `arch`, `bone`, `trapezoid`, `open_2`, `closed_3`, `triangle` are
+  all `0`. `layer2_shapes` therefore contributes the S0 shapes only.
+- **`tempo_score` removed** (it read the `open_3` S1 metric — see
+  § Tempo).
+- **Ordering bucket disabled** — the creates-S1 bucket (encoding
+  value 4) no longer fires; a creates-S1 move falls through to the
+  killer / history buckets.
+- **Detection retained** — `ThreatCounts` keeps all S1/S2 fields, the
+  cross-axis pattern matchers (`anchor_cross_axis`) still run, the
+  `creates_s1` predicate is kept (unused, behind the feature), and
+  the `eval_s1s2` Cargo feature + `Engine::set_eval_s1s2` toggle stay
+  in place.
+
+Rationale: the investigation found the *detection* sound and the
+*weights* mis-tuned (double-counting against Layer 1, magnitudes on
+par with genuine open-fours). That is a tuning problem, not a
+detection bug. Zeroing the weights captures the full strength gain of
+removal while preserving a tunable surface — a dedicated eval-tuning
+phase can re-enable S1/S2 by editing `hexo.toml` weights, with no code
+archaeology. The one residual cost is that the cross-axis matchers
+still run in `threats::compute`; if a later profile shows this
+matters, gate them then.
+
+See `SPEC_ROADMAP.md` Phase 18+ candidates → "Eval tuning".

@@ -798,7 +798,8 @@ through unchanged. The threshold for "mate-class" is
 
 ## Ordering (`ordering.rs`)
 
-Stable bucket sort over candidate moves. Buckets, highest priority first:
+Stable bucket sort over candidate moves. Buckets, highest priority first
+(numbering as of Phase 17 — the creates-S1 bucket was removed):
 
   1. TT best move
   2. Winning move (creates 6-in-row)
@@ -808,14 +809,19 @@ Stable bucket sort over candidate moves. Buckets, highest priority first:
      passes the defense cells of that threat as `stone1_s0_defense`)
   5. Creates S0 threat (open-4 / closed-5 / open-5)
   6. Blocks opponent S0 threat
-  7. Creates S1 threat (open-3 / rhombus / arch / bone / trapezoid)
-  8. Killer move at this ply (2 slots, OR over both)
-  9. History heuristic
- 10. Static delta-eval / proximity tie-break
+  7. Killer move at this ply (2 slots, OR over both)   — was 8
+  8. History heuristic                                 — was 9
+  9. Static delta-eval / proximity tie-break           — was 10
+
+Phase 17 disabled the old bucket 7, "Creates S1 threat" (the S1/S2
+ablation A/B was net-negative — see `SPEC_EVAL.md § Layer 2 ablation`).
+A creates-S1 move now falls through to the killer / history buckets.
 
 Encoding: `u32 priority = (bucket << 24) | (history_score & 0x00FF_FFFF)`.
-Buckets 1–8 occupy bucket values 10..3 respectively; bucket 9 has bucket
-value 1; bucket 10 has bucket value 0. Higher `u32` = sorted earlier.
+Buckets 1–6 occupy bucket values 10..5 respectively; bucket 7 (killer)
+has bucket value 3; bucket 8 (history) has bucket value 1; bucket 9
+(static) has bucket value 0. Encoding values 4 (the removed creates-S1
+bucket) and 2 are unused gaps. Higher `u32` = sorted earlier.
 
 History values are clamped to `HISTORY_CUTOFF_MAX = 0x00FF_FFFF` (24 bits).
 
@@ -849,8 +855,10 @@ inner loop. v1 uses cheap virtual-place axis-run probes:
 - **creates_s1**: the same virtual-place probe triggers when `total ≥ 3`
   on any axis. Catches open-3 directly and most rhombus / arch /
   trapezoid / bone extensions whose added stone is collinear with two
-  existing stones. Pure non-collinear cross-axis shapes are
-  bucket-7 noise per spec.
+  existing stones. Phase 17 disabled the creates-S1 ordering bucket, so
+  this predicate currently has no caller — it is retained (behind the
+  `eval_s1s2` feature) as a tunable surface for the deferred
+  eval-tuning phase.
 
 Both predicates are O(constant) in the hex neighbourhood of `m`.
 
