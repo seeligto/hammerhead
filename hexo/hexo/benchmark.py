@@ -197,6 +197,45 @@ def bench_depth_at_time(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# cycles/node — Phase 16
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def detect_cpu_ghz() -> float:
+    """Current CPU clock in GHz, read from ``/proc/cpuinfo``.
+
+    Falls back to ``4.0`` when the file is unavailable (non-Linux, or a
+    sandboxed environment). The value is only used to scale the
+    ``cycles/node`` metric, which is a relative trend signal — an
+    inexact clock shifts every reading by the same factor.
+    """
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("cpu MHz"):
+                    return float(line.split(":")[1].strip()) / 1000.0
+    except OSError:
+        pass
+    return 4.0
+
+
+def cycles_per_node(
+    nodes: int, time_s: float, cpu_ghz: float | None = None
+) -> float:
+    """Estimated CPU cycles spent per search node.
+
+    ``(cpu_ghz * 1e9 * time_s) / nodes``. More sensitive than NPS for
+    inner-loop work: NPS can lift from a depth shift while per-node cost
+    regresses, but cycles/node is monotonic in per-node work. Returns
+    ``inf`` when ``nodes == 0`` (no division by zero).
+    """
+    ghz = cpu_ghz if cpu_ghz is not None else detect_cpu_ghz()
+    if nodes == 0:
+        return float("inf")
+    return (ghz * 1e9 * time_s) / nodes
+
+
 def bench_threat_latency(
     fixture: str,
     n_calls: int = 1000,

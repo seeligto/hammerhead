@@ -38,6 +38,18 @@ def test_bench_depth_at_time_reaches_at_least_one():
     assert r.depth_reached >= 1
 
 
+def test_cycles_per_node_basic():
+    assert bench.cycles_per_node(100_000, 1.0, cpu_ghz=4.0) == 40_000.0
+
+
+def test_cycles_per_node_zero_nodes_is_inf():
+    assert bench.cycles_per_node(0, 1.0, cpu_ghz=4.0) == float("inf")
+
+
+def test_detect_cpu_ghz_positive():
+    assert bench.detect_cpu_ghz() > 0.0
+
+
 def test_bench_threat_latency_positive_times():
     r = bench.bench_threat_latency(fixture="midgame_12", n_calls=10)
     assert isinstance(r, bench.ThreatLatencyResult)
