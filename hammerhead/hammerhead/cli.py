@@ -804,11 +804,15 @@ def _bot_cmd(venv_python: Path) -> list[str]:
 
 
 def _default_workers() -> int:
-    """Default ``--workers``: ``N_WORKERS`` env var, else 0 (auto)."""
-    try:
-        return int(os.environ.get("N_WORKERS", "0") or "0")
-    except ValueError:
-        return 0
+    """Default ``--workers``: ``N_WORKERS`` env var, else the
+    ``[bench.vs] default_n_workers`` config (0 = auto)."""
+    env = os.environ.get("N_WORKERS")
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            pass
+    return CONFIG.bench.vs.default_n_workers
 
 
 def _print_match_result(res: promote_mod.MatchResult, cfg: promote_mod.MatchConfig) -> None:
@@ -1088,8 +1092,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "ablation",
         help="Layer 2 S1/S2 ablation self-play A/B (Phase 16; parallel)",
     )
-    bs.add_argument("--games", type=int, default=50)
-    bs.add_argument("--time-ms", type=int, default=500)
+    bs.add_argument(
+        "--games", type=int, default=CONFIG.bench.vs.default_n_games
+    )
+    bs.add_argument(
+        "--time-ms", type=int, default=CONFIG.bench.vs.default_time_ms
+    )
     bs.add_argument(
         "--workers",
         type=int,
