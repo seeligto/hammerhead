@@ -491,6 +491,99 @@ fn emit_window_score_table(out: &mut String, cfg: &toml::Value) {
         .collect::<Vec<_>>()
         .join(", ");
     writeln!(out, "pub const WINDOW_SCORE: [i32; 729] = [{body}];").unwrap();
+
+    emit_window_score_8_table(out, cfg, &k_scores);
+}
+
+/// Emit `WINDOW_SCORE_8: [i32; 6561]` for the Phase-17 8-cell Layer-1
+/// window scan.
+///
+/// The 8-cell window covers positions `[p-1 .. p+6]`: cells `c1..=c6`
+/// are the original 6-cell inner window, `c0` / `c7` are the two
+/// boundary cells. Index =
+/// `c0 + 3 c1 + 9 c2 + 27 c3 + 81 c4 + 243 c5 + 729 c6 + 2187 c7`
+/// with cell codes `0=empty, 1=X, 2=O`, so `idx ∈ [0, 6561)`.
+///
+/// Each entry is the final per-window score with the extension factor
+/// pre-multiplied in: `base * factor`. `base` is the inner-window score
+/// (`±window_k_scores[k]`, or `0` for mixed/empty); `factor` is derived
+/// from `(c0, c7)` and reproduces `eval::extension_factor` exactly:
+/// both-empty → `open_extension_factor`, one-opponent-one-empty →
+/// `closed_extension_factor`, a same-colour boundary or both-opponent
+/// → `0`. The runtime scan is then a single table lookup — no boundary
+/// `is_set` probes, no multiply.
+fn emit_window_score_8_table(out: &mut String, cfg: &toml::Value, k_scores: &[i32]) {
+    let open_factor = i32::try_from(as_int(
+        get(cfg, &["engine", "eval", "open_extension_factor"]),
+        &["engine", "eval", "open_extension_factor"],
+    ))
+    .expect("open_extension_factor does not fit in i32");
+    let closed_factor = i32::try_from(as_int(
+        get(cfg, &["engine", "eval", "closed_extension_factor"]),
+        &["engine", "eval", "closed_extension_factor"],
+    ))
+    .expect("closed_extension_factor does not fit in i32");
+
+    let mut entries: Vec<i32> = Vec::with_capacity(6561);
+    for idx in 0..6561u16 {
+        // Decode the 8 ternary cells, LSB-first (c0 has weight 1).
+        let mut cells = [0u8; 8];
+        let mut n = idx;
+        for c in &mut cells {
+            *c = (n % 3) as u8;
+            n /= 3;
+        }
+        // Inner 6-cell window is c1..=c6.
+        let mut x_count: u8 = 0;
+        let mut o_count: u8 = 0;
+        for &cell in &cells[1..7] {
+            match cell {
+                1 => x_count += 1,
+                2 => o_count += 1,
+                _ => {}
+            }
+        }
+        let base = if x_count > 0 && o_count > 0 {
+            0
+        } else if x_count > 0 {
+            k_scores[x_count as usize]
+        } else if o_count > 0 {
+            -k_scores[o_count as usize]
+        } else {
+            0
+        };
+        // Fold the extension factor in. `own` / `opp` are relative to
+        // the inner window's colour; for base == 0 the entry is 0
+        // regardless, so the colour split is irrelevant there.
+        let v = if base == 0 {
+            0
+        } else {
+            let (own, opp) = if base > 0 { (1u8, 2u8) } else { (2u8, 1u8) };
+            let (c0, c7) = (cells[0], cells[7]);
+            // Mirrors `eval::extension_factor`: a same-colour boundary
+            // (already counted by a wider window) or both-opponent
+            // (dead) → 0; both-empty → open; one-opponent-one-empty →
+            // closed.
+            let factor = if c0 == own || c7 == own || (c0 == opp && c7 == opp) {
+                0
+            } else if c0 == 0 && c7 == 0 {
+                open_factor
+            } else {
+                closed_factor
+            };
+            base * factor
+        };
+        entries.push(v);
+    }
+    let body = entries
+        .iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    // `static` (not `const`): a 26 KB lookup table should live at one
+    // address, not be copied to every use site — also dodges
+    // `clippy::large_const_arrays`.
+    writeln!(out, "pub static WINDOW_SCORE_8: [i32; 6561] = [{body}];").unwrap();
 }
 
 fn emit_threats(out: &mut String, cfg: &toml::Value) {
