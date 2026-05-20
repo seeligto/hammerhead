@@ -169,9 +169,8 @@ fn priority(bucket: u8, history: u32) -> u32 {
 }
 
 /// Encoding value for `m` per `SPEC_ENGINE.md` "Ordering". First match
-/// wins; values 10..=1 (with gaps at 4 and 2 — value 4 was the
-/// Phase-17-disabled creates-S1 bucket, and 0 is reserved for the
-/// unused tie-break term). Higher = sorted earlier.
+/// wins; values 10..=1 (with a gap at 2, and 0 reserved for the unused
+/// tie-break term). Higher = sorted earlier.
 ///
 /// Exposed to the search crate so LMR and check-extension decisions can
 /// reuse the same predicates without recomputing them.
@@ -207,11 +206,13 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if blocks_opp_s0(ctx.board, m, ctx.side) {
         return 5;
     }
-    // Phase 17: the creates-S1 bucket (encoding value 4) is disabled —
-    // the S1/S2 ablation A/B was net-negative, so a creates-S1 move now
-    // falls through to the killer / history buckets. The `creates_s1`
-    // predicate itself is retained for the deferred eval-tuning phase.
-    // See `SPEC_EVAL.md § Layer 2 ablation`.
+    // Phase 16: the creates-S1 bucket is gated by the `eval_s1s2`
+    // feature. When it is off, the move falls through to the killer /
+    // history buckets. See `SPEC_EVAL.md § Layer 2 ablation`.
+    #[cfg(feature = "eval_s1s2")]
+    if creates_s1(ctx.board, m, ctx.side) {
+        return 4;
+    }
     if ctx.killers.contains(m) {
         return 3;
     }
@@ -300,13 +301,9 @@ pub(crate) fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
 /// added stone is collinear with two existing stones; pure non-collinear
 /// shapes are bucket-7 noise per spec.
 ///
-/// Gated by the `eval_s1s2` Cargo feature. Phase 17 disabled the
-/// creates-S1 ordering bucket (the S1/S2 ablation A/B was
-/// net-negative), so this predicate currently has no caller — it is
-/// retained, behind the feature, as a tunable surface for the deferred
-/// eval-tuning phase. See `SPEC_EVAL.md § Layer 2 ablation`.
+/// Gated by the `eval_s1s2` Cargo feature — when S1/S2 is ablated the
+/// creates-S1 ordering bucket is removed entirely (Phase 16).
 #[cfg(feature = "eval_s1s2")]
-#[allow(dead_code)]
 fn creates_s1(board: &Board, m: Coord, side: Player) -> bool {
     for axis in Axis::all() {
         if axis_run_through_empty(board, m, axis, side) >= 3 {
