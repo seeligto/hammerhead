@@ -559,23 +559,29 @@ falls back to `4.0` if unavailable. Documented in the output.
 stay in-process via the existing subprocess-Bot model, but multiple
 games run concurrently in worker processes.
 
-Worker model: a pool of N worker processes, each playing a
-configurable batch of games (default: ceil(total / N) games per
-worker). Workers receive game configs (opening, side assignment,
-seed) via a queue, return per-game records (result, plies,
-fastpath/timeout flags) via a result queue. Coordinator aggregates
-results and computes Wilson CI / Elo CI / SPRT decision.
+Worker model: a `multiprocessing.Pool` of N worker processes
+(`spawn` context) fed via `imap_unordered` — one game per task,
+work-stealing, so uneven game lengths self-balance. A `Pool`
+`initializer` broadcasts the two engine commands to each worker
+once. Each task spawns two fresh engine subprocesses, plays one
+game, and returns a `ParallelGameResult` (winner, plies,
+wall-seconds, `notes` for crashes/timeouts). The coordinator
+aggregates results, sorts by `game_idx`, and computes Wilson CI /
+Elo CI / SPRT decision; crashed games (`notes` set) are excluded
+from the tally.
 
 N defaults to `max(1, cpu_count() - 2)` (leaves headroom for OS +
 coordinator). Override via `N_WORKERS` env var or `--workers` CLI
 arg.
 
-Reproducibility: with `--seed SEED`, the assignment of (opening,
-side, RNG-stream-seed) → game-index is deterministic across runs
-and across worker counts. Two runs at the same total game count
-and seed produce identical match records (modulo timer noise; the
-engine's search is deterministic at fixed depth but a time-limited
-search depends on wall-clock).
+Reproducibility: `build_game_configs` assigns (game_idx → colour)
+deterministically — with `color_balance`, even indices play
+`current` as X. That assignment is identical across runs and
+worker counts. Game *outcomes* are not reproducible: the harness
+runs a time-limited search, which depends on wall-clock. (The
+parallel `bench ablation` runner additionally seeds a per-game
+opening RNG; the `vs` match harness has no opening book and takes
+no `--seed`.)
 
 Memory bound: 2 engines per game × 64 MB TT per engine × N workers
 ~ N × 128 MB resident. At default N=14 on a 16-core host: ~1.8 GB.
