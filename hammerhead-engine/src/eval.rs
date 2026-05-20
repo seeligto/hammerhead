@@ -447,3 +447,55 @@ fn pair_covers_all(insts: &[ThreatInstance], a: Coord, b: Coord) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{encode_ternary_8, encode_ternary_8_batch, encode_ternary_8_batch_scalar};
+
+    /// Decode an 8-cell ternary index `0..6561` into the matching
+    /// `(x_bits, o_bits)` pair. Each cell holds at most one stone, so
+    /// the two bit-masks are disjoint by construction.
+    fn decode_8cell_ternary(mut idx: u16) -> (u8, u8) {
+        let (mut x_bits, mut o_bits) = (0u8, 0u8);
+        for i in 0..8 {
+            match idx % 3 {
+                1 => x_bits |= 1 << i,
+                2 => o_bits |= 1 << i,
+                _ => {}
+            }
+            idx /= 3;
+        }
+        (x_bits, o_bits)
+    }
+
+    /// Phase 17 STEP 5 byte-identity gate: every legal 8-cell window
+    /// encodes to the same ternary index via the scalar reference
+    /// `encode_ternary_8`, the scalar batch wrapper, and the dispatch
+    /// `encode_ternary_8_batch` (which routes through the AVX2 path
+    /// when the host advertises it). All 6561 indices; the batch run
+    /// of 6561 exercises 410 full AVX2 iterations plus the scalar tail.
+    #[test]
+    fn simd_8cell_matches_scalar_all_6561() {
+        let mut x_in = vec![0u8; 6561];
+        let mut o_in = vec![0u8; 6561];
+        let mut expected = vec![0u16; 6561];
+        for idx in 0..6561u16 {
+            let (x, o) = decode_8cell_ternary(idx);
+            x_in[idx as usize] = x;
+            o_in[idx as usize] = o;
+            let scalar = encode_ternary_8(x, o);
+            assert_eq!(scalar, idx, "8-cell scalar round-trip broke at {idx}");
+            expected[idx as usize] = scalar;
+        }
+        let mut got = vec![0u16; 6561];
+        encode_ternary_8_batch(&x_in, &o_in, &mut got);
+        assert_eq!(got, expected, "encode_ternary_8_batch diverges from scalar");
+
+        let mut got_scalar = vec![0u16; 6561];
+        encode_ternary_8_batch_scalar(&x_in, &o_in, &mut got_scalar);
+        assert_eq!(
+            got_scalar, expected,
+            "encode_ternary_8_batch_scalar diverges from scalar"
+        );
+    }
+}
