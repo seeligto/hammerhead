@@ -113,13 +113,11 @@ ablation: ## [Phase 17] S1/S2 ablation A/B, N_GAMES games — parallel
 	    --games $(N_GAMES) --time-ms $(TIME_MS) --workers $(N_WORKERS)
 
 vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
-	@./scripts/setup_worktree.sh
 	@$(VPY) -m hammerhead.cli promote --dry-run \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
 	    --workers $(N_WORKERS)
 
 promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
-	@./scripts/setup_worktree.sh
 	@$(VPY) -m hammerhead.cli promote \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
 	    --workers $(N_WORKERS)
