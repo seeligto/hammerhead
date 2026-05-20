@@ -5,6 +5,30 @@ Rust core + PyO3 bindings + Python interface. Minimax engine for
 6-in-a-row game. Goal: beat
 [SealBot](https://github.com/Ramora0/SealBot).
 
+## Using Hammerhead from Python
+
+Install — builds the Rust engine, then the `hammerhead` SDK:
+
+```bash
+make build
+```
+
+Drive the engine in-process:
+
+```python
+from hammerhead import Bot
+
+bot = Bot(time_per_stone_ms=500)
+bot.play((0, 0))                 # X opens at the origin
+while not bot.is_game_over:
+    bot.play(bot.suggest())      # engine picks the next stone
+print("winner:", bot.winner)
+```
+
+Moves are axial `(q, r)` coordinates. One `Bot` drives one game; it is
+stateful and single-threaded. Full reference, error handling, and worked
+examples: [`docs/sdk.md`](docs/sdk.md).
+
 ## Goal
 
 Minimax + alpha-beta. WSC threat eval. Fast NPS. Win.
