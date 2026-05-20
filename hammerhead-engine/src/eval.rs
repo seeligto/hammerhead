@@ -36,7 +36,7 @@ use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
 use crate::board::{Board, Player};
 use crate::config::{
     CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS, OPEN_4_SCORE,
-    OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, WINDOW_SCORE,
+    OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, WINDOW_SCORE, WINDOW_SCORE_8,
 };
 // S1/S2 shape weights — only referenced by the gated branch of
 // `layer2_shapes` (Phase 16 ablation).
@@ -103,7 +103,7 @@ pub fn is_mate_for(board: &Board, player: Player) -> bool {
 #[doc(hidden)]
 #[must_use]
 pub fn bench_layer1_window_scan(board: &Board) -> i32 {
-    layer1_window_scan(board)
+    layer1_window_scan_8cell(board)
 }
 
 /// Bench-only: isolated Layer-2 weighted shape sum (X minus O).
@@ -139,6 +139,7 @@ fn mate_score_for(winner: Player, ply: u32) -> i32 {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const POW3: [u16; 6] = [1, 3, 9, 27, 81, 243];
+const POW3_8: [u16; 8] = [1, 3, 9, 27, 81, 243, 729, 2187];
 
 /// Sum of all 6-cell windows on every populated axis line. Each window
 /// looked up in `WINDOW_SCORE` (build-time table) and multiplied by the
@@ -218,6 +219,78 @@ fn scan_line(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
     total
 }
 
+/// Sum of all 8-cell windows on every populated axis line (Phase 17).
+/// Behaviourally identical to [`layer1_window_scan`] — the extension
+/// factor is folded into the `WINDOW_SCORE_8` table — but does it in a
+/// single table lookup, with no boundary `is_set` probes and no
+/// runtime multiply.
+fn layer1_window_scan_8cell(board: &Board) -> i32 {
+    let bitmaps = board.axes();
+    let mut total: i32 = 0;
+
+    for axis in Axis::all() {
+        let mut line_ids: SmallVec<[i16; 32]> = SmallVec::new();
+        for id in bitmaps.line_ids(axis, Player::X) {
+            line_ids.push(id);
+        }
+        for id in bitmaps.line_ids(axis, Player::O) {
+            if !line_ids.contains(&id) {
+                line_ids.push(id);
+            }
+        }
+        for &line_id in &line_ids {
+            total += scan_line_8cell(bitmaps, axis, line_id);
+        }
+    }
+    total
+}
+
+/// Sum the 8-cell window scores for a single `(axis, line_id)` line.
+/// The inner-6 window slides over `[min_pos - 5, max_pos]` — the same
+/// set [`scan_line`] walks — but each lookup keys the full 8-cell
+/// window `[p-1, p+6]` into `WINDOW_SCORE_8`.
+#[inline]
+fn scan_line_8cell(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
+    let xl = bitmaps.line(axis, Player::X, line_id);
+    let ol = bitmaps.line(axis, Player::O, line_id);
+    let xr = xl.and_then(LineBitmap::populated_range);
+    let or_ = ol.and_then(LineBitmap::populated_range);
+    let (min_pos, max_pos) = match (xr, or_) {
+        (Some((xa, xb)), Some((oa, ob))) => (xa.min(oa), xb.max(ob)),
+        (Some(r), None) | (None, Some(r)) => r,
+        (None, None) => return 0,
+    };
+
+    let start = min_pos - 5;
+    let total_count = (max_pos - start + 1).max(0) as usize;
+    let mut x_buf = [0u8; 64];
+    let mut o_buf = [0u8; 64];
+    let mut idx_buf = [0u16; 64];
+    let mut total: i32 = 0;
+    let mut emitted = 0usize;
+    while emitted < total_count {
+        let chunk = (total_count - emitted).min(x_buf.len());
+        // The 8-cell window for inner-start `p` begins at `p - 1`.
+        let win_start = start + emitted as i16 - 1;
+        if let Some(l) = xl {
+            l.windows8_run(win_start, chunk, &mut x_buf[..chunk]);
+        } else {
+            x_buf[..chunk].fill(0);
+        }
+        if let Some(l) = ol {
+            l.windows8_run(win_start, chunk, &mut o_buf[..chunk]);
+        } else {
+            o_buf[..chunk].fill(0);
+        }
+        encode_ternary_8_batch(&x_buf[..chunk], &o_buf[..chunk], &mut idx_buf[..chunk]);
+        for &idx in &idx_buf[..chunk] {
+            total += WINDOW_SCORE_8[idx as usize];
+        }
+        emitted += chunk;
+    }
+    total
+}
+
 /// Pack a 6-cell window into the ternary index used by `WINDOW_SCORE`.
 /// `0 = empty`, `1 = X`, `2 = O`. Mixed windows naturally map to entries
 /// with both X and O contributions, which the codegen table fills with 0.
@@ -265,6 +338,43 @@ fn encode_ternary_batch(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
 fn encode_ternary_batch_scalar(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
     for ((x, o), slot) in x_bits.iter().zip(o_bits.iter()).zip(out.iter_mut()) {
         *slot = encode_ternary(*x, *o);
+    }
+}
+
+/// Pack an 8-cell window into the ternary index used by `WINDOW_SCORE_8`.
+/// `0 = empty`, `1 = X`, `2 = O`; `idx ∈ [0, 6561)`.
+#[inline]
+fn encode_ternary_8(x_bits: u8, o_bits: u8) -> u16 {
+    let mut idx: u16 = 0;
+    for (i, pow) in POW3_8.iter().enumerate() {
+        let x = (x_bits >> i) & 1;
+        let o = (o_bits >> i) & 1;
+        let cell = if x != 0 {
+            1u16
+        } else if o != 0 {
+            2u16
+        } else {
+            0
+        };
+        idx += cell * pow;
+    }
+    idx
+}
+
+/// Batch encode `count` 8-cell (`x_bits`, `o_bits`) pairs into ternary
+/// indices. Scalar-only in Phase 17 STEP 4; STEP 5 adds an AVX2 path
+/// behind the `simd_eval` feature.
+#[inline]
+fn encode_ternary_8_batch(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    debug_assert_eq!(x_bits.len(), o_bits.len());
+    debug_assert_eq!(x_bits.len(), out.len());
+    encode_ternary_8_batch_scalar(x_bits, o_bits, out);
+}
+
+#[inline]
+fn encode_ternary_8_batch_scalar(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    for ((x, o), slot) in x_bits.iter().zip(o_bits.iter()).zip(out.iter_mut()) {
+        *slot = encode_ternary_8(*x, *o);
     }
 }
 
@@ -521,7 +631,10 @@ fn pair_covers_all(insts: &[ThreatInstance], a: Coord, b: Coord) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_ternary, encode_ternary_batch, encode_ternary_batch_scalar};
+    use super::{
+        encode_ternary, encode_ternary_batch, encode_ternary_batch_scalar, layer1_window_scan,
+        layer1_window_scan_8cell,
+    };
 
     /// Decode a ternary index `0..=728` into the matching `(x_bits,
     /// o_bits)` pair. `x_bits` has a 1-bit per X cell; `o_bits` per O
@@ -570,5 +683,41 @@ mod tests {
             got_scalar, expected,
             "encode_ternary_batch_scalar diverges from scalar"
         );
+    }
+
+    /// Phase 17 STEP 4 equivalence gate: the 8-cell `WINDOW_SCORE_8`
+    /// scan must produce a byte-identical Layer-1 total to the legacy
+    /// 6-cell scan with its runtime extension factor, for every
+    /// position. Drift here means the build-time factor fold in
+    /// `build.rs` diverged from `eval::extension_factor`.
+    #[test]
+    fn layer1_8cell_matches_6cell_plus_factor() {
+        use crate::board::{Board, Player};
+        use crate::coords::Coord;
+        use fxhash::FxHashSet;
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0x0008_CE11);
+        for _ in 0..1000 {
+            let mut board = Board::new();
+            let mut occupied: FxHashSet<Coord> = FxHashSet::default();
+            let pieces = rng.random_range(0..60);
+            for _ in 0..pieces {
+                let c = Coord::new(rng.random_range(-18..=18), rng.random_range(-18..=18));
+                if !occupied.insert(c) {
+                    continue; // cell already taken — keep X/O bitmaps disjoint
+                }
+                let player = if rng.random_bool(0.5) {
+                    Player::X
+                } else {
+                    Player::O
+                };
+                board.place_for_test(c, player);
+            }
+            let s6 = layer1_window_scan(&board);
+            let s8 = layer1_window_scan_8cell(&board);
+            assert_eq!(s6, s8, "Layer-1 6-cell+factor vs 8-cell drift");
+        }
     }
 }

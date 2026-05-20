@@ -218,6 +218,71 @@ impl LineBitmap {
         }
     }
 
+    /// 8-bit window. Bit `i` (LSB-first) is `get(pos + i)`. Used by the
+    /// Phase-17 Layer-1 8-cell window scan.
+    #[inline]
+    #[must_use]
+    pub fn window8(&self, pos: i16) -> u8 {
+        let mut out: u8 = 0;
+        for i in 0i16..8 {
+            if self.get(pos.wrapping_add(i)) {
+                out |= 1 << i;
+            }
+        }
+        out
+    }
+
+    /// Emit `count` consecutive 8-bit windows starting at `start_pos`
+    /// into `out[..count]`. The 8-cell analogue of [`windows6_run`] —
+    /// extracts each 8-bit window straight out of the underlying `u64`
+    /// storage, sharing the `(word_index, bit_offset)` math across
+    /// windows. The Phase-17 Layer-1 scan calls this once per
+    /// `(axis, line)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `out.len() < count`.
+    #[inline]
+    pub fn windows8_run(&self, start_pos: i16, count: usize, out: &mut [u8]) {
+        assert!(out.len() >= count, "windows8_run out slice too short");
+        let out = &mut out[..count];
+        if out.is_empty() {
+            return;
+        }
+        if self.words.is_empty() {
+            out.fill(0);
+            return;
+        }
+        let base = i32::from(self.base_pos);
+        let nbits = (self.words.len() as i32) * 64;
+        for (k, slot) in out.iter_mut().enumerate() {
+            let pos = i32::from(start_pos.wrapping_add(k as i16));
+            let rel = pos - base;
+            // Window8 reads bits [pos, pos+7]. Whole window out of
+            // range → emit 0 fast.
+            if rel + 8 <= 0 || rel >= nbits {
+                *slot = 0;
+                continue;
+            }
+            // Fast path: window fully inside the populated range,
+            // bits drawn from at most two adjacent words.
+            if rel >= 0 && rel + 8 <= nbits {
+                let wi = (rel / 64) as usize;
+                let bi = (rel % 64) as u32;
+                let lo = self.words[wi] >> bi;
+                let bits = if bi <= 56 {
+                    lo
+                } else {
+                    lo | (self.words[wi + 1] << (64 - bi))
+                };
+                *slot = bits as u8;
+                continue;
+            }
+            // Slow path: window straddles the populated-range boundary.
+            *slot = self.window8(pos as i16);
+        }
+    }
+
     /// `(min_pos, max_pos)` of the bits that are set, or `None` if empty.
     /// Walks the word array; O(words). Used by Layer 1 to bound the
     /// window-scan range per line.
