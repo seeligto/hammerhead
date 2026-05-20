@@ -1,27 +1,119 @@
 # Hammerhead API Spec
 
-Authoritative surface for the Rust `hammerhead_engine` PyO3 module, the Python
-`hammerhead.bot` wrapper, the `hammerhead` CLI subcommands, and the line-based
-subprocess protocol consumed by the Phase 11 promotion harness.
+Authoritative surface for the project's Python-facing APIs.
 
-## PyO3 module (`hammerhead_engine`)
+The **public** surface is the `hammerhead` SDK package (`hammerhead.Bot`
+and friends) — the supported way to embed the engine. Everything else —
+the `hammerhead_engine` PyO3 module, the `hammerhead` CLI, the
+line-based subprocess protocol — is **internal**: used by the CLI,
+benchmarks, and the Phase 11 promotion harness, and not covered by any
+stability guarantee.
+
+## Public SDK (`hammerhead`)
+
+In-process, single-game, stateful. Import everything from the package
+root:
 
 ```python
-from hammerhead_engine import Engine
-
-eng = Engine(tt_size_mb=64)
-eng.place((0, 0))                    # X first stone
-eng.place((1, 0))                    # O stone 1
-eng.place((-1, 0))                   # O stone 2
-move = eng.best_move(time_ms=1000)   # (q, r) — search splits the budget
-pv   = eng.find_pv(depth=4)          # best line walked off the TT
-score = eng.cached_eval()
-eng.undo()
-eng.reset()
-eng.clear_tt()
+from hammerhead import (
+    Bot,
+    Move, Player,
+    HammerheadError, IllegalMoveError, GameOverError, NotationError,
+)
 ```
 
-### `Engine`
+Full reference with worked examples: `docs/sdk.md`.
+
+### Types
+
+- `Move` — a stone as an axial hex coordinate tuple `(q, r)`. The origin
+  `(0, 0)` is X's mandatory opening cell.
+- `Player` — the literal string `"X"` or `"O"`.
+
+### `Bot`
+
+```python
+class Bot:
+    def __init__(
+        self,
+        time_per_stone_ms: int | None = None,   # default: config (1000 ms)
+        tt_size_mb: int | None = None,          # default: config (64 MB)
+    ) -> None: ...
+
+    # state mutation
+    def reset(self) -> None: ...
+    def play(self, move: Move) -> None: ...
+    def undo(self) -> None: ...
+
+    # read-only state (properties)
+    to_move: Player                 # "X" / "O"
+    ply: int
+    stone_in_turn: int              # 0 = turn start, 1 = owes 2nd stone
+    is_game_over: bool
+    winner: Player | None
+    history: list[Move]
+    time_per_stone_ms: int
+
+    # engine queries (no mutation)
+    def suggest(self, time_ms: int | None = None) -> Move: ...
+    def evaluate(self) -> int: ...
+    def principal_variation(self, max_depth: int = 16) -> list[Move]: ...
+
+    # configuration
+    def set_time_per_stone(self, ms: int) -> None: ...
+```
+
+- One `Bot` represents one game in progress. Stateful: `play` advances
+  the position, the queries inspect it without mutating, `undo` rewinds
+  one stone, `reset` starts over.
+- Search is **per stone**. A HeXO turn is two stones for the same side;
+  X's opening turn is a single stone. `stone_in_turn` disambiguates.
+- `suggest` does not place the move — apply it with `play`.
+- The engine is X-positive: `evaluate` returns positive for an X
+  advantage regardless of side to move.
+- `Bot` is **not thread-safe**. One instance per game; do not share
+  across threads.
+- The engine is deterministic — there is no random seed.
+
+### Exceptions
+
+```python
+class HammerheadError(Exception): ...        # base — never raised directly
+class IllegalMoveError(HammerheadError): ... # occupied / out-of-range cell
+class GameOverError(HammerheadError): ...    # play / suggest after a win
+class NotationError(HammerheadError): ...    # string passed where Move expected
+```
+
+| Method | Raises |
+|--------|--------|
+| `__init__` | `ValueError` (non-positive `time_per_stone_ms` / `tt_size_mb`) |
+| `play` | `IllegalMoveError`, `GameOverError`, `NotationError`, `TypeError` |
+| `undo` | `IndexError` (empty history) |
+| `suggest` | `GameOverError`, `ValueError` (non-positive `time_ms`) |
+| `principal_variation` | `ValueError` (negative `max_depth`) |
+| `set_time_per_stone` | `ValueError` (non-positive `ms`) |
+
+`IndexError` / `TypeError` are ordinary programming errors and stay
+outside the `HammerheadError` family.
+
+### Deferred surface
+
+Planned, not yet implemented — documented here so the surface is honest:
+
+- **String move notation.** `play` accepts only `Move` tuples; passing a
+  `str` raises `NotationError`. BKE / BSN / HXN parsing arrives with the
+  `hammerhead.notation` module. At that point `play` will also accept
+  BKE strings and `Bot` will gain `to_notation()` / `from_notation()`.
+- **`threats(side)`** — per-side threat-shape report. Needs new PyO3
+  surface (the engine's `ThreatCounts` is not exposed today).
+- **`board_ascii`** — ASCII board renderer. Needs a new engine accessor.
+- **`set_tt_size(mb)`** — live transposition-table resize. The engine
+  has no live-resize entry point yet.
+
+## Internal: PyO3 module (`hammerhead_engine`)
+
+The Rust extension the SDK wraps. Not a public surface — consume it via
+`hammerhead.Bot`.
 
 ```python
 class Engine:
@@ -29,79 +121,41 @@ class Engine:
     def place(self, pos: tuple[int, int]) -> None: ...
     def undo(self) -> None: ...
     def best_move(
-        self,
-        time_ms: int | None = None,
-        depth: int | None = None,
+        self, time_ms: int | None = None, depth: int | None = None,
     ) -> tuple[int, int]: ...
     def find_pv(self, depth: int) -> list[tuple[int, int]]: ...
     def cached_eval(self) -> int: ...
     def to_move(self) -> int: ...      # 0 = X, 1 = O
     def winner(self) -> int | None: ...
     def ply(self) -> int: ...
-    def halfmove(self) -> int: ...     # 0 = next stone starts a turn, 1 = same side's 2nd
+    def halfmove(self) -> int: ...     # 0 = turn start, 1 = same side's 2nd
     def hash(self) -> int: ...         # 128-bit Zobrist
     def reset(self) -> None: ...
     def clear_tt(self) -> None: ...
 ```
 
 - `place` uses the side stored on the board. No player argument.
-- `best_move` must be called with at least one of `time_ms` or `depth`
-  set. Internally splits the per-turn budget by `time_stone1_pct`.
+- `best_move` must be called with at least one of `time_ms` or `depth`.
+  Internally splits the per-turn budget by `time_stone1_pct`. It does
+  **not** place the move.
 - `find_pv(depth)` walks the TT from the current position, returning at
-  most `depth` legal moves. The walk is **best-effort**: it stops at the
-  first TT miss or illegal move, so the returned list may be shorter
-  than `depth`. The board is restored to its starting state before
-  return.
-- `clear_tt()` wipes the transposition table only. Ordering history
-  (killers / butterfly history) is preserved — TT scales with positions
-  seen, history is per-game move-quality memory and survives a clear.
-- Errors raised: `ValueError` on illegal `place`, illegal `undo`, or
-  `best_move` called with neither budget set. PyO3's automatic
-  panic-to-`PanicException` machinery handles unexpected engine panics;
-  `pybind.rs` itself raises only `ValueError`.
+  most `depth` legal moves. Best-effort: stops at the first TT miss; the
+  board is restored before return.
+- `clear_tt()` wipes the transposition table only; ordering history
+  (killers / butterfly history) survives.
+- Errors: `ValueError` on illegal `place`, illegal `undo`, or
+  `best_move` with neither budget set. The SDK translates these into the
+  `HammerheadError` family.
+- Bench-only extras (`bench_best_move`, `tt_stats`, feature-gated
+  `set_eval_s1s2`) exist for the benchmark suite — see
+  `specs/SPEC_BENCHMARKS.md`.
 
 ### Rust shim (`pybind.rs`)
 
-Thin wrapper. No game logic. Releases the GIL for every `best_move`
-call via `py.detach` (PyO3 0.28 — the post-`allow_threads` API). Errors
-map to `PyValueError`.
+Thin wrapper, no game logic. Releases the GIL for every `best_move` via
+`py.detach` (PyO3 0.28). Errors map to `PyValueError`.
 
-```rust
-#[pyclass(name = "Engine")]
-pub struct PyEngine {
-    inner: crate::search::Engine,
-}
-```
-
-## Python `Bot` (`hammerhead.bot`)
-
-High-level convenience over one `Engine`.
-
-```python
-@dataclass(frozen=True, slots=True)
-class BotConfig:
-    time_per_move_ms: int = CONFIG.bot.default_time_per_move_ms
-    max_depth: int | None = None
-    tt_size_mb: int = CONFIG.bot.default_tt_size_mb
-
-class Bot:
-    def __init__(self, cfg: BotConfig = BotConfig()) -> None: ...
-    def reset(self) -> None: ...
-    def play_stone(self) -> tuple[int, int]:
-        """Search one stone, place it, return its coord."""
-    def play_turn(self) -> list[tuple[int, int]]:
-        """Play 1 or 2 stones (X's first turn = 1, else 2). Return placed."""
-    def observe(self, move: tuple[int, int]) -> None:
-        """Apply an externally-played stone to the local engine."""
-    def winner(self) -> int | None: ...
-    def halfmove(self) -> int: ...
-    def to_move(self) -> int: ...
-```
-
-The "play 1 or 2" decision is driven by the engine's `halfmove`: after
-the first stone, if `halfmove == 1` the same side continues.
-
-## Subprocess protocol (`hammerhead bot`)
+## Internal: subprocess protocol (`hammerhead bot`)
 
 One command per line, one line per response. Used by the Phase 11
 promotion harness. Coordinates are integers `q r`, space-separated.
@@ -120,49 +174,47 @@ promotion harness. Coordinates are integers `q r`, space-separated.
 | `quit`        | `bye`             | Process exits afterwards.            |
 
 Errors are emitted as `error: <message>` on a single line. The session
-continues unless the offending command was `quit`. Unknown commands
-return `error: unknown command <CMD>`.
+continues unless the offending command was `quit`. Startup: the process
+emits `hammerhead bot ready` to stdout once and flushes before reading.
 
-Startup: the process emits `hammerhead bot ready` to stdout once and flushes
-before reading the first command, so clients can synchronize on it.
-
-## CLI (`hammerhead`)
+## Internal: CLI (`hammerhead`)
 
 ```bash
 hammerhead play                            # human vs bot REPL
 hammerhead selfplay -n N                   # bot vs bot, log winners
-hammerhead bench [--time-ms T]             # NPS smoke
-hammerhead analyze <bsn>                   # placeholder (BSN parsing is Phase 12+)
+hammerhead bench [...]                     # benchmark suite
+hammerhead analyze <bsn>                   # placeholder (BSN parsing deferred)
 hammerhead bot [--tt-size-mb MB]           # subprocess protocol (above)
 hammerhead match CURRENT BEST              # generic two-binary match (Phase 11)
 hammerhead promote [--dry-run]             # current vs .bestref worktree (Phase 11)
 ```
 
-The match commands accept ``--n N --time-ms T --test sprt|wilson|raw``.
-Exit codes: ``0`` if the final verdict is ``PROMOTE``; ``1`` otherwise
-(``REJECT`` or ``INCONCLUSIVE``). ``hammerhead promote`` rewrites and commits
-``.bestref`` atomically on ``PROMOTE`` unless ``--dry-run`` is set; on
-commit failure the file is rolled back to its prior contents.
+The match commands accept `--n N --time-ms T --test sprt|wilson|raw`.
+Exit codes: `0` if the final verdict is `PROMOTE`; `1` otherwise.
+`hammerhead promote` rewrites and commits `.bestref` atomically on
+`PROMOTE` unless `--dry-run` is set.
 
 ## Build
 
 ```
-make build    # maturin develop --release + pip install -e ../hammerhead
+make build    # maturin develop --release + pip install -e hammerhead
 make test     # cargo test --release + pytest
 make check    # lint + test
 ```
+
+The SDK requires Python ≥ 3.11. `pip install -e 'hammerhead[dev]'` adds
+`pytest` and `pdoc`.
+
+## Versioning
+
+Engine version in `hammerhead-engine/Cargo.toml`, re-exported as
+`hammerhead_engine.__version__`. SDK version is `hammerhead.__version__`
+(`0.1.0`).
 
 ## Integration path (future)
 
 - WebSocket client for live play on hexo.did.science
 - SealBot harness (HTTP or socket)
 - Self-play data export for ML tuning
-- Web UI (Flask / FastAPI shim)
-
-## Versioning
-
-Engine version in `hammerhead-engine/Cargo.toml`. Re-exported as
-`hammerhead_engine.__version__`.
-
-BSN / HXN / BKE parsers (`hammerhead.notation`) are deferred to a later
-phase. Until they land, `hammerhead analyze` is a stub.
+- `hammerhead.notation` — BKE / BSN / HXN parsers; unblocks string moves
+  in `Bot.play` and `analyze`

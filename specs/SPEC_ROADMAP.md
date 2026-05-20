@@ -324,6 +324,35 @@ Resolved Phase 17 candidates:
   no runtime multiplier left to batch.
 - **Layer 2 S1/S2 ablation decision** → resolved by STEP 2/3.
 
+## Phase 19 — Clean SDK / `hammerhead` Package
+
+**Goal**: surface the engine through a clean, documented public Python
+package — `from hammerhead import Bot` — for embedding in other
+projects. Pure API / packaging / documentation work; zero engine
+behaviour change (reference node counts byte-identical before/after).
+
+1. **Public `hammerhead.Bot`** replaces the old thin engine wrapper. A
+   single stateful class: `play` / `undo` / `reset`, read-only state
+   properties (`to_move`, `ply`, `stone_in_turn`, `winner`, `history`,
+   …), and non-mutating queries (`suggest`, `evaluate`,
+   `principal_variation`). Moves are axial `(q, r)` tuples; sides are
+   `"X"` / `"O"` strings — no engine enums or internal terms leak out.
+2. **`HammerheadError` hierarchy** (`IllegalMoveError`, `GameOverError`,
+   `NotationError`) replaces bare `ValueError` at the SDK boundary.
+   `Move` / `Player` aliases + a `py.typed` marker ship inline types.
+3. **Internals stay internal**: the `hammerhead_engine` PyO3 `Engine`,
+   the CLI, and the subprocess protocol are marked internal in
+   `SPEC_API.md`. The CLI / benchmark self-play loops now drive `Engine`
+   directly — the old `Bot` / `BotConfig` wrapper is gone, one `Bot`.
+4. **Docs**: `docs/sdk.md` full reference, a README quickstart section,
+   `pdoc`-clean docstrings on the whole public surface.
+
+Deferred (documented in `SPEC_API.md § Deferred surface`): string move
+notation (BKE / BSN / HXN — needs `hammerhead.notation`), `threats()`
+and `board_ascii` (need new PyO3 surface), `set_tt_size` (needs a
+live-resize engine entry point). The `seed` constructor arg from the
+original Phase 19 sketch was dropped — the engine is deterministic.
+
 ## Phase 18 candidates (deferred follow-ups)
 
 - **Eval tuning phase** — Phase 17 zeroed the S1/S2 shape weights
@@ -349,7 +378,7 @@ Resolved Phase 17 candidates:
   variant was reverted (commit 15c9638); revisit with a different
   caching key.
 - **Per-line `LineContribution` cache**.
-- **BotConfig vs SearchConfig time-budget drift**: `[bot]
+- **`[bot]` vs `[engine.search]` time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
   both 1000ms. Fold if always coupled.
 - **`find_pv` eviction tolerance**: best-effort; returns shorter PV
