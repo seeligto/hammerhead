@@ -333,3 +333,20 @@ is OFF the override does not exist; when ON it defaults to `true`.
 This is **infrastructure**, not a removal. The decision of whether
 to keep S1/S2 on by default is deferred to Phase 17+ based on
 self-play A/B data collected in Phase 16 STEP 4.
+
+### Phase 17 ablation re-verification — verdict: DROP
+
+The Phase 16 50-game A/B (Wilson [19.9 %, 44.8 %], 200 ms/stone)
+suggested S1/S2 hurts but was small-n. Phase 17 re-ran it at scale
+via the parallel ablation harness:
+
+- **200 games @ 500 ms/stone**: S1/S2-enabled scored **57 / 200
+  (29.0 %)**, Wilson 95 % **[23.2 %, 35.6 %]**.
+
+The Wilson upper bound (35.6 %) is well below 50 %, so the decision
+matrix yields **DROP** outright — Match 2 (100 games @ 1 s) was not
+needed. The signal is stronger and tighter than the Phase 16 probe.
+
+S1/S2 is removed in Phase 17 STEP 3 — see § Layer 2 (post-Phase-17)
+above and `subagents/scans/phase17-s1s2-investigation.md` for the
+why-it-hurts analysis.
