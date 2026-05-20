@@ -387,3 +387,63 @@ still run in `threats::compute`; if a later profile shows this
 matters, gate them then.
 
 See `SPEC_ROADMAP.md` Phase 18+ candidates → "Eval tuning".
+
+## Phase 18 — S1/S2 eval-weight tuning sweep
+
+Phase 17 zeroed the S1/S2 weights and kept detection as a tunable
+surface. Phase 18 asks: can *corrected* weights restore positional
+eval without re-introducing the double-counting fault?
+
+**Method.** Coordinate descent + local pairwise A/B. The 8 weights are
+restated as `weight = α × A_shape`, with `A_shape` a Layer 1 anchor
+(see below); the sweep tunes one dimensionless α per shape. Weights
+are applied per cell via the runtime `Engine.set_eval_shape_weights`
+override — no rebuilds. Baseline = the Phase 17 engine (S1/S2 weights
+all 0); since no engine-algorithm change has landed since Phase 17,
+this is behaviourally the `.bestref` engine. See
+`subagents/scans/phase18-tuning-methodology.md`.
+
+### Stage A — Layer 1 anchors
+
+`A_shape` sums `window_k_scores` over the shape's maximal straight
+runs (its Layer 1 window footprint):
+
+| shape | runs | A_shape |
+| --- | --- | --- |
+| open_3 | one open 3-run | 256 |
+| rhombus | five 2-runs | 160 |
+| arch | two 2-runs | 64 |
+| bone | one 3-run + four 2-runs | 384 |
+| trapezoid | one 3-run + four 2-runs | 384 |
+| open_2 | one open 2-run | 32 |
+| closed_3 | one closed 3-run | 64 |
+| triangle | three 2-runs | 96 |
+
+Every α=2.0 weight stays well under the Layer 1 open-four window
+(2048), so no Phase-17-style magnitude inversion is reachable.
+
+### Stage B — coordinate descent
+
+56 cells (8 shapes × α ∈ {0, .25, .5, .75, 1, 1.5, 2}), 100 games/cell
+at 500 ms/stone vs baseline, colour-balanced. Cell entries are
+`winrate% / Wilson-LB`:
+
+| shape | α0 | α.25 | α.5 | α.75 | α1 | α1.5 | α2 | α* |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| open_3 | 55/.45 | 50/.41 | 42/.33 | 47/.38 | 36/.28 | 44/.35 | 50/.40 | 0 |
+| rhombus | 45/.36 | 46/.37 | 50/.41 | 48/.38 | 52/.42 | 36/.27 | 34/.26 | 0 |
+| arch | 51/.41 | 54/.44 | 48/.38 | 46/.37 | 55/.45 | 37/.28 | 42/.33 | 0 |
+| bone | 56/.47 | 51/.41 | 55/.45 | 39/.30 | 44/.35 | 40/.30 | 40/.31 | 0 |
+| trapezoid | 40/.30 | 50/.41 | 52/.42 | 56/.46 | 30/.21 | 37/.28 | 48/.38 | 0 |
+| open_2 | 60/.51 | 57/.48 | 54/.44 | 59/.49 | 44/.35 | 52/.43 | 55/.45 | 0 |
+| closed_3 | 57/.48 | 46/.37 | 40/.31 | 56/.46 | 60/.50 | 56/.47 | 38/.30 | 1 |
+| triangle | 46/.37 | 47/.38 | 56/.46 | 55/.45 | 55/.45 | 46/.37 | 43/.34 | 0 |
+
+The 8 α=0 cells are baseline-vs-baseline controls — their winrates
+span 40–60 % (mean 51.4 %), calibrating the ~±10 pp noise band of a
+100-game cell. By the pinned rule (highest-winrate α, signal iff
+Wilson LB > 0.50), 7 of 8 shapes show no signal (α*=0). `closed_3`
+alone scrapes the gate at α*=1 (60 %, Wilson LB 0.502) — but 60 % does
+not exceed the control band (`open_2`'s α=0 control also hit 60 %) and
+its α-row is non-monotonic, so the pass is most likely noise. Per the
+pinned methodology it is carried into Stage C for a 200-game re-test.
