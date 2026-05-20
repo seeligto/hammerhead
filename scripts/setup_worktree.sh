@@ -80,10 +80,16 @@ unset VIRTUAL_ENV PYTHONHOME
 # shellcheck source=/dev/null
 . "$VENV_NAME/bin/activate"
 
-cd hammerhead-engine
+# The worktree may sit at a pre-rename SHA (engine dir `hexo-engine`,
+# package dir `hexo`) or a current one (`hammerhead-engine` /
+# `hammerhead`). Resolve whichever the checked-out tree actually has.
+if [ -d hammerhead-engine ]; then ENGINE_DIR=hammerhead-engine; else ENGINE_DIR=hexo-engine; fi
+if [ -d hammerhead ]; then PKG_DIR=hammerhead; else PKG_DIR=hexo; fi
+
+cd "$ENGINE_DIR"
 maturin develop --release --quiet
 cd ..
-pip install -q -e hammerhead
+pip install -q -e "$PKG_DIR"
 
 deactivate
 
