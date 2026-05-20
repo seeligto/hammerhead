@@ -17,18 +17,21 @@ root:
 ```python
 from hammerhead import (
     Bot,
-    Move, Player,
+    Move, Player, MATE_SCORE,
     HammerheadError, IllegalMoveError, GameOverError, NotationError,
 )
 ```
 
 Full reference with worked examples: `docs/sdk.md`.
 
-### Types
+### Types and constants
 
 - `Move` — a stone as an axial hex coordinate tuple `(q, r)`. The origin
   `(0, 0)` is X's mandatory opening cell.
 - `Player` — the literal string `"X"` or `"O"`.
+- `MATE_SCORE` — `int`, the score magnitude of a forced win. A decisive
+  position evaluates near `±(MATE_SCORE - ply)`. Sourced from
+  `hexo.toml § [engine.eval] mate_score`.
 
 ### `Bot`
 
@@ -53,6 +56,7 @@ class Bot:
     winner: Player | None
     history: list[Move]
     time_per_stone_ms: int
+    tt_size_mb: int
 
     # engine queries (no mutation)
     def suggest(self, time_ms: int | None = None) -> Move: ...

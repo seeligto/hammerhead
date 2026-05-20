@@ -23,7 +23,7 @@ The full API reference, with worked examples, lives in ``docs/sdk.md``.
 
 from __future__ import annotations
 
-from .bot import Bot
+from .bot import MATE_SCORE, Bot
 from .exceptions import (
     GameOverError,
     HammerheadError,
@@ -38,6 +38,7 @@ __all__ = [
     "Bot",
     "Move",
     "Player",
+    "MATE_SCORE",
     "HammerheadError",
     "IllegalMoveError",
     "GameOverError",

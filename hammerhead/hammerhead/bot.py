@@ -22,6 +22,17 @@ _SIDES: tuple[Player, Player] = ("X", "O")
 # query only — not an engine-tuning constant, so it lives here.
 _DEFAULT_PV_DEPTH = 16
 
+# Hard ceiling for the PV walk: the engine's find_pv takes a signed
+# 8-bit depth, so a larger request would overflow at the boundary.
+_MAX_PV_DEPTH = 127
+
+MATE_SCORE: int = CONFIG.eval.mate_score
+"""Score magnitude of a forced win.
+
+A decisive position evaluates near ``±(MATE_SCORE - ply)`` — see
+:meth:`Bot.evaluate`. Positive is a win for X, negative a win for O.
+"""
+
 
 class Bot:
     """High-level Hammerhead engine for embedding in Python projects.
@@ -100,7 +111,8 @@ class Bot:
     def __repr__(self) -> str:
         return (
             f"Bot(ply={self.ply}, to_move={self.to_move!r}, "
-            f"time_per_stone_ms={self._time_per_stone_ms})"
+            f"time_per_stone_ms={self._time_per_stone_ms}, "
+            f"tt_size_mb={self._tt_size_mb})"
         )
 
     # ── State mutation ──────────────────────────────────────────────────
@@ -123,7 +135,9 @@ class Bot:
 
         Raises:
             GameOverError: if the game has already been won.
-            IllegalMoveError: if the cell is occupied or out of range.
+            IllegalMoveError: if the move is not a legal placement — the
+                cell is occupied, out of range, or (for the opening
+                stone) not the origin ``(0, 0)``.
             NotationError: if ``move`` is a string — string notation is
                 not supported yet; pass a ``(q, r)`` tuple.
             TypeError: if ``move`` is not a coordinate pair.
@@ -208,6 +222,15 @@ class Bot:
         """The default per-stone search budget, in milliseconds."""
         return self._time_per_stone_ms
 
+    @property
+    def tt_size_mb(self) -> int:
+        """The transposition-table size, in mebibytes.
+
+        Fixed at construction; resizing a live table is not yet
+        supported.
+        """
+        return self._tt_size_mb
+
     # ── Engine queries (no state mutation) ──────────────────────────────
 
     def suggest(self, time_ms: Optional[int] = None) -> Move:
@@ -247,8 +270,9 @@ class Bot:
 
         Positive scores favour X, negative favour O — the engine is
         X-positive regardless of whose turn it is. A decisive position
-        evaluates near ``±(MATE_SCORE - ply)``; mate-for-X is large and
-        positive, mate-for-O large and negative.
+        evaluates near ``±(MATE_SCORE - ply)`` — mate-for-X is large and
+        positive, mate-for-O large and negative. :data:`MATE_SCORE` is
+        importable from the package root for mate-detection logic.
 
         Returns:
             The signed evaluation in engine score units.
@@ -264,7 +288,9 @@ class Bot:
         be shorter than ``max_depth`` (and empty before any search).
 
         Args:
-            max_depth: Maximum number of stones to walk.
+            max_depth: Maximum number of stones to walk. Values above
+                127 are capped — the engine never reports a line that
+                long anyway.
 
         Returns:
             The predicted stones, in order, as ``(q, r)`` tuples.
@@ -274,7 +300,8 @@ class Bot:
         """
         if max_depth < 0:
             raise ValueError("max_depth must be non-negative")
-        return [(q, r) for q, r in self._engine.find_pv(max_depth)]
+        depth = min(max_depth, _MAX_PV_DEPTH)
+        return [(q, r) for q, r in self._engine.find_pv(depth)]
 
     # ── Configuration (mid-game safe) ───────────────────────────────────
 

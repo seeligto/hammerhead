@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from hammerhead import (
+    MATE_SCORE,
     Bot,
     GameOverError,
     HammerheadError,
@@ -46,6 +47,12 @@ def test_init_defaults() -> None:
 def test_init_custom_args() -> None:
     bot = Bot(time_per_stone_ms=250, tt_size_mb=16)
     assert bot.time_per_stone_ms == 250
+    assert bot.tt_size_mb == 16
+
+
+def test_mate_score_is_positive_int() -> None:
+    assert isinstance(MATE_SCORE, int)
+    assert MATE_SCORE > 0
 
 
 @pytest.mark.parametrize(
@@ -228,6 +235,15 @@ def test_principal_variation_rejects_negative_depth() -> None:
     bot = _fresh()
     with pytest.raises(ValueError):
         bot.principal_variation(max_depth=-1)
+
+
+def test_principal_variation_caps_oversized_depth() -> None:
+    """A depth past the engine's 8-bit limit must not overflow."""
+    bot = _fresh()
+    bot.play((0, 0))
+    bot.suggest()
+    pv = bot.principal_variation(max_depth=10_000)
+    assert isinstance(pv, list)
 
 
 # ── set_time_per_stone ──────────────────────────────────────────────────

@@ -75,10 +75,13 @@ Everything below is exported from the package root:
 ```python
 from hammerhead import (
     Bot,
-    Move, Player,
+    Move, Player, MATE_SCORE,
     HammerheadError, IllegalMoveError, GameOverError, NotationError,
 )
 ```
+
+`MATE_SCORE` is the score magnitude of a forced win — see
+[`evaluate()`](#evaluate---int).
 
 ### `Move` and `Player`
 
@@ -113,7 +116,8 @@ bot.play((0, 0))       # X's opening
 ```
 
 Raises:
-- `IllegalMoveError` — cell occupied or out of range.
+- `IllegalMoveError` — illegal placement: the cell is occupied, out of
+  range, or (for the opening stone) not the origin `(0, 0)`.
 - `GameOverError` — the game has already been won.
 - `NotationError` — a string was passed (string notation is not
   supported yet; see §5).
@@ -125,6 +129,7 @@ Undo the most recent stone — one stone, not one turn. Raises `IndexError`
 if the history is empty.
 
 ```python
+bot = Bot()
 bot.play((0, 0))
 bot.undo()             # back to an empty board
 ```
@@ -145,6 +150,7 @@ budget and table size.
 | `winner` | `"X"` / `"O"` / `None` | Winning side, or `None` while undecided. |
 | `history` | `list[Move]` | Stones played so far, in order (a fresh copy). |
 | `time_per_stone_ms` | `int` | Current default per-stone budget. |
+| `tt_size_mb` | `int` | Transposition-table size, fixed at construction. |
 
 HeXO turns are two stones for the same side; X's opening turn is a single
 stone. `stone_in_turn` tells you where you are within a turn:
@@ -180,7 +186,8 @@ bot.play(move)
 
 Static evaluation of the current position. Positive favours X, negative
 favours O — the engine is X-positive regardless of whose turn it is. A
-decisive position scores near `±(MATE_SCORE - ply)`.
+decisive position scores near `±(MATE_SCORE - ply)`, where `MATE_SCORE`
+is the constant importable from the package root.
 
 ```python
 score = bot.evaluate()
@@ -305,7 +312,7 @@ except HammerheadError as exc:
 
 | Exception | Fires when | Recovery |
 |-----------|-----------|----------|
-| `IllegalMoveError` | Cell is occupied or out of range. | Pick another cell; or call `suggest()` for a guaranteed-legal move. |
+| `IllegalMoveError` | Cell is occupied, out of range, or an illegal opening (the first stone must be the origin). | Pick another cell; or call `suggest()` for a guaranteed-legal move. |
 | `GameOverError` | `play()` or `suggest()` after a win. | Inspect `winner`; call `reset()` for a new game or `undo()` to reopen. |
 | `NotationError` | A string is passed where a `(q, r)` tuple is expected. | Pass a coordinate tuple. |
 | `HammerheadError` | Base class — never raised directly. | Use to catch the whole family. |
