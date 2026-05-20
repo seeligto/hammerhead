@@ -5,7 +5,7 @@
 
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::config::{
-    FORK_COVER2_BONUS, MATE_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, TEMPO_WEIGHT,
+    FORK_COVER2_BONUS, MATE_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR,
 };
 use hammerhead_engine_core::coords::Coord;
 use hammerhead_engine_core::eval::{eval, is_mate_for};
@@ -375,30 +375,6 @@ fn five_run_layer1_does_not_double_count_via_same_color_extension() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 14c: tempo term
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn tempo_term_moves_eval_per_open_three() {
-    // Position 1: X has an open_3, O has none.
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
-    let v = eval(&b);
-
-    // Verify the open_3 count and that the eval includes the tempo term.
-    let tx = compute_threats(&b, Player::X, &[], None);
-    assert_eq!(tx.counts.open_3, 1);
-    // The eval is a sum of Layer 1, Layer 2 (which has no open_3
-    // weight — open_3 is an S1 only), Layer 3 (= 0), and tempo. The
-    // tempo contribution is `TEMPO_WEIGHT * 1`.
-    //
-    // We can't isolate tempo without recomputing everything; just
-    // assert it's positive and large enough that removing TEMPO_WEIGHT
-    // would change the answer.
-    assert!(v > TEMPO_WEIGHT);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 15: is_mate_for parity + cover-2 bonus
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -441,9 +417,9 @@ fn cover2_bonus_fires_for_two_disjoint_closed_fours() {
     //
     // Layer 2 for X = 2 × CLOSED_4_SCORE.
     // We expect with-fork eval to exceed that by ≈ FORK_COVER2_BONUS
-    // (modulo small Layer 1 / tempo contributions). The tolerance is
-    // wide because Layer 1 windows around the closed-4s contribute
-    // their own thousands.
+    // (modulo small Layer 1 contributions). The tolerance is wide
+    // because Layer 1 windows around the closed-4s contribute their
+    // own thousands.
     let lower_bound = FORK_COVER2_BONUS;
     assert!(
         v_with >= lower_bound,

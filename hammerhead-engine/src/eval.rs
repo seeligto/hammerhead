@@ -1,6 +1,6 @@
 //! Static evaluation. X-positive globally.
 //!
-//! Three layers plus an advisory tempo term:
+//! Three layers:
 //!
 //! 1. **Layer 1** — sliding 6-cell window scan over every populated axis
 //!    line. Each window decoded into a ternary index (`0..=728`) keyed
@@ -8,11 +8,11 @@
 //!    check on the two cells immediately outside the window separates
 //!    open / half-open / dead runs.
 //! 2. **Layer 2** — weighted sum of [`ThreatCounts`] from
-//!    [`Board::threats`]. Per-player, X-positive globally.
+//!    [`Board::threats`]. Per-player, X-positive globally. Phase 17
+//!    zeroed the S1/S2 shape weights (ablation verdict), so Layer 2
+//!    contributes the S0 shapes only.
 //! 3. **Layer 3** — minimum vertex cover of the S0
 //!    defense-cells hypergraph. Cover ≥ 3 is forced mate.
-//!
-//! The tempo term contributes `tempo_weight * (X.open_3 - O.open_3)`.
 //!
 //! Mate-distance: terminal positions and Layer 3 mate sentinels return
 //! `±(MATE_SCORE - ply)` so the search prefers shorter mates.
@@ -36,7 +36,7 @@ use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
 use crate::board::{Board, Player};
 use crate::config::{
     CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS, OPEN_4_SCORE,
-    OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, TEMPO_WEIGHT, WINDOW_SCORE,
+    OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, WINDOW_SCORE,
 };
 // S1/S2 shape weights — only referenced by the gated branch of
 // `layer2_shapes` (Phase 16 ablation).
@@ -86,7 +86,6 @@ pub fn eval(board: &Board) -> i32 {
     let s1s2 = board.eval_s1s2_enabled();
     score += layer2_shapes(&tx.counts, s1s2) - layer2_shapes(&to.counts, s1s2);
     score += fork_x - fork_o;
-    score += tempo_score(&tx, &to);
     score
 }
 
@@ -518,18 +517,6 @@ fn pair_covers_all(insts: &[ThreatInstance], a: Coord, b: Coord) -> bool {
         }
     }
     true
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tempo (advisory)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Tempo term. v1 covers only the `open_3` delta; the `+0` / `-1` cases
-/// from the spec are deferred until the shape detector exposes the
-/// matching counts.
-#[inline]
-fn tempo_score(tx: &ThreatSet, to: &ThreatSet) -> i32 {
-    TEMPO_WEIGHT * (i32::from(tx.counts.open_3) - i32::from(to.counts.open_3))
 }
 
 #[cfg(test)]
