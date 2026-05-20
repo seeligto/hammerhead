@@ -24,7 +24,6 @@ import random
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 # Shape order — identical to `ThreatCounts` / `ShapeWeights` / hexo.toml.
 SHAPE_NAMES: tuple[str, ...] = (
@@ -356,6 +355,16 @@ def run_tune_sweep(
     """Run a sweep over ``cells``, writing each result to ``out_path`` as
     it completes. Resumable: cells already present in ``out_path`` are
     skipped. Returns the full cell-result list (existing + new)."""
+    # Fail fast, before spawning a pool, if the engine lacks the runtime
+    # weight override (built without the eval_s1s2 feature).
+    from hammerhead_engine import Engine
+
+    if not hasattr(Engine, "set_eval_shape_weights"):
+        raise RuntimeError(
+            "engine built without the eval_s1s2 feature — rebuild with "
+            "the default feature set to run the tuning sweep"
+        )
+
     out_path = Path(out_path)
     state = _load_state(out_path)
     state.meta = {
