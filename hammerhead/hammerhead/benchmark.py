@@ -25,7 +25,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from hammerhead.bot import Bot, BotConfig
 from hammerhead.config import CONFIG
 from hammerhead_engine import Engine
 
@@ -435,23 +434,34 @@ def bench_selfplay(
     )
 
 
+def _new_engine() -> Engine:
+    """Fresh engine sized at the configured default — one self-play seat."""
+    return Engine(tt_size_mb=CONFIG.bot.default_tt_size_mb)
+
+
+def _play_stone(active: Engine, mirror: Engine, time_ms: int) -> tuple[int, int]:
+    """Search one stone on ``active``, place it on both engines, return it."""
+    m = active.best_move(time_ms=time_ms)
+    active.place(m)
+    mirror.place(m)
+    return m
+
+
 def _run_one_game(time_per_stone_ms: int, max_plies: int) -> int:
-    bx = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
-    bo = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
+    ex = _new_engine()
+    eo = _new_engine()
     plies = 0
     while plies < max_plies:
-        if bx.winner() is not None or bo.winner() is not None:
+        if ex.winner() is not None or eo.winner() is not None:
             break
-        side = bx.to_move()
-        active, mirror = (bx, bo) if side == 0 else (bo, bx)
-        m = active.play_stone()
-        mirror.observe(m)
+        side = ex.to_move()
+        active, mirror = (ex, eo) if side == 0 else (eo, ex)
+        _play_stone(active, mirror, time_per_stone_ms)
         plies += 1
         if active.winner() is not None or mirror.winner() is not None:
             break
         if active.halfmove() == 1 and plies < max_plies:
-            m = active.play_stone()
-            mirror.observe(m)
+            _play_stone(active, mirror, time_per_stone_ms)
             plies += 1
     return plies
 
@@ -478,26 +488,28 @@ class AblationResult:
     verdict: str
 
 
-def _random_opening(bx: Bot, bo: Bot, rng: random.Random, opening_plies: int) -> int:
+def _random_opening(
+    ex: Engine, eo: Engine, rng: random.Random, opening_plies: int
+) -> int:
     """Play up to ``opening_plies`` random legal moves, mirrored to both
-    bots. Returns the count actually played. Distinct openings make the
-    otherwise-deterministic engines produce distinct games."""
+    engines. Returns the count actually played. Distinct openings make
+    the otherwise-deterministic engines produce distinct games."""
     played = 0
     for _ in range(opening_plies):
-        if bx.winner() is not None:
+        if ex.winner() is not None:
             break
         move: Optional[tuple[int, int]] = None
         for _ in range(200):
             cand = (rng.randint(-6, 6), rng.randint(-6, 6))
             try:
-                bx.observe(cand)
+                ex.place(cand)
             except Exception:
                 continue
             move = cand
             break
         if move is None:
             break
-        bo.observe(move)
+        eo.place(move)
         played += 1
     return played
 
@@ -511,32 +523,30 @@ def _run_ablation_game(
 ) -> Optional[int]:
     """One ablation game. The S1/S2-enabled engine plays X iff
     ``s1s2_is_x``. Returns 0 (X win), 1 (O win), or None (draw / cap)."""
-    bx = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
-    bo = Bot(BotConfig(time_per_move_ms=time_per_stone_ms))
-    if not hasattr(bx.engine, "set_eval_s1s2"):
+    ex = _new_engine()
+    eo = _new_engine()
+    if not hasattr(ex, "set_eval_s1s2"):
         raise RuntimeError(
             "engine built without the eval_s1s2 feature — rebuild with "
             "the default feature set to run the ablation A/B"
         )
-    bx.engine.set_eval_s1s2(s1s2_is_x)
-    bo.engine.set_eval_s1s2(not s1s2_is_x)
+    ex.set_eval_s1s2(s1s2_is_x)
+    eo.set_eval_s1s2(not s1s2_is_x)
 
-    plies = _random_opening(bx, bo, rng, opening_plies)
+    plies = _random_opening(ex, eo, rng, opening_plies)
     while plies < max_plies:
-        if bx.winner() is not None or bo.winner() is not None:
+        if ex.winner() is not None or eo.winner() is not None:
             break
-        side = bx.to_move()
-        active, mirror = (bx, bo) if side == 0 else (bo, bx)
-        m = active.play_stone()
-        mirror.observe(m)
+        side = ex.to_move()
+        active, mirror = (ex, eo) if side == 0 else (eo, ex)
+        _play_stone(active, mirror, time_per_stone_ms)
         plies += 1
         if active.winner() is not None or mirror.winner() is not None:
             break
         if active.halfmove() == 1 and plies < max_plies:
-            m = active.play_stone()
-            mirror.observe(m)
+            _play_stone(active, mirror, time_per_stone_ms)
             plies += 1
-    return bx.winner()
+    return ex.winner()
 
 
 def bench_ablation(

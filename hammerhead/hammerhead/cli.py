@@ -28,7 +28,6 @@ from hammerhead_engine import Engine
 
 from . import benchmark as bench
 from . import promote as promote_mod
-from .bot import Bot, BotConfig
 from .config import CONFIG
 from .game import GameRecord
 
@@ -50,15 +49,29 @@ def _name(p: Optional[int]) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _engine_play_turn(eng: Engine, time_ms: int) -> list[Coord]:
+    """Search and place a full turn (1 stone for X's opening, else 2)."""
+    moves: list[Coord] = []
+    if eng.winner() is not None:
+        return moves
+    m = eng.best_move(time_ms=time_ms)
+    eng.place(m)
+    moves.append(m)
+    if eng.winner() is None and eng.halfmove() == 1:
+        m = eng.best_move(time_ms=time_ms)
+        eng.place(m)
+        moves.append(m)
+    return moves
+
+
 def cmd_play(args: argparse.Namespace) -> int:
-    cfg = BotConfig(time_per_move_ms=args.time_ms)
-    bot = Bot(cfg)
+    eng = Engine(tt_size_mb=CONFIG.bot.default_tt_size_mb)
     print("hammerhead REPL. Bot plays X. Enter your stones as 'q r' (comma-separated).")
     print("Type 'quit' to exit.")
-    while bot.winner() is None:
-        moves = bot.play_turn()
+    while eng.winner() is None:
+        moves = _engine_play_turn(eng, args.time_ms)
         print(f"bot: {moves}")
-        if bot.winner() is not None:
+        if eng.winner() is not None:
             break
         line = input("you: ").strip()
         if not line or line in {"quit", "exit"}:
@@ -66,11 +79,11 @@ def cmd_play(args: argparse.Namespace) -> int:
         try:
             for tok in line.split(","):
                 q_str, r_str = tok.strip().split()
-                bot.observe((int(q_str), int(r_str)))
+                eng.place((int(q_str), int(r_str)))
         except (ValueError, RuntimeError) as exc:
             print(f"error: {exc}")
             continue
-    print(f"winner: {_name(bot.winner())}")
+    print(f"winner: {_name(eng.winner())}")
     return 0
 
 
@@ -80,33 +93,35 @@ def cmd_play(args: argparse.Namespace) -> int:
 
 
 def _play_one_selfplay_game(time_ms: int, max_plies: int) -> tuple[Optional[int], GameRecord]:
-    bx = Bot(BotConfig(time_per_move_ms=time_ms))
-    bo = Bot(BotConfig(time_per_move_ms=time_ms))
+    tt_mb = CONFIG.bot.default_tt_size_mb
+    ex = Engine(tt_size_mb=tt_mb)
+    eo = Engine(tt_size_mb=tt_mb)
     record = GameRecord()
 
-    def step(active: Bot, mirror: Bot) -> bool:
-        m = active.play_stone()
-        mirror.observe(m)
+    def step(active: Engine, mirror: Engine) -> bool:
+        m = active.best_move(time_ms=time_ms)
+        active.place(m)
+        mirror.place(m)
         record.append(m)
         return active.winner() is not None or mirror.winner() is not None
 
     def done() -> bool:
         return (
             record.ply >= max_plies
-            or bx.winner() is not None
-            or bo.winner() is not None
+            or ex.winner() is not None
+            or eo.winner() is not None
         )
 
     while not done():
-        side = bx.to_move()
-        active, mirror = (bx, bo) if side == 0 else (bo, bx)
+        side = ex.to_move()
+        active, mirror = (ex, eo) if side == 0 else (eo, ex)
         if step(active, mirror) or done():
             break
         if active.halfmove() == 1:
             if step(active, mirror) or done():
                 break
 
-    winner = bx.winner() if bx.winner() is not None else bo.winner()
+    winner = ex.winner() if ex.winner() is not None else eo.winner()
     record.finish(winner)
     return winner, record
 

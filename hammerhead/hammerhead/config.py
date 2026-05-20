@@ -122,7 +122,7 @@ class BoardConfig:
 
 @dataclass(frozen=True, slots=True)
 class BotConfigDefaults:
-    """Defaults consumed by ``hammerhead.bot.BotConfig`` (Python side only)."""
+    """Defaults consumed by ``hammerhead.Bot.__init__`` (Python side only)."""
 
     default_time_per_move_ms: int
     default_tt_size_mb: int
