@@ -33,16 +33,9 @@
 )]
 
 use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
-use crate::board::{Board, Player};
+use crate::board::{Board, Player, ShapeWeights};
 use crate::config::{
     CLOSED_4_SCORE, CLOSED_5_SCORE, FORK_COVER2_BONUS, OPEN_4_SCORE, OPEN_5_SCORE, WINDOW_SCORE_8,
-};
-// S1/S2 shape weights — only referenced by the gated branch of
-// `layer2_shapes` (Phase 16 ablation).
-#[cfg(feature = "eval_s1s2")]
-use crate::config::{
-    ARCH_SCORE, BONE_SCORE, CLOSED_3_SCORE, OPEN_2_SCORE, OPEN_3_SCORE, RHOMBUS_SCORE,
-    TRAPEZOID_SCORE, TRIANGLE_SCORE,
 };
 use crate::coords::Coord;
 use crate::threats::{ThreatCounts, ThreatInstance, ThreatSet};
@@ -83,7 +76,8 @@ pub fn eval(board: &Board) -> i32 {
     let mut score = 0;
     score += layer1_window_scan_8cell(board);
     let s1s2 = board.eval_s1s2_enabled();
-    score += layer2_shapes(&tx.counts, s1s2) - layer2_shapes(&to.counts, s1s2);
+    let w = board.eval_shape_weights();
+    score += layer2_shapes(&tx.counts, s1s2, w) - layer2_shapes(&to.counts, s1s2, w);
     score += fork_x - fork_o;
     score
 }
@@ -112,7 +106,8 @@ pub fn bench_layer2_shapes(board: &Board) -> i32 {
     let tx = board.threats(Player::X);
     let to = board.threats(Player::O);
     let s1s2 = board.eval_s1s2_enabled();
-    layer2_shapes(&tx.counts, s1s2) - layer2_shapes(&to.counts, s1s2)
+    let w = board.eval_shape_weights();
+    layer2_shapes(&tx.counts, s1s2, w) - layer2_shapes(&to.counts, s1s2, w)
 }
 
 /// Bench-only: isolated Layer-3 fork bonus for `player`.
@@ -338,7 +333,7 @@ unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u
 /// the default feature set and the default runtime flag, the result is
 /// identical to Phase 15.
 #[inline]
-fn layer2_shapes(c: &ThreatCounts, s1s2: bool) -> i32 {
+fn layer2_shapes(c: &ThreatCounts, s1s2: bool, w: ShapeWeights) -> i32 {
     let s0 = OPEN_5_SCORE * i32::from(c.open_5)
         + CLOSED_5_SCORE * i32::from(c.closed_5)
         + OPEN_4_SCORE * i32::from(c.open_4)
@@ -346,16 +341,16 @@ fn layer2_shapes(c: &ThreatCounts, s1s2: bool) -> i32 {
     #[cfg(feature = "eval_s1s2")]
     if s1s2 {
         return s0
-            + OPEN_3_SCORE * i32::from(c.open_3)
-            + RHOMBUS_SCORE * i32::from(c.rhombus)
-            + ARCH_SCORE * i32::from(c.arch)
-            + BONE_SCORE * i32::from(c.bone)
-            + TRAPEZOID_SCORE * i32::from(c.trapezoid)
-            + OPEN_2_SCORE * i32::from(c.open_2)
-            + CLOSED_3_SCORE * i32::from(c.closed_3)
-            + TRIANGLE_SCORE * i32::from(c.triangle);
+            + w.open_3 * i32::from(c.open_3)
+            + w.rhombus * i32::from(c.rhombus)
+            + w.arch * i32::from(c.arch)
+            + w.bone * i32::from(c.bone)
+            + w.trapezoid * i32::from(c.trapezoid)
+            + w.open_2 * i32::from(c.open_2)
+            + w.closed_3 * i32::from(c.closed_3)
+            + w.triangle * i32::from(c.triangle);
     }
-    let _ = s1s2; // unused when the `eval_s1s2` feature is off
+    let _ = (s1s2, w); // unused when the `eval_s1s2` feature is off
     s0
 }
 

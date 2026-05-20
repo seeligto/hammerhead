@@ -128,6 +128,43 @@ pub struct Board {
     /// self-play A/B. Persists across [`Board::reset`] (engine config,
     /// not game state). See `SPEC_EVAL.md § Layer 2 ablation`.
     eval_s1s2: Cell<bool>,
+    /// Phase 18: runtime-overridable Layer 2 S1/S2 shape weights.
+    /// Defaults to the compile-time `*_SCORE` constants, so an
+    /// un-overridden board evaluates byte-identically to a
+    /// pre-Phase-18 build. Overridden via [`Board::set_eval_shape_weights`]
+    /// for the eval-tuning sweep. Persists across [`Board::reset`]
+    /// (engine config, not game state).
+    eval_shape_weights: Cell<ShapeWeights>,
+}
+
+/// Runtime-overridable Layer 2 S1/S2 shape weights (Phase 18 tuning).
+/// One `i32` per cross-axis shape counted in `ThreatCounts`. `Default`
+/// returns the compile-time `hexo.toml` values.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ShapeWeights {
+    pub open_3: i32,
+    pub rhombus: i32,
+    pub arch: i32,
+    pub bone: i32,
+    pub trapezoid: i32,
+    pub open_2: i32,
+    pub closed_3: i32,
+    pub triangle: i32,
+}
+
+impl Default for ShapeWeights {
+    fn default() -> Self {
+        Self {
+            open_3: crate::config::OPEN_3_SCORE,
+            rhombus: crate::config::RHOMBUS_SCORE,
+            arch: crate::config::ARCH_SCORE,
+            bone: crate::config::BONE_SCORE,
+            trapezoid: crate::config::TRAPEZOID_SCORE,
+            open_2: crate::config::OPEN_2_SCORE,
+            closed_3: crate::config::CLOSED_3_SCORE,
+            triangle: crate::config::TRIANGLE_SCORE,
+        }
+    }
 }
 
 impl Default for Board {
@@ -165,6 +202,7 @@ impl Board {
             threats_dirty_overflow: Cell::new(false),
             eval_cache: Cell::new(None),
             eval_s1s2: Cell::new(EVAL_S1S2_DEFAULT),
+            eval_shape_weights: Cell::new(ShapeWeights::default()),
         }
     }
 
@@ -442,6 +480,21 @@ impl Board {
     /// self-play A/B setup, not mid-search toggling.
     pub fn set_eval_s1s2(&self, enabled: bool) {
         self.eval_s1s2.set(enabled);
+        self.eval_cache.set(None);
+    }
+
+    /// Current Layer 2 S1/S2 shape weights (Phase 18 tuning surface).
+    #[inline]
+    #[must_use]
+    pub fn eval_shape_weights(&self) -> ShapeWeights {
+        self.eval_shape_weights.get()
+    }
+
+    /// Override the Layer 2 S1/S2 shape weights and invalidate the
+    /// static eval cache (the cached score depends on them). Intended
+    /// for eval-tuning A/B setup, not mid-search mutation.
+    pub fn set_eval_shape_weights(&self, weights: ShapeWeights) {
+        self.eval_shape_weights.set(weights);
         self.eval_cache.set(None);
     }
 

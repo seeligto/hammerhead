@@ -143,6 +143,27 @@ impl PyEngine {
         self.inner.set_eval_s1s2(enabled);
     }
 
+    /// Phase 18: override the Layer 2 S1/S2 shape weights for the
+    /// eval-tuning sweep. The 8 weights are ordered as in
+    /// `ThreatCounts`: `[open_3, rhombus, arch, bone, trapezoid,
+    /// open_2, closed_3, triangle]`. Present only when the engine is
+    /// built with the `eval_s1s2` Cargo feature (the default). See
+    /// `SPEC_EVAL.md § Layer 2`.
+    #[cfg(feature = "eval_s1s2")]
+    fn set_eval_shape_weights(&self, weights: [i32; 8]) {
+        self.inner
+            .set_eval_shape_weights(crate::board::ShapeWeights {
+                open_3: weights[0],
+                rhombus: weights[1],
+                arch: weights[2],
+                bone: weights[3],
+                trapezoid: weights[4],
+                open_2: weights[5],
+                closed_3: weights[6],
+                triangle: weights[7],
+            });
+    }
+
     /// TT diagnostics snapshot as a Python dict. Keys:
     /// `n_slots`, `occupied`, `generation`, `probes`, `hits`,
     /// `stores`, `collisions`. The four counter fields are populated
