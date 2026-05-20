@@ -406,7 +406,6 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
             &["engine", "eval", "fork_cover2_bonus"],
             "FORK_COVER2_BONUS",
         ),
-        (&["engine", "eval", "tempo_weight"], "TEMPO_WEIGHT"),
     ];
     for (path, name) in scalars {
         emit_i32(out, cfg, path, name);

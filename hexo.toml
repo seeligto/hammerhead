@@ -61,8 +61,9 @@ closed_extension_factor = 1
 # Cover ≥ 3 returns MATE; cover 2 returns this bonus.
 fork_cover2_bonus = 4000
 
-# Tempo (advisory). Small contribution; tempo emerges from search depth.
-tempo_weight = 50
+# (Phase 17 removed the advisory `tempo_weight` — the tempo term was
+# dropped together with the S1/S2 contributions. See SPEC_EVAL.md
+# § Tempo.)
 
 # Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
 overlap_bonus_x10 = 15  # 1.5x as integer ratio /10

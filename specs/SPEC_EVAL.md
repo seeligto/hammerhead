@@ -226,9 +226,10 @@ Phase 17 removed `tempo_score` entirely. It was derived from the
 `open_3` count — an S1 metric — and the S1/S2 ablation A/B found the
 S1/S2 family net-negative (see § Layer 2 ablation). With S1/S2
 contributions zeroed, keeping a single open_3-derived term in
-isolation had no justification, so the function and its callsite were
-dropped. `tempo_weight` remains in `hexo.toml` (unused) for a future
-eval-tuning phase.
+isolation had no justification, so the function, its callsite, and
+the `tempo_weight` config key (with its `TEMPO_WEIGHT` codegen) were
+all dropped. A future eval-tuning phase that revisits S1/S2 can
+reintroduce a tempo term with a fresh weight.
 
 ## Eval Pseudocode
 
