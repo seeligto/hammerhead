@@ -134,6 +134,15 @@ impl PyEngine {
         self.inner.clear_tt();
     }
 
+    /// Phase 16: enable / disable the Layer 2 S1/S2 eval contribution
+    /// for the self-play ablation A/B. Present only when the engine is
+    /// built with the `eval_s1s2` Cargo feature (the default). See
+    /// `SPEC_EVAL.md § Layer 2 ablation`.
+    #[cfg(feature = "eval_s1s2")]
+    fn set_eval_s1s2(&self, enabled: bool) {
+        self.inner.set_eval_s1s2(enabled);
+    }
+
     /// TT diagnostics snapshot as a Python dict. Keys:
     /// `n_slots`, `occupied`, `generation`, `probes`, `hits`,
     /// `stores`, `collisions`. The four counter fields are populated

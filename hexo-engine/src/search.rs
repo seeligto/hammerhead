@@ -943,6 +943,19 @@ impl Engine {
     pub fn tt_stats(&self) -> crate::tt::TTStatsSnapshot {
         self.tt.stats()
     }
+
+    /// Enable / disable the Layer 2 S1/S2 eval contribution at runtime
+    /// (Phase 16 ablation A/B harness). Gated by the `eval_s1s2` Cargo
+    /// feature — when the feature is off there is nothing to toggle and
+    /// this method does not exist.
+    ///
+    /// Intended to be called once at engine setup, before any search:
+    /// it does not wipe the TT, so toggling mid-game would leave stale
+    /// cached scores. See `SPEC_EVAL.md § Layer 2 ablation`.
+    #[cfg(feature = "eval_s1s2")]
+    pub fn set_eval_s1s2(&self, enabled: bool) {
+        self.board.set_eval_s1s2(enabled);
+    }
 }
 
 /// Per-stone time slice. `halfmove == 0` keeps `stone1_time_pct` of the
