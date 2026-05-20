@@ -1,175 +1,127 @@
-# Hotspots — Phase 16 baseline
+# Hotspots — Phase 17 baseline
 
-**Captured:** 2026-05-20 — git `0b92630`, rustc 1.94.0
+**Captured:** 2026-05-20 — git `4740d65`, rustc 1.94.0
 **Host:** AMD Ryzen 7 8845HS (16 cores), Linux 7.0.3-arch1-2
 **Bench data:** `benches/results/baseline.json` (`make bench` with
 `--time-ms 1000 --tt-stats`, `.cargo/config.toml`
 `target-cpu=native`, default features `simd_eval` + `eval_s1s2`).
-**Flamegraph:** `benches/results/flamegraph-2026-05-20T13-11-34-0b92630.svg`
-(`make flamegraph` — `perf record --call-graph dwarf -F 997` over
-`bench_search` at depth 2 / 4 / 6). This capture is unusually
-kernel-noisy (heavy scheduler / IRQ activity); the engine ranking
-below is cross-checked against the criterion micro-benches, which
-are the reliable signal.
+Canonical macro/micro run measured at git `a7adbc9`; the four
+following commits (`48c1556`..`4740d65`) are non-behavioural
+reviewer fixes (dead-config removal, CLI wiring, a progress line,
+a comment) — they do not move the numbers.
+**Bench wall-clock:** a full `make bench` (criterion micro suite +
+macro sweep) takes **~36 min** on this host. The macro-only tiers
+(`bench perf` / `bench reference`) are ~1 min — the criterion micro
+suite is the long pole.
+**Flamegraph:** `benches/results/flamegraph-2026-05-20T19-17-51-4740d65.svg`
+(`make flamegraph` — `perf record --call-graph dwarf` over
+`bench_search` at depth 2 / 4 / 6).
 
 ## Headline numbers
 
-| Metric | Phase 14 | Phase 15 | Phase 16 | Δ vs Phase 15 |
-|---|---:|---:|---:|---:|
-| NPS, `midgame_12`, t = 1000 ms | 337,077 | 344,713 | **431,686** | **+25.2 %** |
-| NPS, `midgame_30`, t = 1000 ms | 209,285 | 224,840 | **306,434** | **+36.3 %** |
-| NPS, `empty`, t = 1000 ms | 392,674 | 398,128 | 679,270 | +70.6 % |
-| NPS, `single_origin`, t = 1000 ms | 388,473 | 395,947 | 690,565 | +74.4 % |
-| Depth @ 1 s, `midgame_12` | 5 | 5 | **6** | **+1** |
-| Depth @ 1 s, `midgame_30` | 7 | 7 | **8** | **+1** |
-| Depth @ 1 s, `empty` | 7 | 7 | 7 | — |
-| `board::place`, `midgame_12` | — | 2.44 µs | **1.64 µs** | **-32.8 %** |
-| `board::place`, `midgame_30` | — | 2.13 µs | **1.58 µs** | **-25.8 %** |
-| `board::undo`, `midgame_12` | — | 2.30 µs | **0.64 µs** | **-72.0 %** |
-| `board::undo`, `midgame_30` | — | 2.15 µs | **0.81 µs** | **-62.2 %** |
-| `cached_eval_cold`, `midgame_12` | 4.08 µs | 4.25 µs | 3.75 µs | -11.7 % |
-| `cached_eval_cold`, `midgame_30` | 7.31 µs | 7.37 µs | 6.72 µs | -8.9 % |
-| `threats::compute_full`, `midgame_30` | 2.68 µs | 2.74 µs | 2.57 µs | -5.9 % |
+| Metric | Phase 16 | Phase 17 | Δ |
+|---|---:|---:|---:|
+| NPS, `midgame_12`, t = 1000 ms | 431,686 | **433,813** | +0.5 % |
+| NPS, `midgame_30`, t = 1000 ms | 306,434 | **314,297** | +2.6 % |
+| NPS, `empty`, t = 1000 ms | 679,270 | 671,364 | -1.2 % |
+| NPS, `single_origin`, t = 1000 ms | 690,565 | 679,270 | -1.6 % |
+| Depth @ 1 s, `midgame_12` | 6 | **5** | **-1** |
+| Depth @ 1 s, `midgame_30` | 8 | **6** | **-2** |
+| Depth @ 1 s, `empty` | 7 | 7 | — |
+| `cached_eval_cold`, `midgame_30` | 6.72 µs | **5.40 µs** | **-19.6 %** |
+| `cached_eval_cold`, `midgame_12` | 3.75 µs | **3.18 µs** | -15.2 % |
+| `eval::layer1_window_scan`, `midgame_30` | — | 0.85 µs | (8-cell) |
+| `threats::compute_full`, `midgame_30` | 2.57 µs | 2.71 µs | +5.4 % |
+| `board::place`, `midgame_30` | 1.58 µs | 1.22 µs | -22.8 % |
+| `ordering::bucket_value`, `midgame_30` | — | 2.34 µs | — |
 
-The single-run canonical NPS (431 k / 306 k) runs a little hotter
-than the 5-run `bench-perf` mean (~408 k / ~290 k) — this host's
-CPU frequency scaling adds ±5 % run-to-run. Either way the Phase 16
-targets are met.
+NPS is **flat** vs Phase 16 and **search depth fell 1–2 ply** on the
+midgame fixtures. This is the deliberate cost of the S1/S2 eval
+removal: the much-improved eval (see Strength, below) produces a
+differently-shaped, somewhat larger search tree — more leaf evals
+per interior node, so a higher average per-node cost that the
+8-cell Layer-1 win (~+10 % raw) only offsets to roughly flat. The
+8-cell table is itself behaviourally transparent (reference node
+counts identical pre/post). The depth loss traces to the eval
+change, **not** the move-ordering bucket — a back-to-back A/B
+(bucket-on vs bucket-off builds) showed identical depth either way
+and ~9 % more NPS with the creates-S1 ordering bucket *disabled*,
+which is the shipped config.
 
-### Phase 16 target table
+### Phase 17 target table (prompt headline targets)
 
 | Target | Goal | Result |
 |---|---|---|
-| midgame_12 NPS | ≥ 420 k | **431.7 k** ✅ |
-| midgame_30 NPS | ≥ 280 k | **306.4 k** ✅ |
-| Depth-at-time midgame_12 @ 1 s | ≥ 6 | **6** ✅ |
-| `bench-quick` wall-clock | ≤ 15 s | ~4 s ✅ |
-| Layer 2 ablation data | ≥ 1 self-play A/B | 50-game A/B run ✅ |
+| midgame_12 NPS | ≥ 550 k | 434 k ❌ |
+| midgame_30 NPS | ≥ 400 k | 314 k ❌ |
+| Depth-at-time midgame_12 @ 1 s | ≥ 7 | 5 ❌ |
+| Depth-at-time midgame_30 @ 1 s | ≥ 8 | 6 ❌ |
+| `make vs` parallel harness | minutes not hours | 50 g @ 500 ms in 1 m 42 s ✅ |
+| S1/S2 decision | KEEP or DROP @ ≥200 g | **DROP** (200 g, 29.0 %) ✅ |
 
-### Phase 16 changes that landed
+The NPS / depth targets are **missed**. They assumed the prompt's
+full-removal STEP 3 (delete the cross-axis matchers → a real
+`threats::compute` win) and a larger Layer-1 payoff. The shipped
+phase took the user-directed **hybrid** path (zero the S1/S2 eval
+weights, keep the detection code as a tunable surface), so
+`threats::compute` is unchanged, and the 8-cell Layer-1 net win is
+modest because the Phase-16 path already had a 6-cell AVX2 encoder.
+The real Phase-17 win is **strength**, not throughput — see below.
 
-1. **Proximity flat structure** (STEP 2): the four coord-keyed
-   `FxHashMap` / `FxHashSet` proximity fields on `Board` were
-   replaced with `ProximityCounts` (two flat `Box<[u8]>`) and two
-   `SparseCellSet` candidate sets (`src/proximity.rs`). `place` /
-   `undo` now do flat-array index bumps instead of ~470 hashbrown
-   probes per node. This is the bulk of the NPS gain — and the
-   `for_each_in_range<…proximity>` frame, Phase 15's #2 hotspot,
-   has effectively vanished from the flamegraph (5 mentions, down
-   from ~10 M samples).
-   - **Node counts drift**: the flat `inner_candidates` iterates in
-     a different order than the old `FxHashSet`; `order_moves`'
-     stable tie-break + `MOVE_GEN_CAP` truncation make alpha-beta
-     node counts order-dependent. Behaviourally transparent
-     (strength unaffected); the reference baseline was refreshed.
-2. **Two-buffer threat scratch** (STEP 3): `threats::incremental`
-   alternates `cross_axis_*` ⇄ `cross_axis_*_spare` instead of
-   `mem::take`, so the per-anchor breakdown `Vec` never reallocates.
-3. **Bench tiers** (STEP 1): `bench-quick` (~4 s), `bench-perf`
-   (~6 s), `bench-micro-quick`, plus a `cycles/node` metric.
-4. **Layer 2 S1/S2 ablation** (STEP 4): `eval_s1s2` Cargo feature +
-   runtime `set_eval_s1s2` toggle + `bench ablation` self-play A/B.
-   Default build unchanged. Ablation data: see the Phase 16 report.
+### Strength (the actual Phase 17 win)
 
-## Flamegraph-derived ranking
+- S1/S2 ablation A/B (200 games @ 500 ms, parallel harness):
+  S1/S2-enabled scored **29.0 %**, Wilson [23.2 %, 35.6 %] → DROP.
+- Post-removal strength gate: the S1/S2-zeroed build scored
+  **85 / 100 (Wilson [76.7 %, 90.7 %], Elo +301)** vs the Phase-16
+  HEAD build. The eval removal is a large strength gain.
 
-Engine user-space chains, sample counts summed across `bench_search`
-depth 2 / 4 / 6 on `midgame_12`. The `clear_tt;clear` frame
-(111 M) is the bench harness wiping the TT between criterion
-iterations — measurement overhead, discounted.
+## Phase 17 changes that landed
 
-### #1 — `eval::layer1_window_scan;scan_line` (unchanged from P15 #1)
+1. **Parallel match harness** (`promote.py` `run_match_parallel`,
+   `multiprocessing.Pool` + `imap_unordered`, spawn context). 50
+   games @ 500 ms in **1 m 42 s** wall-clock (was ~25 min
+   sequential). The ablation harness is parallel too
+   (`bench_ablation_parallel`).
+2. **S1/S2 hybrid removal**: eval shape weights zeroed in
+   `hexo.toml`, `tempo_score` dropped, the creates-S1 *ordering*
+   bucket disabled (A/B-confirmed faster). Detection code,
+   `ThreatCounts` fields, the `eval_s1s2` feature and the
+   `set_eval_s1s2` toggle are retained for a future eval-tuning
+   phase.
+3. **Layer 1 8-cell window table**: the 6-cell `WINDOW_SCORE` table
+   + runtime `extension_factor` (two boundary `is_set` probes + a
+   multiply per window) replaced by a single `WINDOW_SCORE_8`
+   8-cell ternary lookup (6561 entries, factor folded in at build
+   time). Scalar + AVX2 encode paths, both 6561-entry
+   byte-identity certified.
 
-| Stack tail | Samples |
-|---|---:|
-| `layer1_window_scan;scan_line` | 18.98 M |
-| `layer1_window_scan;scan_line;encode_ternary_batch;…;encode_ternary` | 14.55 M |
-| `layer1_window_scan;scan_line;extension_factor;classify` | 14.22 M |
-| `layer1_window_scan;scan_line;extension_factor;classify;is_set;get;indices` | 9.45 M |
+## Hotspot ranking (flamegraph + criterion cross-check)
 
-Layer 1 is now the unambiguous #1: the proximity rework removed the
-only frame that rivalled it. The `extension_factor;classify`
-boundary probe and the SIMD `encode_ternary_batch` are the two
-per-window costs — both Phase 17 targets.
+1. **Layer 1 window scan** — `windows8_run` (8-bit window
+   extraction) is the single hottest frame; `encode_ternary_8`
+   (the per-window scalar encode reached for sub-16-window AVX2
+   tails — most HeXO lines are short) is also top-5. The 8-cell
+   rework did not dethrone Layer 1.
+2. **Proximity updates** — `for_each_in_range` inside
+   `add_proximity` / `remove_proximity` (board `place` / `undo`),
+   several of the top-10 frames.
+3. **Ordering predicates** — `would_make_six`, `creates_s0` (virtual
+   placement axis-run probes).
+4. **`threats::compute`** (S0 + the still-present cross-axis
+   matchers) feeding `cached_eval`.
+5. **TT probe / store** + search-loop overhead.
 
-### #2 — `threats::walk_linear_runs;classify_linear_run`
+## Phase 18 entry point
 
-| Stack tail | Samples |
-|---|---:|
-| `walk_linear_runs;classify_linear_run;run_pieces` | 4.78 M |
-| `walk_linear_runs;classify_linear_run;is_isolated_open_two;coord_at` | 4.72 M |
-| `walk_linear_runs;classify_linear_run;push_s0;{closure#0}` | 4.70 M |
-| `compute_with_scratch;incremental;walk_linear_runs;run_endpoints;run_forward;get;indices` | 4.65 M |
-
-The linear-run walk in `threats::full_recompute` /
-`incremental` — every piece's linear runs are walked to preserve
-`s0_instances` iteration order. A per-line classification cache
-(Phase 17) would let incremental skip lines outside every dirty
-radius.
-
-### #3 — `ordering::creates_s0;run_forward`
-
-| Stack tail | Samples |
-|---|---:|
-| `creates_s0;run_forward;get;indices;from` | 4.49 M |
-
-The ordering S0 predicate. The Phase 15 STEP 4 axis-run cache that
-targeted this was reverted (commit 15c9638); Phase 17 should
-revisit with a different caching key (take 3).
-
-### #4 — TT probe / store
-
-| Stack tail | Samples |
-|---|---:|
-| `write<(TTEntry, TTEntry)>` | 14.76 M |
-| `tt::probe` (criterion micro: 250 ns hit) | — |
-
-TT store shows a sizeable raw count, but it is one bucket-pair
-write per node; the criterion `tt::probe` micro improved ~3 % vs
-Phase 15 (cache-warming side effect of the smaller `Board`).
-
-### #5 — `compute_with_scratch;incremental` reconciliation
-
-The incremental-threats reconcile (linear re-walk + selective
-cross-axis). The Phase 15 #6 `ThreatScratch::reset;clear<FxHashSet>`
-frame is no longer separable from the linear-walk chain in this
-capture; the `seen` `FxHashSet` → flat-bitset swap remains a
-Phase 17 candidate.
-
-### Dropped out since Phase 15
-
-- **`for_each_in_range<…proximity>`** (Phase 15 #2): gone. The flat
-  `ProximityCounts` / `SparseCellSet` rework removed it.
-
-## Phase 17 entry points
-
-In rough leverage order:
-
-1. **`extension_factor` SIMD batch** — inline the boundary
-   `is_set` probes into the AVX2 `encode_ternary` batch so the
-   per-window multiplier is computed in-register. Layer 1 is now
-   the sole #1; this is the highest-leverage remaining target.
-2. **Per-line `LineContribution` cache on `ThreatScratch`** —
-   extend the per-anchor cross-axis cache pattern to linear runs
-   so `incremental` skips line classification outside dirty radii.
-3. **`creates_s0` per-axis run cache, take 3** — the Phase 15
-   attempt was reverted; revisit with a candidate-pre-sort or a
-   different cache key.
-4. **`FxHashSet<(Axis, i16, i16)> seen` → flat bitset** — same
-   playbook as the Phase 13 axis-bitmap and Phase 16 proximity
-   flattening.
-5. **TT bucket layout** — 4-bucket or hash-folding to lift the
-   mid-tree collision rate.
-6. **Layer 2 S1/S2 ablation decision** — the Phase 16 STEP 4 A/B
-   gives a first data point; gather more before deciding.
-7. **AVX-512 32-wide `encode_ternary`** on Zen 4 hosts.
-
-## How to refresh this report
-
-```bash
-cd hexo-engine && maturin develop --release
-cd .. && make bench BENCH_TIME_MS=1000
-make flamegraph
-make bench-diff A=baseline B=<latest-isodate-sha>
-# Re-rank the sections above from the new folded.txt + diff output.
-```
+- **Layer 1 is still #1.** The 8-cell `encode_ternary_8` scalar tail
+  dominates because per-line window counts are typically < 16, so
+  the AVX2-16 batch rarely fully engages. A narrower SIMD width
+  (encode 8 windows at once) or a per-line direct-index path would
+  help.
+- **Proximity** `for_each_in_range` is #2 — revisit the
+  `creates_s0` per-axis run cache (Phase 18 candidate) or a flatter
+  proximity update.
+- **Move-ordering bucket refinement** — now that S1/S2 is settled.
+- See `SPEC_ROADMAP.md` § Phase 18 candidates, esp. the **Eval
+  tuning** entry (re-tune the retained S1/S2 surface).
