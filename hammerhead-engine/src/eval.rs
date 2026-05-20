@@ -231,12 +231,20 @@ fn encode_ternary_8(x_bits: u8, o_bits: u8) -> u16 {
 }
 
 /// Batch encode `count` 8-cell (`x_bits`, `o_bits`) pairs into ternary
-/// indices. Scalar-only in Phase 17 STEP 4; STEP 5 adds an AVX2 path
-/// behind the `simd_eval` feature.
+/// indices. Routes to the AVX2 implementation when `simd_eval` is on
+/// and the host advertises AVX2; otherwise the scalar reference path.
 #[inline]
 fn encode_ternary_8_batch(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
     debug_assert_eq!(x_bits.len(), o_bits.len());
     debug_assert_eq!(x_bits.len(), out.len());
+    #[cfg(all(target_arch = "x86_64", feature = "simd_eval"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 verified at runtime above.
+            unsafe { encode_ternary_8_batch_avx2(x_bits, o_bits, out) };
+            return;
+        }
+    }
     encode_ternary_8_batch_scalar(x_bits, o_bits, out);
 }
 
@@ -244,6 +252,75 @@ fn encode_ternary_8_batch(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
 fn encode_ternary_8_batch_scalar(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
     for ((x, o), slot) in x_bits.iter().zip(o_bits.iter()).zip(out.iter_mut()) {
         *slot = encode_ternary_8(*x, *o);
+    }
+}
+
+/// AVX2 8-cell ternary encode: 16 windows per loop body in a single
+/// 256-bit register (16 u16 lanes). Eight `step!` digits (bits 0..=7),
+/// powers `1, 3, 9, 27, 81, 243, 729, 2187`. The largest index is
+/// `2 * 3280 = 6560`, and the largest partial term `2 * 2187 = 4374` —
+/// both well inside u16, so the `_mm256_mullo_epi16` low-16 products
+/// and the running sum never wrap.
+///
+/// Correctness gate: `simd_8cell_matches_scalar_all_6561` drives every
+/// legal `(x_bits, o_bits)` pair through this path and the scalar
+/// reference, asserting byte-identical output.
+// `_mm_loadu_si128` / `_mm256_storeu_si256` are unaligned-safe; the
+// AVX2 lane ops are all in-register. Pedantic clippy can't track the
+// AVX2-target_feature contract, so silence the pointer lints locally.
+#[cfg(all(target_arch = "x86_64", feature = "simd_eval"))]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::cast_ptr_alignment, clippy::ptr_as_ptr)]
+unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u16]) {
+    use std::arch::x86_64::{
+        __m128i, __m256i, _mm_loadu_si128, _mm256_add_epi16, _mm256_and_si256,
+        _mm256_cvtepu8_epi16, _mm256_mullo_epi16, _mm256_or_si256, _mm256_set1_epi16,
+        _mm256_setzero_si256, _mm256_slli_epi16, _mm256_srli_epi16, _mm256_storeu_si256,
+    };
+
+    // SAFETY for the whole function body:
+    // - AVX2 is enabled by `target_feature(enable = "avx2")` so every
+    //   `_mm256_*` / `_mm_*` intrinsic is legal.
+    // - `*_loadu_*` / `*_storeu_*` are documented as alignment-safe.
+    // - `ptr::add` stays within `x_bits` / `o_bits` / `out` because the
+    //   surrounding `while` keeps `i + 16 <= n` and `n` is each slice's
+    //   length (debug_assert checks the equal-length invariant in the
+    //   dispatcher).
+    unsafe {
+        macro_rules! step {
+            ($x:ident, $o:ident, $acc:ident, $one:ident, $shift:literal, $pow:literal) => {{
+                let xi = _mm256_and_si256(_mm256_srli_epi16::<$shift>($x), $one);
+                let oi = _mm256_and_si256(_mm256_srli_epi16::<$shift>($o), $one);
+                let cell = _mm256_or_si256(xi, _mm256_slli_epi16::<1>(oi));
+                let pow_vec = _mm256_set1_epi16($pow);
+                let term = _mm256_mullo_epi16(cell, pow_vec);
+                $acc = _mm256_add_epi16($acc, term);
+            }};
+        }
+
+        let n = x_bits.len();
+        let mut i = 0;
+        while i + 16 <= n {
+            let x_u8 = _mm_loadu_si128(x_bits.as_ptr().add(i).cast::<__m128i>());
+            let o_u8 = _mm_loadu_si128(o_bits.as_ptr().add(i).cast::<__m128i>());
+            let x = _mm256_cvtepu8_epi16(x_u8);
+            let o = _mm256_cvtepu8_epi16(o_u8);
+            let one = _mm256_set1_epi16(1);
+            let mut acc = _mm256_setzero_si256();
+            step!(x, o, acc, one, 0, 1);
+            step!(x, o, acc, one, 1, 3);
+            step!(x, o, acc, one, 2, 9);
+            step!(x, o, acc, one, 3, 27);
+            step!(x, o, acc, one, 4, 81);
+            step!(x, o, acc, one, 5, 243);
+            step!(x, o, acc, one, 6, 729);
+            step!(x, o, acc, one, 7, 2187);
+            _mm256_storeu_si256(out.as_mut_ptr().add(i).cast::<__m256i>(), acc);
+            i += 16;
+        }
+        if i < n {
+            encode_ternary_8_batch_scalar(&x_bits[i..], &o_bits[i..], &mut out[i..]);
+        }
     }
 }
 
