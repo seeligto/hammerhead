@@ -589,12 +589,21 @@ def resolve_worker_count(n_workers: int, n_games: int) -> int:
     return max(1, min(n_workers, n_games))
 
 
+def _tally(results: list[ParallelGameResult]) -> tuple[int, int, int]:
+    """`(wins, draws, losses)` from ``current``'s POV over OK games."""
+    wins = sum(1 for r in results if r.winner == "current")
+    losses = sum(1 for r in results if r.winner == "best")
+    draws = sum(1 for r in results if r.winner is None)
+    return wins, draws, losses
+
+
 def run_match_parallel(
     current_cmd: list[str],
     best_cmd: list[str],
     cfg: MatchConfig,
     *,
     n_workers: int = 0,
+    progress_every: int = 10,
 ) -> MatchResult:
     """Play ``cfg.n_games`` games across a process pool; aggregate.
 
@@ -602,6 +611,12 @@ def run_match_parallel(
     0 = auto). Each game still keeps its two engines in-process to the
     worker via the subprocess-Bot model. Results are sorted by
     ``game_idx`` before summary so the aggregate is order-independent.
+
+    SPRT mode: the coordinator recomputes the running LLR after every
+    completed game and, on a decisive crossing, leaves the pool's
+    ``with`` block — which terminates any games still in flight. The
+    partial tail (games that had started but not finished) is simply
+    discarded; the verdict stands on the games that completed.
     """
     if cfg.opening_diversity:
         raise NotImplementedError(
@@ -613,7 +628,10 @@ def run_match_parallel(
 
     n_workers = resolve_worker_count(n_workers, cfg.n_games)
     configs = build_game_configs(cfg)
+    log_low, log_high = sprt_thresholds(cfg)
     results: list[ParallelGameResult] = []
+    llr: Optional[float] = None
+    verdict = "continuing"
 
     ctx = multiprocessing.get_context("spawn")
     with ctx.Pool(
@@ -625,6 +643,33 @@ def run_match_parallel(
             results.append(r)
             if r.notes:
                 print(f"game {r.game_idx + 1}: FAILED — {r.notes}", flush=True)
+
+            ok = [x for x in results if not x.notes]
+            wins, draws, losses = _tally(ok)
+            if cfg.test == "sprt" and ok:
+                llr = sprt_llr(
+                    wins,
+                    draws,
+                    losses,
+                    elo_low=cfg.sprt_elo_low,
+                    elo_high=cfg.sprt_elo_high,
+                )
+
+            if len(results) % progress_every == 0:
+                llr_s = f"  llr={llr:+.3f}" if llr is not None else ""
+                print(
+                    f"progress: {len(results)}/{cfg.n_games} games  "
+                    f"current {wins}-{losses}-{draws} (W-L-D){llr_s}",
+                    flush=True,
+                )
+
+            if cfg.test == "sprt" and llr is not None:
+                if llr >= log_high:
+                    verdict = "accept_h1"
+                    break
+                if llr <= log_low:
+                    verdict = "accept_h0"
+                    break
 
     ok = sorted(
         (r for r in results if not r.notes), key=lambda r: r.game_idx
@@ -639,4 +684,4 @@ def run_match_parallel(
         GameResult(winner=r.winner, plies=r.plies, current_was_x=r.current_was_x)
         for r in ok
     ]
-    return _summarize(game_results, cfg, "continuing", None)
+    return _summarize(game_results, cfg, verdict, llr)
