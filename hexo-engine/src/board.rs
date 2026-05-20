@@ -5,7 +5,9 @@
 //! incrementally — no full scan.
 
 use crate::axis_bitmap::AxisBitmaps;
-use crate::config::{MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
+use crate::config::{
+    EVAL_S1S2_DEFAULT, MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS,
+};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::proximity::{ProximityCounts, SparseCellSet, prox_idx};
 use crate::threats::{self, ThreatScratch, ThreatSet};
@@ -120,6 +122,12 @@ pub struct Board {
     /// Lazily-filled static-eval result. `None` after every mutation,
     /// reassigned on the next call to [`Board::cached_eval`].
     eval_cache: Cell<Option<i32>>,
+    /// Phase 16: Layer 2 S1/S2 ablation runtime flag. `true` ⟹ eval
+    /// counts the S1/S2 shape contributions. Defaults to
+    /// `EVAL_S1S2_DEFAULT`; toggled via [`Board::set_eval_s1s2`] for
+    /// self-play A/B. Persists across [`Board::reset`] (engine config,
+    /// not game state). See `SPEC_EVAL.md § Layer 2 ablation`.
+    eval_s1s2: Cell<bool>,
 }
 
 impl Default for Board {
@@ -156,6 +164,7 @@ impl Board {
             threats_dirty_centers: RefCell::new(SmallVec::new()),
             threats_dirty_overflow: Cell::new(false),
             eval_cache: Cell::new(None),
+            eval_s1s2: Cell::new(EVAL_S1S2_DEFAULT),
         }
     }
 
@@ -417,6 +426,23 @@ impl Board {
     #[must_use]
     pub fn winner(&self) -> Option<Player> {
         self.winner
+    }
+
+    /// `true` iff Layer 2 S1/S2 shape contributions are enabled in
+    /// eval (Phase 16 ablation runtime flag). Defaults to
+    /// `EVAL_S1S2_DEFAULT`. See `SPEC_EVAL.md § Layer 2 ablation`.
+    #[inline]
+    #[must_use]
+    pub fn eval_s1s2_enabled(&self) -> bool {
+        self.eval_s1s2.get()
+    }
+
+    /// Set the Layer 2 S1/S2 ablation flag and invalidate the static
+    /// eval cache (the cached score depends on it). Intended for
+    /// self-play A/B setup, not mid-search toggling.
+    pub fn set_eval_s1s2(&self, enabled: bool) {
+        self.eval_s1s2.set(enabled);
+        self.eval_cache.set(None);
     }
 
     /// Internal radius check. Assumes ply >= 1.

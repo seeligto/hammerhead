@@ -206,6 +206,10 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if blocks_opp_s0(ctx.board, m, ctx.side) {
         return 5;
     }
+    // Phase 16: the creates-S1 bucket is gated by the `eval_s1s2`
+    // feature. When it is off, the move falls through to the killer /
+    // history buckets. See `SPEC_EVAL.md § Layer 2 ablation`.
+    #[cfg(feature = "eval_s1s2")]
     if creates_s1(ctx.board, m, ctx.side) {
         return 4;
     }
@@ -296,6 +300,10 @@ pub(crate) fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
 /// directly and most rhombus / arch / trapezoid / bone extensions whose
 /// added stone is collinear with two existing stones; pure non-collinear
 /// shapes are bucket-7 noise per spec.
+///
+/// Gated by the `eval_s1s2` Cargo feature — when S1/S2 is ablated the
+/// creates-S1 ordering bucket is removed entirely (Phase 16).
+#[cfg(feature = "eval_s1s2")]
 fn creates_s1(board: &Board, m: Coord, side: Player) -> bool {
     for axis in Axis::all() {
         if axis_run_through_empty(board, m, axis, side) >= 3 {
