@@ -447,3 +447,39 @@ alone scrapes the gate at α*=1 (60 %, Wilson LB 0.502) — but 60 % does
 not exceed the control band (`open_2`'s α=0 control also hit 60 %) and
 its α-row is non-monotonic, so the pass is most likely noise. Per the
 pinned methodology it is carried into Stage C for a 200-game re-test.
+
+### Stage C — combined re-test
+
+`closed_3` was the only shape past the Stage B gate (α*=1). Its
+candidate weight (64) and ±25 % scalings were re-tested at 200
+games/cell vs baseline, 500 ms/stone:
+
+| candidate | closed_3 weight | W-L-D | winrate | Wilson 95 % |
+| --- | --- | --- | --- | --- |
+| combined-0.75 | 48 | 100-81-19 | 54.8 % | [0.478, 0.615] |
+| combined-1.00 | 64 | 96-80-24 | 54.0 % | [0.471, 0.608] |
+| combined-1.25 | 80 | 96-83-21 | 53.2 % | [0.463, 0.600] |
+
+Strongest by Wilson lower bound = combined-0.75 at 0.478 — **below
+0.50**. `closed_3`'s Stage B pass (60 %, LB 0.502 on 100 games)
+regressed to ~54 % at 200 games: a winner's-curse artifact, as
+anticipated. No candidate beats the baseline.
+
+### Phase 18 verdict — DROP
+
+No S1/S2 shape weight — alone (Stage B) or combined (Stage C) — beats
+the Phase 17 baseline at any α in the swept range. The S1/S2
+detection adds no measurable eval value once the double-counting
+fault is corrected away; corrected weights do not restore positional
+eval.
+
+- **`hexo.toml` S1/S2 weights remain `0`.** Phase 18 ships no weight
+  change; eval is byte-identical to Phase 17.
+- **Recommendation:** a future phase removes the S1/S2 detection code
+  (cross-axis matchers, `ThreatCounts` S1/S2 fields, the `eval_s1s2`
+  feature and toggles). Phase 18 itself removes no code.
+- The runtime `Engine.set_eval_shape_weights` override **stays** — it
+  is the sweep harness's tuning surface; a future re-tune reuses it.
+
+Stage D (time-control validation) is skipped: it runs only on the
+KEEP path.
