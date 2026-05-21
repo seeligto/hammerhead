@@ -75,7 +75,7 @@ pub fn eval(board: &Board) -> i32 {
 
     let mut score = 0;
     score += layer1_window_scan_8cell(board);
-    score += layer2_shapes(&tx.counts) - layer2_shapes(&to.counts);
+    score += layer2_shapes(tx.counts) - layer2_shapes(to.counts);
     score += fork_x - fork_o;
     score
 }
@@ -103,7 +103,7 @@ pub fn bench_layer1_window_scan(board: &Board) -> i32 {
 pub fn bench_layer2_shapes(board: &Board) -> i32 {
     let tx = board.threats(Player::X);
     let to = board.threats(Player::O);
-    layer2_shapes(&tx.counts) - layer2_shapes(&to.counts)
+    layer2_shapes(tx.counts) - layer2_shapes(to.counts)
 }
 
 /// Bench-only: isolated Layer-3 fork bonus for `player`.
@@ -323,7 +323,7 @@ unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u
 /// Returned as a per-player magnitude; the top-level eval subtracts
 /// the two players to get the signed contribution.
 #[inline]
-fn layer2_shapes(c: &ThreatCounts) -> i32 {
+fn layer2_shapes(c: ThreatCounts) -> i32 {
     OPEN_5_SCORE * i32::from(c.open_5)
         + CLOSED_5_SCORE * i32::from(c.closed_5)
         + OPEN_4_SCORE * i32::from(c.open_4)

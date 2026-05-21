@@ -17,8 +17,9 @@ use crate::coords::Coord;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 
-/// Per-player count of every detected shape. All u8 — saturated at 255 by
-/// the detection loop (deep enough never to be reached in legal play).
+/// Per-player count of every detected S0 shape. All u8 — saturated at
+/// 255 by the detection loop (deep enough never to be reached in legal
+/// play).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThreatCounts {
     /// `_XXXXX_` (both ends empty).
@@ -29,22 +30,6 @@ pub struct ThreatCounts {
     pub open_4: u8,
     /// `OXXXX_` (one end empty + extension space).
     pub closed_4: u8,
-    /// `_XXX_` with room to grow to a 6-window.
-    pub open_3: u8,
-    /// 4-piece hex parallelogram.
-    pub rhombus: u8,
-    /// 3-piece L-shape (one bend on the hex grid).
-    pub arch: u8,
-    /// 5-piece bowtie (two triangles sharing an edge).
-    pub bone: u8,
-    /// 5-piece trapezoid / pentagon.
-    pub trapezoid: u8,
-    /// 2-piece run isolated from opponent within 2 cells on the same axis.
-    pub open_2: u8,
-    /// `OXXX_` (one end empty).
-    pub closed_3: u8,
-    /// 3 mutually-adjacent stones.
-    pub triangle: u8,
 }
 
 /// Tag of an S0 (mate-in-one-turn) threat.
@@ -288,19 +273,6 @@ fn classify_linear_run(
                 );
             }
         }
-        (3, 2) => {
-            if has_room_for_six(board, player, axis, line_id, start_pos, end_pos) {
-                out.counts.open_3 = out.counts.open_3.saturating_add(1);
-            }
-        }
-        (3, 1) => {
-            out.counts.closed_3 = out.counts.closed_3.saturating_add(1);
-        }
-        (2, 2) => {
-            if is_isolated_open_two(board, player, axis, line_id, start_pos) {
-                out.counts.open_2 = out.counts.open_2.saturating_add(1);
-            }
-        }
         _ => {}
     }
 }
@@ -356,45 +328,6 @@ fn coord_at(axis: Axis, line_id: i16, pos: i16) -> Coord {
         Axis::R => Coord::new(line_id, pos),
         Axis::S => Coord::new(pos, line_id - pos),
     }
-}
-
-/// For a 3-run `_XXX_` at `[start..=end]`: at least one 6-cell window
-/// containing the run is opp-free. The two flank cells `start-1` /
-/// `end+1` are already empty (callers ensure `open_ends == 2`), so this
-/// reduces to "at least one of the cells 2 beyond the run is not opp".
-fn has_room_for_six(
-    board: &Board,
-    player: Player,
-    axis: Axis,
-    line_id: i16,
-    start: i16,
-    end: i16,
-) -> bool {
-    let beyond_left = coord_at(axis, line_id, start - 2);
-    let beyond_right = coord_at(axis, line_id, end + 2);
-    let bitmaps = board.axes();
-    let opp = player.opponent();
-    !bitmaps.is_player(beyond_left, opp) || !bitmaps.is_player(beyond_right, opp)
-}
-
-/// Open-2 qualifier: no opponent stone within 2 cells either side along
-/// the axis. Run is at `[start..=start+1]`.
-fn is_isolated_open_two(
-    board: &Board,
-    player: Player,
-    axis: Axis,
-    line_id: i16,
-    start: i16,
-) -> bool {
-    let bitmaps = board.axes();
-    let opp = player.opponent();
-    for delta in [-2_i16, -1, 2, 3] {
-        let c = coord_at(axis, line_id, start + delta);
-        if bitmaps.is_player(c, opp) {
-            return false;
-        }
-    }
-    true
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

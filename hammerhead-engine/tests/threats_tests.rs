@@ -120,45 +120,8 @@ fn closed_four_blocked_extension_is_not_threat() {
     assert!(t.s0_instances.is_empty());
 }
 
-#[test]
-fn open_three_axis_q() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.counts.open_3, 1);
-    // open_3 is S1, not S0.
-    assert!(t.s0_instances.is_empty());
-}
-
-#[test]
-fn closed_three_axis_q() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
-    o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.counts.closed_3, 1);
-    assert_eq!(t.counts.open_3, 0);
-}
-
-#[test]
-fn open_two_isolated() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0)]);
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.counts.open_2, 1);
-}
-
-#[test]
-fn open_two_not_isolated_when_opp_nearby_on_axis() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0)]);
-    o(&mut b, &[(3, 0)]); // within 2 along axis Q
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.counts.open_2, 0);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 10-12: per-axis equivalents
+// per-axis equivalents
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -185,15 +148,16 @@ fn open_five_axis_s() {
 
 #[test]
 fn rotation_preserves_counts() {
-    // Rotate Q-axis open-3 to R-axis open-3 (different orientation, same
-    // shape): counts must match.
+    // Rotate a Q-axis open-4 to an R-axis open-4 (different orientation,
+    // same shape): counts must match.
     let mut bq = fresh();
-    x(&mut bq, &[(0, 0), (1, 0), (2, 0)]);
+    x(&mut bq, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
     let mut br = fresh();
-    x(&mut br, &[(0, 0), (0, 1), (0, 2)]);
+    x(&mut br, &[(0, 0), (0, 1), (0, 2), (0, 3)]);
     let tq = compute(&bq, Player::X, &[], None);
     let tr = compute(&br, Player::X, &[], None);
     assert_eq!(tq.counts, tr.counts);
+    assert_eq!(tq.counts.open_4, 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,12 +250,11 @@ fn cache_consistent_after_undo() {
 fn distant_placement_does_not_affect_existing_threat_counts() {
     // Threat far from the new piece should retain the same counts.
     let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]); // X open-4
     let before = b.threats(Player::X).counts;
     x(&mut b, &[(50, 0)]); // far away, isolated single piece
     let after = b.threats(Player::X).counts;
-    assert_eq!(after.open_3, before.open_3);
-    assert_eq!(after.open_2, before.open_2);
+    assert_eq!(after, before);
 }
 
 #[test]
