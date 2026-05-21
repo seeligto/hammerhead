@@ -497,6 +497,7 @@ def bench_reference(
     if budget_s <= 0:
         raise ValueError("budget_s must be > 0")
     out: list[ReferenceEntry] = []
+    tt_stats_missing = False
     for fixture in fixtures:
         elapsed = 0.0
         for depth in range(1, max_depth + 1):
@@ -511,6 +512,8 @@ def bench_reference(
                 s = eng.tt_stats()
                 if s["probes"] > 0:
                     hit_rate = s["hits"] / s["probes"]
+                else:
+                    tt_stats_missing = True
             out.append(
                 ReferenceEntry(
                     fixture=fixture,
@@ -521,6 +524,13 @@ def bench_reference(
                 )
             )
             elapsed += t_ms / 1000.0
+    if use_tt_stats and tt_stats_missing:
+        print(
+            "WARNING: TT stats unavailable — build was not compiled with "
+            "--features tt_stats; tt_hit_rate recorded as null. "
+            "Rebuild via `make bench` / `make build-tt-stats`.",
+            file=sys.stderr,
+        )
     return out
 
 

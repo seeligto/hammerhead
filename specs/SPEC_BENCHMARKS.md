@@ -420,10 +420,29 @@ read as `0` when the feature is off, so callers can branch on
 
 `hammerhead bench reference --tt-stats` and `hammerhead bench nps --tt-stats`
 read the snapshot after the run and include hit rate (`hits/probes`)
-in the canonical JSON. Production builds (cdylib via `maturin
-develop --release`) do not enable the feature. Dev / regression
-builds opt in via `cargo build --features tt_stats` or `maturin
-develop --release --features tt_stats`.
+in the canonical JSON. Production / SDK builds (cdylib via `make
+build` → `maturin develop --release`) do not enable the feature.
+
+The `make bench` and `make bench-baseline` targets depend on
+`make build-tt-stats` (`maturin develop --release --features
+tt_stats`), so the full sweep / baseline run against a build that
+carries the counters and `baseline.json` populates `tt_hit_rate`.
+The fast NPS tiers (`make bench-quick`, `make bench-perf`) do *not*
+rebuild — they use whatever `make build` installed (feature-free),
+to keep per-call NPS unpolluted by the counter overhead.
+
+> **Ordering hazard.** `make bench` / `make bench-baseline` leave a
+> `tt_stats` build installed. Run `make build` afterwards to restore
+> the feature-free production build before any NPS measurement
+> (`bench-perf` / `bench-quick`) or strength run.
+
+When `--tt-stats` is requested but the loaded extension was built
+feature-free, every `tt_stats()` snapshot reads `probes == 0`;
+`bench reference` then records `tt_hit_rate: null` and emits a
+stderr `WARNING` (it does not fail — feature-free builds are a
+legitimate choice). Dev / regression builds opt in via
+`cargo build --features tt_stats` or `maturin develop --release
+--features tt_stats` (equivalently `make build-tt-stats`).
 
 The `new_generation` and `clear` paths reset all counters, so a
 fresh `Engine` starts at zero regardless of generation cycles.
@@ -697,10 +716,29 @@ dwarf capture collapses to `bench_search;[unknown] N`.
 ### TT statistics — `tt_stats` feature on bench builds
 
 TT stats are gated behind the `tt_stats` Cargo feature (§ TT
-statistics) so production builds stay zero-overhead. Phase 24 found
-that the production `make bench` build records `tt_hit_rate: null`
-because the feature is off — the `--tt-stats` flag was a no-op.
-`make bench` and `make bench-baseline` now build with
-`--features tt_stats` so `baseline.json` populates `tt_hit_rate`.
-`make build` (production / SDK) and `make bench-quick` /
-`make bench-perf` stay on the feature-free build.
+statistics) so production builds stay zero-overhead. Phase 24 (§ E)
+found that the production `make bench` build records
+`tt_hit_rate: null` because the feature is off — the `--tt-stats`
+flag passed by the `bench` / `bench-baseline` Makefile targets was a
+no-op against a feature-free `.so`.
+
+Phase 25 fix:
+
+- New `make build-tt-stats` helper — `maturin develop --release
+  --features tt_stats` + editable Python install.
+- `make bench` and `make bench-baseline` declare `build-tt-stats` as
+  a prerequisite, so the engine is rebuilt with the counters before
+  the sweep runs and `baseline.json` populates `tt_hit_rate`.
+- `make build` (production / SDK) is unchanged — still feature-free
+  `maturin develop --release`. `make bench-quick` / `make bench-perf`
+  are unchanged — they do not rebuild and run on whatever `make
+  build` installed, so per-call NPS is free of counter overhead.
+- **Ordering hazard:** after `make bench` / `make bench-baseline` a
+  `tt_stats` build is installed; run `make build` to restore the
+  feature-free build before NPS measurement or strength runs. Noted
+  in Makefile comments on the `bench` / `bench-quick` targets.
+- `bench_reference` now detects `probes == 0` after a real search
+  when `--tt-stats` was requested and emits a stderr `WARNING`
+  ("TT stats unavailable — build was not compiled with --features
+  tt_stats") instead of silently writing `null`. It does not fail:
+  a feature-free build is a legitimate deliberate choice.

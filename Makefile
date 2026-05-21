@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
-.PHONY: help build clean rebuild test lint fmt check vs promote install \
-        bench bench-quick bench-perf bench-micro bench-micro-quick \
-        bench-diff bench-baseline flamegraph pgo
+.PHONY: help build build-tt-stats clean rebuild test lint fmt check vs \
+        promote install bench bench-quick bench-perf bench-micro \
+        bench-micro-quick bench-diff bench-baseline flamegraph pgo
 
 ENGINE    := hammerhead-engine
 PY        := hammerhead
@@ -34,6 +34,10 @@ help: ## show available targets
 
 build: ## maturin develop --release + pip install -e hammerhead (uses .venv)
 	cd $(ENGINE) && $(abspath $(VMATURIN)) develop --release
+	$(VPY) -m pip install -e $(PY)
+
+build-tt-stats: ## maturin develop --release --features tt_stats (TT counters for bench)
+	cd $(ENGINE) && $(abspath $(VMATURIN)) develop --release --features tt_stats
 	$(VPY) -m pip install -e $(PY)
 
 clean: ## remove all build artifacts (target/, __pycache__, *.so, dist/, egg-info)
@@ -69,9 +73,18 @@ check: lint test ## lint + test (CI gate)
 # See specs/SPEC_BENCHMARKS.md.
 # ──────────────────────────────────────────────────────────────────────────────
 
-bench: ## full sweep, write canonical JSON to benches/results/
+# `bench` / `bench-baseline` rebuild the engine with --features tt_stats
+# first, so the loaded extension carries the TT probe/hit counters and
+# baseline.json gets a non-null tt_hit_rate. NOTE: this leaves a
+# tt_stats build installed — run `make build` afterwards to restore the
+# feature-free production build before any NPS measurement (bench-perf /
+# bench-quick), since the tt_stats build is marginally slower.
+bench: build-tt-stats ## full sweep (tt_stats build), write canonical JSON to benches/results/
 	@$(VPY) -m hammerhead.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 
+# bench-quick / bench-perf measure per-call NPS and intentionally use
+# whatever `make build` installed (feature-free). Run `make build`
+# before these if a prior `make bench` left a tt_stats build installed.
 bench-quick: ## [Phase 16] inner-loop NPS+depth+cyc/node check (~5-15s)
 	@$(VPY) -m hammerhead.cli bench quick
 
@@ -91,7 +104,7 @@ bench-micro-quick: ## [Phase 16] fast criterion for one TARGET (~5-10s, no drain
 bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/results/)
 	@$(VPY) -m hammerhead.cli bench diff $(A) $(B)
 
-bench-baseline: ## refresh benches/results/baseline.json from the latest run
+bench-baseline: build-tt-stats ## refresh benches/results/baseline.json (tt_stats build)
 	@$(VPY) -m hammerhead.cli bench all --time-ms $(BENCH_TIME_MS) --tt-stats
 	@latest=$$(ls -t benches/results/*.json | grep -v baseline | head -1); \
 	    cp "$$latest" benches/results/baseline.json; \
