@@ -6,7 +6,6 @@ Subcommands:
 * ``selfplay`` — bot vs bot, log winners
 * ``bench``    — benchmark suite (micro/quick/perf/nps/depth/
   threats/selfplay/reference/scaling/breakdown/all/diff)
-* ``analyze``  — placeholder until BSN parser ships
 * ``bot``      — line-based subprocess protocol (Phase 11 harness)
 """
 
@@ -688,17 +687,6 @@ def _print_diff_table(rows: list[dict]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# analyze — placeholder
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def cmd_analyze(args: argparse.Namespace) -> int:
-    del args
-    print("analyze: BSN parser not implemented yet (phase 12+).")
-    return 1
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # bot — subprocess protocol
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1091,10 +1079,6 @@ def _build_parser() -> argparse.ArgumentParser:
     bs.add_argument("b")
 
     sp_bench.set_defaults(fn=cmd_bench)
-
-    sp = sub.add_parser("analyze", help="analyze a BSN game (stub)")
-    sp.add_argument("bsn")
-    sp.set_defaults(fn=cmd_analyze)
 
     sp = sub.add_parser("bot", help="subprocess protocol on stdin/stdout")
     sp.add_argument("--tt-size-mb", type=int, default=CONFIG.bot.default_tt_size_mb)
