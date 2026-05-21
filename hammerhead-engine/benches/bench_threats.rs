@@ -39,22 +39,6 @@ fn bench_compute_full(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_single_cell_blocks_all(c: &mut Criterion) {
-    let mut group = c.benchmark_group("threats::single_cell_blocks_all");
-    for fx in FIXTURES {
-        let board = (fx.build)();
-        let tx = threats::compute(&board, Player::X, &[], None);
-        let to = threats::compute(&board, Player::O, &[], None);
-        group.bench_function(fx.name, |b| {
-            b.iter(|| {
-                black_box(threats::single_cell_blocks_all(&tx.s0_instances))
-                    | black_box(threats::single_cell_blocks_all(&to.s0_instances))
-            });
-        });
-    }
-    group.finish();
-}
-
 /// Defense-cells extraction: the `compute` output already carries
 /// per-instance defense cells. This bench reads them as the search would.
 fn bench_defense_cells_read(c: &mut Criterion) {
@@ -79,7 +63,6 @@ fn bench_defense_cells_read(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_compute_full,
-    bench_single_cell_blocks_all,
     bench_defense_cells_read
 );
 criterion_main!(benches);

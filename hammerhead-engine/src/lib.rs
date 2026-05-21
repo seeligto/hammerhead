@@ -30,7 +30,6 @@ pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 pub use search::{Engine, INF, SearchConfig, SearchResult, search_root};
 pub use threats::{
     ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,
-    single_cell_blocks_all,
 };
 pub use tt::{TTEntry, TTFlag, TranspositionTable};
 pub use win::is_winning_move;

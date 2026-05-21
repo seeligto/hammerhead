@@ -2,7 +2,7 @@
 
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::coords::Coord;
-use hammerhead_engine_core::threats::{ThreatCounts, ThreatKind, compute, single_cell_blocks_all};
+use hammerhead_engine_core::threats::{ThreatCounts, ThreatKind, compute};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -177,43 +177,6 @@ fn defense_cells_actually_block() {
     let after = compute(&b, Player::X, &[], None);
     // 4-run with one immediate neighbour now opp → closed_4 or dead.
     assert_eq!(after.counts.open_4, 0);
-}
-
-#[test]
-fn fork_two_open_fours_disjoint_is_mate_pending() {
-    let mut b = fresh();
-    // Open-4 on axis Q at r=0.
-    x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
-    // Open-4 on axis Q at r=10 (well separated).
-    x(&mut b, &[(0, 10), (1, 10), (2, 10), (3, 10)]);
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.s0_instances.len(), 2);
-    assert!(t.is_mate_pending());
-    assert!(!single_cell_blocks_all(&t.s0_instances));
-}
-
-#[test]
-fn fork_two_threats_sharing_cell_not_mate_pending() {
-    // Construct two S0 instances whose defense_cells share a coordinate.
-    // Use a closed_5 with defense at (5,0) and an open_4 also containing
-    // (5,0) as one defense — e.g., place the open_4 at r=0, q in 6..10
-    // with neighbours empty so (5,0) is its left defense.
-    let mut b = fresh();
-    // Closed-5: X at (0..5, 0), O at (-1, 0). Defense = (5,0).
-    x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]);
-    o(&mut b, &[(-1, 0)]);
-    let t = compute(&b, Player::X, &[], None);
-    assert_eq!(t.counts.closed_5, 1);
-    // Single instance — vacuously coverable by one cell.
-    assert_eq!(t.s0_instances.len(), 1);
-    assert!(single_cell_blocks_all(&t.s0_instances));
-    // Single-threat is_mate_pending must be false (needs >=2).
-    assert!(!t.is_mate_pending());
-}
-
-#[test]
-fn single_cell_blocks_all_empty() {
-    assert!(single_cell_blocks_all(&[]));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

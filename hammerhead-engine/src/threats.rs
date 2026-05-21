@@ -98,15 +98,6 @@ impl ThreatScratch {
 }
 
 impl ThreatSet {
-    /// `true` iff at least two S0 threats exist and no single cell is in
-    /// every threat's `defense_cells`. Conservative: a real fork-mate
-    /// requires no 2-cell response covers all threats; this returns `true`
-    /// for the simpler "no 1-cell response covers all" — a primitive used by
-    /// Phase 5's full fork detector.
-    #[must_use]
-    pub fn is_mate_pending(&self) -> bool {
-        self.s0_instances.len() >= 2 && !single_cell_blocks_all(&self.s0_instances)
-    }
 }
 
 /// Compute the threat set for `player` on `board`.
@@ -330,26 +321,3 @@ fn coord_at(axis: Axis, line_id: i16, pos: i16) -> Coord {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fork primitives
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// `true` iff a single cell appears in every instance's `defense_cells`.
-/// Empty `insts` returns `true` (vacuously coverable). Used by
-/// [`ThreatSet::is_mate_pending`] and by Phase 5's fork-mate scorer.
-#[inline]
-#[must_use]
-pub fn single_cell_blocks_all(insts: &[ThreatInstance]) -> bool {
-    let Some(first) = insts.first() else {
-        return true;
-    };
-    'outer: for candidate in &first.defense_cells {
-        for inst in &insts[1..] {
-            if !inst.defense_cells.contains(candidate) {
-                continue 'outer;
-            }
-        }
-        return true;
-    }
-    false
-}
