@@ -223,51 +223,16 @@ fn incremental_handles_place_then_undo_round_trip() {
 }
 
 #[test]
-fn incremental_handles_overflow_fallback() {
-    // Place enough stones without reading between to overflow the
-    // dirty-centers vec. The next read uses full-recompute fallback
-    // and must still match the oracle.
-    use hammerhead_engine_core::config::MAX_INCREMENTAL_CENTERS;
-    let mut b = build_midgame_12();
-    let legal = moves::generate(&b, 4);
-    let n_to_place = MAX_INCREMENTAL_CENTERS + 2;
-    for &m in legal.iter().take(n_to_place) {
-        if b.is_legal(m) {
-            b.place(m).unwrap();
-        }
-    }
-    assert!(b.threats_dirty_overflow_for_test());
-
-    let incr_x = b.threats(Player::X).clone();
-    let oracle_x = compute_threats(&b, Player::X);
-    assert!(
-        threat_set_equiv(&incr_x, &oracle_x),
-        "{}",
-        report_diff(&incr_x, &oracle_x, "X overflow-fallback drift")
-    );
-
-    let incr_o = b.threats(Player::O).clone();
-    let oracle_o = compute_threats(&b, Player::O);
-    assert!(
-        threat_set_equiv(&incr_o, &oracle_o),
-        "{}",
-        report_diff(&incr_o, &oracle_o, "O overflow-fallback drift")
-    );
-}
-
-#[test]
 fn incremental_matches_full_multi_cluster() {
-    // Phase 16: stress 2..=MAX_INCREMENTAL_CENTERS simultaneous dirty
-    // centers per reconciliation. Places `k` stones without a threats
-    // read between them, so the next read reconciles `k` dirty centers
-    // at once — the multi-cluster case the Phase 15 oracle under-tested.
-    use hammerhead_engine_core::config::MAX_INCREMENTAL_CENTERS;
+    // Phase 16: stress several simultaneous dirty centers per
+    // reconciliation. Places `k` stones without a threats read between
+    // them, so the next read reconciles `k` dirty centers at once.
     const MULTI_SEED: u64 = 0xC0FF_EED1_5C0D_E5A1_u64;
 
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(MULTI_SEED);
     let mut scratch = ThreatScratch::default();
 
-    for k in [2usize, 3, MAX_INCREMENTAL_CENTERS] {
+    for k in [2usize, 3, 4] {
         let mut board = build_midgame_12();
         for _ in 0..1000 {
             // Place up to `k` stones without reading threats between.
@@ -300,16 +265,14 @@ fn incremental_matches_full_multi_cluster() {
                 threats::compute_with_scratch(&board, Player::O, &mut scratch);
             assert!(
                 threat_set_equiv(&inc_x, &full_x),
-                "X multi-cluster drift (k={k}, ply {})\ndirty centers: {:?}\n{}",
+                "X multi-cluster drift (k={k}, ply {})\n{}",
                 board.ply(),
-                board.threats_dirty_centers_for_test(),
                 report_diff(&inc_x, &full_x, "X"),
             );
             assert!(
                 threat_set_equiv(&inc_o, &full_o),
-                "O multi-cluster drift (k={k}, ply {})\ndirty centers: {:?}\n{}",
+                "O multi-cluster drift (k={k}, ply {})\n{}",
                 board.ply(),
-                board.threats_dirty_centers_for_test(),
                 report_diff(&inc_o, &full_o, "O"),
             );
             // Undo back, then read to reset the dirty accumulator (those
@@ -382,16 +345,14 @@ fn incremental_matches_full_recompute_10k_positions() {
             let full_o = threats::compute_with_scratch(&board, Player::O, &mut scratch);
             assert!(
                 threat_set_equiv(&inc_x, &full_x),
-                "X drift at ply {} (positions_tested={positions_tested})\ndirty centers were: {:?}\n{}",
+                "X drift at ply {} (positions_tested={positions_tested})\n{}",
                 board.ply(),
-                board.threats_dirty_centers_for_test(),
                 report_diff(&inc_x, &full_x, "X"),
             );
             assert!(
                 threat_set_equiv(&inc_o, &full_o),
-                "O drift at ply {} (positions_tested={positions_tested})\ndirty centers were: {:?}\n{}",
+                "O drift at ply {} (positions_tested={positions_tested})\n{}",
                 board.ply(),
-                board.threats_dirty_centers_for_test(),
                 report_diff(&inc_o, &full_o, "O"),
             );
             positions_tested += 1;

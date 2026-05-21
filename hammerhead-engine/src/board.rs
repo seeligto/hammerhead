@@ -5,12 +5,11 @@
 //! incrementally — no full scan.
 
 use crate::axis_bitmap::AxisBitmaps;
-use crate::config::{MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
+use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::proximity::{ProximityCounts, SparseCellSet, prox_idx};
 use crate::threats::{self, ThreatScratch, ThreatSet};
 use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
-use smallvec::SmallVec;
 use std::cell::{Cell, Ref, RefCell};
 use thiserror::Error;
 
@@ -101,22 +100,11 @@ pub struct Board {
     /// at the top of every `compute_with_scratch` call so capacity is
     /// retained across nodes.
     threat_scratch: RefCell<ThreatScratch>,
-    /// Phase 15: dirty flag. `true` ⟹ cached threats may be stale and
-    /// must be reconciled against [`Self::threats_dirty_centers`] on
-    /// next read. `Cell<bool>` (not `RefCell<bool>`) so the hot-path
-    /// cache-clean check is a single byte load with no borrow tracking.
+    /// Dirty flag. `true` ⟹ cached threats are stale and must be
+    /// recomputed on next read. `Cell<bool>` (not `RefCell<bool>`) so the
+    /// hot-path cache-clean check is a single byte load with no borrow
+    /// tracking.
     threats_dirty: Cell<bool>,
-    /// Phase 15: coords of every `place` / `undo` since the last
-    /// reconcile, in placement order. `SmallVec` inline capacity is
-    /// `MAX_INCREMENTAL_CENTERS` (from `hexo.toml`); further pushes are
-    /// dropped and [`Self::threats_dirty_overflow`] is set so the next
-    /// reconcile falls back to a full recompute.
-    threats_dirty_centers: RefCell<SmallVec<[Coord; MAX_INCREMENTAL_CENTERS]>>,
-    /// Phase 15: set when [`Self::mark_threats_dirty`] is called while
-    /// `threats_dirty_centers` is full. Causes the next reconcile to
-    /// skip the incremental path. Cleared on every successful
-    /// reconcile.
-    threats_dirty_overflow: Cell<bool>,
     /// Lazily-filled static-eval result. `None` after every mutation,
     /// reassigned on the next call to [`Board::cached_eval`].
     eval_cache: Cell<Option<i32>>,
@@ -153,8 +141,6 @@ impl Board {
             threats_o: RefCell::new(ThreatSet::default()),
             threat_scratch: RefCell::new(ThreatScratch::default()),
             threats_dirty: Cell::new(false),
-            threats_dirty_centers: RefCell::new(SmallVec::new()),
-            threats_dirty_overflow: Cell::new(false),
             eval_cache: Cell::new(None),
         }
     }
@@ -176,8 +162,6 @@ impl Board {
         *self.threats_x.borrow_mut() = ThreatSet::default();
         *self.threats_o.borrow_mut() = ThreatSet::default();
         self.threats_dirty.set(false);
-        self.threats_dirty_centers.borrow_mut().clear();
-        self.threats_dirty_overflow.set(false);
         self.threat_scratch.borrow_mut().clear_all();
         self.eval_cache.set(None);
     }
@@ -233,7 +217,7 @@ impl Board {
         self.history_players.push(player);
         self.ply += 1;
         self.advance_parity();
-        self.mark_threats_dirty(c);
+        self.mark_threats_dirty();
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
         }
@@ -258,7 +242,7 @@ impl Board {
             .expect("invariant: history_players parallel to history");
 
         self.axes.clear(c, player);
-        self.mark_threats_dirty(c);
+        self.mark_threats_dirty();
         if self.winner == Some(player) {
             self.winner = None;
         }
@@ -485,9 +469,8 @@ impl Board {
         }
     }
 
-    /// Reconcile both player caches against [`Self::threats_dirty_centers`]
-    /// and clear the dirty flag. Called only from [`Self::threats`] when
-    /// the dirty flag is set.
+    /// Recompute both player caches and clear the dirty flag. Called only
+    /// from [`Self::threats`] when the dirty flag is set.
     #[cold]
     fn reconcile_threats(&self) {
         let mut scratch = self.threat_scratch.borrow_mut();
@@ -508,37 +491,20 @@ impl Board {
         self.clear_threats_dirty();
     }
 
-    /// Mark the threat caches as stale and record `center` as one of the
-    /// mutation points to be reconciled against on next [`Self::threats`]
-    /// read. Phase 15: replaces the old single-`Option<Coord>` marker
-    /// with a bounded `SmallVec` so multiple mutations can batch into a
-    /// single reconcile without losing locality information.
-    ///
-    /// Bounded by [`MAX_INCREMENTAL_CENTERS`] inline slots; further pushes
-    /// are dropped and [`Self::threats_dirty_overflow`] is set so the
-    /// next reconcile falls back to a full recompute.
+    /// Mark the threat caches as stale so the next [`Self::threats`] read
+    /// triggers a recompute.
     #[inline]
-    fn mark_threats_dirty(&self, c: Coord) {
+    fn mark_threats_dirty(&self) {
         self.threats_dirty.set(true);
-        let mut centers = self.threats_dirty_centers.borrow_mut();
-        if centers.len() < MAX_INCREMENTAL_CENTERS {
-            centers.push(c);
-        } else {
-            // Past the cap; drop the push, signal overflow.
-            self.threats_dirty_overflow.set(true);
-        }
         // The eval cache shadows the same board state; invalidate together.
         self.eval_cache.set(None);
     }
 
-    /// Clear the dirty flag, overflow flag, and dirty-center accumulator.
-    /// Called only from [`Self::reconcile_threats`] after a successful
-    /// recompute.
+    /// Clear the dirty flag. Called only from [`Self::reconcile_threats`]
+    /// after a successful recompute.
     #[inline]
     fn clear_threats_dirty(&self) {
         self.threats_dirty.set(false);
-        self.threats_dirty_overflow.set(false);
-        self.threats_dirty_centers.borrow_mut().clear();
     }
 
     /// Static eval, cached on the board. Recomputes lazily after every
@@ -588,7 +554,7 @@ impl Board {
         self.history_players.push(player);
         self.ply += 1;
         self.advance_parity();
-        self.mark_threats_dirty(c);
+        self.mark_threats_dirty();
         if crate::win::is_winning_move(self, c, player) {
             self.winner = Some(player);
         }
@@ -600,23 +566,6 @@ impl Board {
     #[must_use]
     pub fn threats_dirty_for_test(&self) -> bool {
         self.threats_dirty.get()
-    }
-
-    /// Test-only: copy out the dirty-center accumulator. Order is
-    /// insertion order; the vec is `MAX_INCREMENTAL_CENTERS`-bounded.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn threats_dirty_centers_for_test(&self) -> Vec<Coord> {
-        self.threats_dirty_centers.borrow().to_vec()
-    }
-
-    /// Test-only: read the threats-dirty overflow flag. `true` ⟹ at
-    /// least one `mark_threats_dirty` call since the last reconcile
-    /// dropped its center because the dirty-centers vec was full.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn threats_dirty_overflow_for_test(&self) -> bool {
-        self.threats_dirty_overflow.get()
     }
 
     /// Test-only: overwrite `(side_to_move, halfmove)` and re-overlay the
