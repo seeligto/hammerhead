@@ -151,20 +151,6 @@ impl LineBitmap {
         count
     }
 
-    /// 6-bit window. Bit `i` (LSB-first) is `get(pos + i)`. Used by Layer-1
-    /// eval window scan.
-    #[inline]
-    #[must_use]
-    pub fn window6(&self, pos: i16) -> u8 {
-        let mut out: u8 = 0;
-        for i in 0i16..6 {
-            if self.get(pos.wrapping_add(i)) {
-                out |= 1 << i;
-            }
-        }
-        out
-    }
-
     /// 8-bit window. Bit `i` (LSB-first) is `get(pos + i)`. Used by the
     /// Phase-17 Layer-1 8-cell window scan.
     #[inline]
@@ -425,16 +411,6 @@ impl AxisBitmaps {
             return 0;
         }
         1 + line.run_backward(pos) + line.run_forward(pos)
-    }
-
-    /// 6-bit window at `(axis, line_id, pos)` for `p`. `0` if the line slot
-    /// has no stones for `p` yet.
-    #[must_use]
-    pub fn window6(&self, axis: Axis, line_id: i16, pos: i16, p: Player) -> u8 {
-        let Some(line) = self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref() else {
-            return 0;
-        };
-        line.window6(pos)
     }
 
     /// `true` iff `p` has a stone at `(axis, line_id, pos)`. Cheap single-bit
