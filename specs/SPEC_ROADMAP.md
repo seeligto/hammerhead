@@ -28,6 +28,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 20 | remove idle S1/S2 detection code | ✅ done |
 | 21 | SRP audit + deletion-sweep investigation (read-only) | ✅ done |
 | 22 | deletion sweep — vestigial incremental machinery, dead config emits, `window6`, `notation.py` | ✅ done |
+| 23 | SRP splits — `search`/`engine`, `board` proximity helpers, `cli.py`, `promote.py` | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -477,14 +478,26 @@ behaviour-adjacent change and the parity gate confirmed it).
 file moves on top of the smaller post-Phase-22 tree — zero behaviour
 change, reference node counts byte-identical.
 
-- `search.rs` → `search.rs` (algorithm) + `engine.rs` (the `Engine`
-  game-state handle).
-- `board.rs` → smaller `board.rs` + extracted helpers (proceeded only
-  if `board.rs` stayed > 500 LOC post-Phase-22).
-- `cli.py` → split by subcommand group.
-- `promote.py` → 3-way split (match / sprt / worktree).
+Splits (all flat — no subdirectories, per the investigation):
 
-`axis_bitmap.rs` and `benchmark.py` were assessed and kept.
+- `search.rs` → `search.rs` (the search algorithm) + `engine.rs`
+  (the `Engine` game-state handle: owns board/tt/ordering, exposes
+  place/undo/best_move/reset).
+- `board.rs` (703 LOC post-Phase-22) → the `Board`-side proximity
+  helpers extracted into the existing `proximity.rs`, next to
+  `ProximityCounts`.
+- `cli.py` → `cli.py` (argparse + dispatch + play/selfplay/bot) +
+  `cli_bench.py` (bench subcommands) + `cli_match.py`
+  (match/promote/vs subcommands).
+- `promote.py` → `promote.py` (match drivers + data model) +
+  `promote_sprt.py` (Wilson/Elo/SPRT statistics) +
+  `promote_worktree.py` (`.bestref` + worktree management).
+
+`axis_bitmap.rs` (518 LOC) and `benchmark.py` (806 LOC) were
+assessed and kept — cohesive enough that a split would be cosmetic.
+
+**Result**: public API surface unchanged; reference node counts
+byte-identical pre-Phase-22 / post-Phase-23.
 
 ## Phase 24 candidates (deferred follow-ups)
 

@@ -23,33 +23,37 @@ hammerhead-engine/          Rust crate
 │   ├── lib.rs              crate root, pub use only
 │   ├── config.rs           include!-s codegen'd consts from hexo.toml
 │   ├── coords.rs           axial coord type, hex math
-│   ├── board.rs            piece storage, place/undo, hash
+│   ├── board.rs            piece storage, place/undo, hash, threat/eval caches
+│   ├── proximity.rs        proximity counts, sparse cell sets, Board proximity helpers
+│   ├── axis_bitmap.rs      per-axis sparse line bitmaps
 │   ├── moves.rs            move gen, legality, candidate cells
 │   ├── win.rs              6-in-row detection
 │   ├── threats.rs          WSC threat classification
-│   ├── eval.rs             static eval (sum of threat scores)
+│   ├── eval.rs             static eval (3-layer)
 │   ├── zobrist.rs          hash keys, incremental update
 │   ├── tt.rs               transposition table
 │   ├── ordering.rs         move ordering for alpha-beta
 │   ├── search.rs           minimax + alpha-beta + iter deepening
+│   ├── engine.rs           Engine handle — owns board/tt/ordering, place/undo/best_move
 │   └── pybind.rs           PyO3 wrapper, no logic
-└── tests/
-    ├── coord_tests.rs
-    ├── win_tests.rs
-    ├── threat_tests.rs
-    ├── eval_tests.rs
-    └── search_tests.rs
+└── tests/                  per-module integration tests
 
 hammerhead/                 Python package
 ├── pyproject.toml
 ├── hammerhead/
 │   ├── __init__.py
 │   ├── config.py           reads ../hexo.toml via tomllib (SPEC_CONFIG.md)
+│   ├── exceptions.py       HammerheadError exception family
+│   ├── types.py            shared type aliases
 │   ├── bot.py              high-level Bot class
 │   ├── game.py             game state convenience
-│   ├── notation.py         BSN / BKE / HXN parsing
-│   ├── benchmark.py        SealBot match harness, self-play
-│   └── cli.py              command-line entrypoint
+│   ├── benchmark.py        benchmark suite — measurement functions
+│   ├── promote.py          promotion harness — match drivers + data model
+│   ├── promote_sprt.py     promotion harness — Wilson/Elo/SPRT statistics
+│   ├── promote_worktree.py promotion harness — .bestref + worktree management
+│   ├── cli.py              CLI entrypoint — argparse + dispatch + play/selfplay/bot
+│   ├── cli_bench.py        CLI — bench subcommand handlers
+│   └── cli_match.py        CLI — match/promote/vs subcommand handlers
 └── tests/
 ```
 
@@ -61,7 +65,9 @@ One job per file. If file does 2 things, split.
 |---|---|
 | `config` | re-exports codegen'd consts from `hexo.toml` — no magic numbers elsewhere |
 | `coords` | axial coord type, hex distance, 3 axis vectors |
-| `board` | piece storage, place/undo, occupancy, candidate set |
+| `board` | piece storage, place/undo, occupancy, candidate set, threat/eval caches |
+| `proximity` | proximity counts, sparse cell sets, `Board` proximity-maintenance helpers |
+| `axis_bitmap` | per-axis sparse line bitmaps shared by win/threats/eval |
 | `moves` | generate legal candidates, depth-limited radius |
 | `win` | detect 6-in-row after placement (O(1)) |
 | `threats` | classify shapes per WSC tuples |
@@ -70,6 +76,7 @@ One job per file. If file does 2 things, split.
 | `tt` | TT lookup/store, depth/bound/flag |
 | `ordering` | rank moves for alpha-beta pruning |
 | `search` | minimax driver, iter deepening, time mgmt |
+| `engine` | `Engine` handle — owns board/tt/ordering, place/undo/best_move surface |
 | `pybind` | thin PyO3 layer, no game logic |
 
 ## Data Flow
