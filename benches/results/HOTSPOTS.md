@@ -1,4 +1,51 @@
-# Hotspots — Phase 24 refresh
+# Hotspots — Phase 25 (engine unchanged since Phase 24)
+
+## Phase 25 status
+
+Phase 25 shipped **measurement-infrastructure cleanup only** — its three
+optimization candidates were all attempted and all reverted (below), so
+the **engine source is byte-identical to Phase 24** (`44493f6`) and the
+hotspot ranking, NPS, and depth-at-time are unchanged. The Phase 24
+ranking below still stands verbatim.
+
+**Optimization stream — all three reverted** (under-delivered;
+A/B-confirmed by independent subagents; carried to Phase 26 candidates):
+
+- **Bit-parallel `LineBitmap` run scan + line cache** — regressed
+  −15/−16 % NPS. The original fully-unrolled 5-iteration `get()` loop
+  branch-predicts perfectly on the typically-short runs; the word-walk +
+  cache indirection is slower.
+- **`threats::compute` per-player piece iteration** — flat (within ±3 %
+  noise). The threats cost is the linear run-scan in
+  `walk_linear_runs` / `run_endpoints`, not the `pieces()` history
+  filter — eliminating the filter moves nothing.
+- **`for_each_in_range` precomputed offset tables** — regressed
+  −10/−11 % NPS. The bounded `dq/dr` loop is register-resident and
+  compiler-unrolled; a flat 217-entry table walk adds memory loads, L1
+  pressure, and a `match radius` branch.
+
+Common thread: the engine is compute-bound at IPC 4.38 (§ G) and its hot
+loops are already well-formed for the branch predictor and register
+allocator — "obvious" table-driven / bit-parallel rewrites lose to the
+existing code. Real wins need *algorithmic* work-reduction (the per-line
+`LineContribution` cache, Phase 26 candidate #1), not micro-rewrites of
+already-tight loops.
+
+**Cleanup stream — all three landed:**
+
+- `bench breakdown` rederived from flamegraph self-time (was
+  structurally broken — summed unweighted criterion medians).
+- Flamegraph capture frame-pointer mode locked down + documented.
+- `tt_stats` enabled for `make bench` / `make bench-baseline`, so
+  `baseline.json` now populates `tt_hit_rate` (was `null`). TT hit rate
+  midgame_12 d=4/d=6 = 26.7 % / 13.7 %; midgame_30 d=4/d=6 = 14.1 % /
+  11.4 % — unchanged from the Phase 24 dedicated capture.
+
+Reference node counts: **32/32 byte-identical** to Phase 24 / Phase 17.
+
+---
+
+## Phase 24 refresh (ranking still current)
 
 **Captured:** 2026-05-21 — engine git `44493f6`, rustc 1.94.0
 **Host:** AMD Ryzen 7 8845HS (Zen 4, 8C/16T, 16 MB L3), Linux 7.0.3
