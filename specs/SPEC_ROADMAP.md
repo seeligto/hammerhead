@@ -558,9 +558,31 @@ Cleanup work stream:
 Out of scope (deferred — see Phase 26 candidates): per-line
 `LineContribution` cache, search-internal proximity skipping.
 
-**Reference node counts are the regression net.** All shipped changes
-are output-identical by design; `make bench reference` byte-identical
-pre/post.
+**Outcome.** The three optimization candidates were each attempted by
+an independent subagent with an A/B comparison and **all three were
+reverted** — none shipped:
+
+- Bit-parallel `LineBitmap` run scan + cache — regressed −15/−16 % NPS
+  (the existing fully-unrolled `get()` loop branch-predicts better on
+  the typically-short runs).
+- `threats::compute` per-player iteration — flat, within ±3 % noise
+  (the cost is the linear run-scan, not the `pieces()` history filter).
+- `for_each_in_range` offset tables — regressed −10/−11 % NPS (the
+  bounded `dq/dr` loop is register-resident and compiler-unrolled; a
+  flat table walk adds memory loads + L1 pressure).
+
+Per the phase rule ("revert and skip — do not debug in-phase") nothing
+landed; the **engine source is byte-identical to Phase 24** (`44493f6`).
+Only the cleanup work stream (4/5/6) shipped. The headline NPS targets
+(≥ 580 k / ≥ 440 k) were not met — the engine is unchanged. The three
+candidates carry forward to Phase 26. The lesson: the engine is
+compute-bound at IPC 4.38 and its hot loops are already well-formed for
+the branch predictor / register allocator — micro-rewrites lose to the
+existing code; real wins need algorithmic work-reduction. See
+`benches/results/HOTSPOTS.md § Phase 25 status`.
+
+**Reference node counts are the regression net** — 32/32 byte-identical
+pre/post (trivially, since no engine code changed).
 
 ## Phase 26 candidates (deferred follow-ups)
 
@@ -588,6 +610,28 @@ Carried forward — items still open after Phase 25.
 - **Incremental threat recompute** (revisit) — the Phase 15 idea
   reverted at `15c9638`; the natural follow-on once the
   `LineContribution` cache proves the invalidation pattern.
+- **`would_make_six` / `creates_s0` run-scan cost** (Phase 24
+  candidate #1, Phase 25 STEP 1.1 — attempted, reverted): the ordering
+  predicates are ~20 % of engine self-time. Phase 25's bit-parallel
+  `u64` run scan + line-lookup cache **regressed −15/−16 % NPS** —
+  the existing unrolled `get()` loop is faster. The hotspot is real
+  but a different lever is needed (e.g. computing the predicate from
+  the `LineContribution` cache once that exists, or fusing the
+  double `would_make_six` own/opponent pass). Still open.
+- **`threats::compute` run-scan / dedup cost** (Phase 24 candidate #3,
+  Phase 25 STEP 1.2 — attempted, reverted): per-player piece iteration
+  was flat — the cost is the `walk_linear_runs` / `run_endpoints`
+  linear scan, not the history filter. Still open; needs the run-scan
+  itself addressed.
+- **`for_each_in_range` proximity walk** (Phase 24 candidate #4,
+  Phase 25 STEP 1.3 — attempted, reverted): offset tables regressed
+  −10/−11 %. The proximity walk is ~18 % of engine but the coord
+  derivation is not the cost — the flat-array refcount stores are.
+  Still open; a different angle (the search-internal proximity-skip
+  above) is the live candidate.
+- **Move-ordering bucket-quality refinement** — a strength change
+  (reshapes the tree, changes node counts) — for a strength-focused
+  phase, `make vs`-gated; not a perf candidate.
 - **Algorithm work**: revisit null-move pruning under two-stone
   parity.
 - **Lazy-SMP parallel search**.
@@ -600,11 +644,6 @@ Closed since the Phase 24 list:
 - **TT bucket layout (4-bucket / hash-folding)** — dead. Phase 24 § E:
   TT 98 % empty, <1 % collisions, not in flamegraph self-time. Solves
   a non-problem.
-- **`creates_s0` per-axis run cache (take 3)** — resolved by Phase 25
-  STEP 1.1 (broadened to a bit-parallel run scan).
-- **Move-ordering bucket refinement** — the perf angle folded into
-  Phase 25 STEP 1.1; pure bucket-*quality* refinement is a strength
-  change, deferred to a strength-focused phase (not a perf candidate).
 
 ## Phase 15 reviewer-pass fixes
 
