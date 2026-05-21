@@ -102,42 +102,26 @@ impl ThreatSet {
 
 /// Compute the threat set for `player` on `board`.
 ///
-/// The `centers` / `prior` parameters are vestigial. They drove the
-/// Phase 15 incremental reconcile, whose sole optimisation was skipping
-/// cross-axis pattern matching for unchanged anchors. Phase 20 removed
-/// the cross-axis matchers, so detection is now a single linear-run
-/// scan and the parameters are ignored. They stay on the signature so
-/// `Board` and the oracle tests need no churn; dropping them (and the
-/// `Board` dirty-center machinery that feeds them) is a Phase 21
-/// cleanup.
+/// Detection is a single linear-run scan over every populated axis line.
 ///
 /// This convenience wrapper allocates a fresh `ThreatScratch` per call.
 /// `Board::threats` uses [`compute_with_scratch`] directly so the
 /// search hot path reuses backing storage across nodes.
 #[must_use]
-pub fn compute(
-    board: &Board,
-    player: Player,
-    centers: &[Coord],
-    prior: Option<&ThreatSet>,
-) -> ThreatSet {
+pub fn compute(board: &Board, player: Player) -> ThreatSet {
     let mut scratch = ThreatScratch::default();
-    compute_with_scratch(board, player, &mut scratch, centers, prior)
+    compute_with_scratch(board, player, &mut scratch)
 }
 
 /// Variant of [`compute`] that reuses caller-provided scratch buffers.
 /// `scratch` is reset on entry, so the caller can freely reuse the same
 /// buffers across many calls — only the buffers' capacities are
 /// retained, eliminating per-call allocation.
-///
-/// See [`compute`] for the vestigial `centers` / `prior` parameters.
 #[must_use]
 pub fn compute_with_scratch(
     board: &Board,
     player: Player,
     scratch: &mut ThreatScratch,
-    _centers: &[Coord],
-    _prior: Option<&ThreatSet>,
 ) -> ThreatSet {
     let mut out = ThreatSet::default();
     scratch.reset();

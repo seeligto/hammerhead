@@ -354,7 +354,7 @@ fn five_run_layer1_does_not_double_count_via_same_color_extension() {
     // the Layer 1 effect by subtracting the Layer 2 contribution. Open-5
     // also generates an open-4 shape inside, but the threats module
     // classifies the maximal run, so only `open_5` is set.
-    let tx = compute_threats(&b, Player::X, &[], None);
+    let tx = compute_threats(&b, Player::X);
     assert_eq!(tx.counts.open_5, 1);
     let layer2_only = OPEN_5_SCORE;
 

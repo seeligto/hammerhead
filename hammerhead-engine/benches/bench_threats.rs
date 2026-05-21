@@ -30,8 +30,8 @@ fn bench_compute_full(c: &mut Criterion) {
         let board = (fx.build)();
         group.bench_function(fx.name, |b| {
             b.iter(|| {
-                let tx = threats::compute(&board, Player::X, &[], None);
-                let to = threats::compute(&board, Player::O, &[], None);
+                let tx = threats::compute(&board, Player::X);
+                let to = threats::compute(&board, Player::O);
                 black_box((tx.counts.open_4, to.counts.open_4))
             });
         });
@@ -45,7 +45,7 @@ fn bench_defense_cells_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("threats::defense_cells_read");
     for fx in FIXTURES {
         let board = (fx.build)();
-        let tx = threats::compute(&board, Player::X, &[], None);
+        let tx = threats::compute(&board, Player::X);
         group.bench_function(fx.name, |b| {
             b.iter(|| {
                 let mut n = 0usize;

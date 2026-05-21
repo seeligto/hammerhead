@@ -182,8 +182,8 @@ fn instance_pieces_are_deterministic_for_open_four() {
     let mvs = [(0, 0), (4, 4), (-4, 4), (1, 0), (2, 0), (4, 3), (-4, 3), (3, 0)];
     play_moves(&mut b, &mvs.map(|(q, r)| Coord::new(q, r)));
 
-    let a = compute_threats(&b, Player::X, &[], None);
-    let bset = compute_threats(&b, Player::X, &[], None);
+    let a = compute_threats(&b, Player::X);
+    let bset = compute_threats(&b, Player::X);
     assert_eq!(a.s0_instances.len(), bset.s0_instances.len());
     for (ia, ib) in a.s0_instances.iter().zip(bset.s0_instances.iter()) {
         assert_eq!(ia.kind, ib.kind);
@@ -239,7 +239,7 @@ fn incremental_handles_overflow_fallback() {
     assert!(b.threats_dirty_overflow_for_test());
 
     let incr_x = b.threats(Player::X).clone();
-    let oracle_x = compute_threats(&b, Player::X, &[], None);
+    let oracle_x = compute_threats(&b, Player::X);
     assert!(
         threat_set_equiv(&incr_x, &oracle_x),
         "{}",
@@ -247,7 +247,7 @@ fn incremental_handles_overflow_fallback() {
     );
 
     let incr_o = b.threats(Player::O).clone();
-    let oracle_o = compute_threats(&b, Player::O, &[], None);
+    let oracle_o = compute_threats(&b, Player::O);
     assert!(
         threat_set_equiv(&incr_o, &oracle_o),
         "{}",
@@ -295,9 +295,9 @@ fn incremental_matches_full_multi_cluster() {
             let inc_x = board.threats(Player::X).clone();
             let inc_o = board.threats(Player::O).clone();
             let full_x =
-                threats::compute_with_scratch(&board, Player::X, &mut scratch, &[], None);
+                threats::compute_with_scratch(&board, Player::X, &mut scratch);
             let full_o =
-                threats::compute_with_scratch(&board, Player::O, &mut scratch, &[], None);
+                threats::compute_with_scratch(&board, Player::O, &mut scratch);
             assert!(
                 threat_set_equiv(&inc_x, &full_x),
                 "X multi-cluster drift (k={k}, ply {})\ndirty centers: {:?}\n{}",
@@ -378,20 +378,8 @@ fn incremental_matches_full_recompute_10k_positions() {
             let inc_x = board.threats(Player::X).clone();
             let inc_o = board.threats(Player::O).clone();
             // Oracle: fresh full recompute (scratch reused).
-            let full_x = threats::compute_with_scratch(
-                &board,
-                Player::X,
-                &mut scratch,
-                &[],
-                None,
-            );
-            let full_o = threats::compute_with_scratch(
-                &board,
-                Player::O,
-                &mut scratch,
-                &[],
-                None,
-            );
+            let full_x = threats::compute_with_scratch(&board, Player::X, &mut scratch);
+            let full_o = threats::compute_with_scratch(&board, Player::O, &mut scratch);
             assert!(
                 threat_set_equiv(&inc_x, &full_x),
                 "X drift at ply {} (positions_tested={positions_tested})\ndirty centers were: {:?}\n{}",
@@ -444,7 +432,7 @@ fn incremental_handles_winning_move() {
     // present; pad pieces force the parity correctly).
     // Before reading, force a read to populate the cache via incremental.
     let incr_x = b.threats(Player::X).clone();
-    let oracle_x = compute_threats(&b, Player::X, &[], None);
+    let oracle_x = compute_threats(&b, Player::X);
     assert!(
         threat_set_equiv(&incr_x, &oracle_x),
         "{}",

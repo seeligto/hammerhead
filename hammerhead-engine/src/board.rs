@@ -490,46 +490,17 @@ impl Board {
     /// the dirty flag is set.
     #[cold]
     fn reconcile_threats(&self) {
-        // The incremental compute path inspects `centers` and `prior` to
-        // decide whether to drop & merge or do a full recompute. On
-        // overflow (too many dirty centers between reads), pass an
-        // empty slice to force the full path.
-        let overflow = self.threats_dirty_overflow.get();
-        let centers_owned: SmallVec<[Coord; MAX_INCREMENTAL_CENTERS]> = if overflow {
-            SmallVec::new()
-        } else {
-            self.threats_dirty_centers.borrow().clone()
-        };
         let mut scratch = self.threat_scratch.borrow_mut();
 
-        // Player X. The `Some(&*prior_x)` shape preserves the
-        // compute_with_scratch API (`prior: Option<&ThreatSet>`); the
-        // cache is always populated so `None` is no longer reachable
-        // from this caller.
+        // Player X.
         {
-            let prior_x = self.threats_x.borrow();
-            let new_x = threats::compute_with_scratch(
-                self,
-                Player::X,
-                &mut scratch,
-                &centers_owned,
-                Some(&prior_x),
-            );
-            drop(prior_x);
+            let new_x = threats::compute_with_scratch(self, Player::X, &mut scratch);
             *self.threats_x.borrow_mut() = new_x;
         }
 
         // Player O — symmetric.
         {
-            let prior_o = self.threats_o.borrow();
-            let new_o = threats::compute_with_scratch(
-                self,
-                Player::O,
-                &mut scratch,
-                &centers_owned,
-                Some(&prior_o),
-            );
-            drop(prior_o);
+            let new_o = threats::compute_with_scratch(self, Player::O, &mut scratch);
             *self.threats_o.borrow_mut() = new_o;
         }
 
