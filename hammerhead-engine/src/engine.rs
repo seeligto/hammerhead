@@ -193,7 +193,6 @@ impl Engine {
     pub fn tt_stats(&self) -> crate::tt::TTStatsSnapshot {
         self.tt.stats()
     }
-
 }
 
 /// Per-stone time slice. `halfmove == 0` keeps `stone1_time_pct` of the
