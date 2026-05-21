@@ -6,8 +6,8 @@
 
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
-use crate::coords::{Coord, ORIGIN, for_each_in_range};
-use crate::proximity::{ProximityCounts, SparseCellSet, prox_idx};
+use crate::coords::{Coord, ORIGIN};
+use crate::proximity::{ProximityCounts, SparseCellSet, add_proximity, remove_proximity};
 use crate::threats::{self, ThreatScratch, ThreatSet};
 use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
 use std::cell::{Cell, Ref, RefCell};
@@ -655,49 +655,3 @@ fn prev_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
     }
 }
 
-/// Increment the flat proximity `count` field around `center` and insert
-/// any cell whose count rose from 0 into `candidates` (if it's empty).
-///
-/// Used for both the outer (`r8`, legality) and inner
-/// (`MOVE_GEN_INNER_RADIUS`, move-gen) fields. `u8` counts are bumped
-/// with `saturating_add`; `hex_area(8) ≈ 217 < 255`, so a real position
-/// never saturates — the `debug_assert` flags a pathological one.
-#[inline]
-fn add_proximity(
-    count: &mut [u8],
-    candidates: &mut SparseCellSet,
-    center: Coord,
-    radius: i16,
-    axes: &AxisBitmaps,
-) {
-    for_each_in_range(center, radius, |d| {
-        let i = prox_idx(d);
-        let was_zero = count[i] == 0;
-        count[i] = count[i].saturating_add(1);
-        debug_assert!(count[i] != u8::MAX, "proximity count overflow at {d:?}");
-        if d != center && was_zero && !axes.is_occupied(d) {
-            candidates.insert(d);
-        }
-    });
-}
-
-/// Decrement the flat proximity `count` field around `center`. When a
-/// count reaches 0 the cell is removed from `candidates`. A 0 count is
-/// simply "no piece in range" — there is no separate presence entry to
-/// drop, so the old panic-on-missing invariant becomes a `debug_assert`.
-#[inline]
-fn remove_proximity(
-    count: &mut [u8],
-    candidates: &mut SparseCellSet,
-    center: Coord,
-    radius: i16,
-) {
-    for_each_in_range(center, radius, |d| {
-        let i = prox_idx(d);
-        debug_assert!(count[i] > 0, "proximity count underflow at {d:?}");
-        count[i] -= 1;
-        if count[i] == 0 {
-            candidates.remove(d);
-        }
-    });
-}
