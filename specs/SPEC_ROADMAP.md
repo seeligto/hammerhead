@@ -418,24 +418,11 @@ cost. See `SPEC_EVAL.md § Layer 2 history`.
 
 ## Phase 18 candidates (deferred follow-ups)
 
-- **Eval tuning phase** — **resolved by Phase 18, verdict DROP** (no
-  weight beats baseline; see Phase 18 above). Original scope below.
-  Phase 17 zeroed the S1/S2 shape weights
-  (ablation A/B was net-negative) but **kept the detection surface**:
-  `ThreatCounts` S1/S2 fields, the cross-axis pattern matchers, the
-  `creates_s1` predicate, the `eval_s1s2` Cargo feature and the
-  `set_eval_s1s2` toggle all remain. A dedicated eval-tuning phase can
-  re-enable S1/S2 by editing `hexo.toml` weights — no code archaeology
-  needed. Scope:
-  - re-tune the S1/S2 shape weights (the Phase-16 values
-    double-counted against Layer 1 and were sized on par with genuine
-    open-fours — see `SPEC_EVAL.md § Layer 2 history`);
-  - a parametric A/B harness for weight sweeps (generalise the
-    parallel ablation runner to sweep arbitrary `hexo.toml` deltas);
-  - possible radius-theory colony discounting integrated with the
-    retuned S1/S2 counts;
-  - if no retuning lands, gate the now-idle cross-axis matchers out of
-    `threats::compute` to reclaim their cost.
+- **Eval tuning (S1/S2 shapes)** — **closed**. Phase 18 swept
+  corrected weights (verdict DROP) and Phase 20 removed the detection
+  code outright. The S1/S2 surface no longer exists; any future
+  positional-eval work starts from a clean slate, not a re-enable.
+  See `SPEC_EVAL.md § Layer 2 history`.
 - **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
   collision rate.
 - **Move-ordering bucket refinement** (post-S1/S2 cleanup).
