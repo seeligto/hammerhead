@@ -144,57 +144,56 @@ fn stone1_s0_completion_outranks_creates_s0() {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 5. Blocks-opp-S0 outranks a quiet creates-S1-shaped move
+// 5. Blocks-opp-S0 outranks a quiet run-extender move
 // ────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn blocks_opp_s0_outranks_creates_s1() {
+fn blocks_opp_s0_outranks_quiet_run_extender() {
     let mut b = Board::new();
     // O closed-4 along q-axis: O at (0..3, 0), X cap at (-1, 0).
     o_at(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
     x_at(&mut b, &[(-1, 0)]);
     // X open-2 on r=5; playing (2,5) extends to a 3-run. Phase 17
-    // disabled the creates-S1 bucket, so this move is now bucket 1.
+    // removed the S1/S2 buckets, so this quiet run-extender lands in bucket 1.
     x_at(&mut b, &[(0, 5), (1, 5)]);
     let state = OrderingState::new();
     let killer = KillerSlot::default();
     let c = ctx(&b, Player::X, None, &killer, &state.history, &[]);
     let block = mv(4, 0);
-    let s1_creator = mv(2, 5);
-    let mut moves = list(&[s1_creator, block]);
+    let run_extender = mv(2, 5);
+    let mut moves = list(&[run_extender, block]);
     order_moves(&mut moves, &c);
     assert_eq!(
         moves[0], block,
-        "blocks-opp-S0 (bucket 5) must beat the bucket-1 creates-S1 move",
+        "blocks-opp-S0 (bucket 5) must beat the bucket-1 quiet run-extender",
     );
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 6. Killer placement: beats history; creates-S1 falls through to bucket 1
+// 6. Killer placement: beats history; quiet run-extender falls to bucket 1
 // ────────────────────────────────────────────────────────────────────────
 
-/// Phase 17 disabled the creates-S1 ordering bucket (the S1/S2 ablation
-/// A/B was net-negative), so an S1-shaped move falls through to
-/// bucket 1 — the killer still wins and the two bucket-1 moves sort by
-/// history score.
+/// Phase 17 removed the S1/S2 ordering buckets, so a quiet run-extender
+/// falls through to bucket 1 — the killer still wins and the two
+/// bucket-1 moves sort by history score.
 #[test]
-fn killer_beats_history_s1_falls_through() {
+fn killer_beats_history_run_extender_falls_through() {
     let mut b = Board::new();
     x_at(&mut b, &[(0, 5), (1, 5)]);
     x_at(&mut b, &[(0, 0)]);
     let mut state = OrderingState::new();
     let killer_cell = mv(20, 20);
     let history_cell = mv(30, 30);
-    let s1_cell = mv(2, 5);
+    let extender_cell = mv(2, 5);
     let mut killers = KillerSlot::default();
     killers.push(killer_cell);
     state.history.insert((history_cell, Player::X), 42);
     let c = ctx(&b, Player::X, None, &killers, &state.history, &[]);
-    let mut moves = list(&[history_cell, killer_cell, s1_cell]);
+    let mut moves = list(&[history_cell, killer_cell, extender_cell]);
     order_moves(&mut moves, &c);
     assert_eq!(moves[0], killer_cell, "killer (bucket 3) wins");
     assert_eq!(moves[1], history_cell, "history 42 beats history 0");
-    assert_eq!(moves[2], s1_cell, "creates_s1 ablated → bucket 1, history 0");
+    assert_eq!(moves[2], extender_cell, "quiet run-extender → bucket 1, history 0");
 }
 
 // ────────────────────────────────────────────────────────────────────────
