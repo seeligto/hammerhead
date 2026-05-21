@@ -260,29 +260,56 @@ def test_bench_scaling_rejects_zero_runs():
         )
 
 
-def test_bench_breakdown_emits_all_buckets():
-    rows = bench.bench_breakdown(fixtures=["midgame_12"], depth=2)
+_FOLDED_SAMPLE = (
+    # eval leaf, search context -> eval bucket
+    "main;pvs_node;eval;windows8_run 60\n"
+    # threats leaf -> threats bucket
+    "main;pvs_node;threats::compute;run_pieces 20\n"
+    # ordering leaf -> ordering bucket
+    "main;pvs_node;order_moves;would_make_six 10\n"
+    # proximity module token -> board bucket
+    "main;pvs_node;hammerhead_engine_core::proximity::add_proximity::"
+    "{closure#0} 8\n"
+    # generic helper, search context, no engine token -> search_other
+    "main;quiescence_node;some_generic_helper 2\n"
+    # harness stack (no search context) -> excluded from engine totals
+    "main;criterion;bench_function;alloc 1000\n"
+)
+
+
+def test_bench_breakdown_buckets_from_folded(tmp_path: Path):
+    folded = tmp_path / "flamegraph-test.folded.txt"
+    folded.write_text(_FOLDED_SAMPLE)
+    rows = bench.bench_breakdown(folded=folded)
     fns = {r.function for r in rows}
-    # Must produce all six top-level categories regardless of whether
-    # the latest micro JSON had data to attribute.
     assert fns == {
         "eval",
         "threats",
         "moves",
         "ordering",
         "tt",
+        "board",
         "search_other",
     }
-    pcts = [r.pct_cycles for r in rows]
-    assert all(p >= 0.0 for p in pcts)
-    # Either we have micro data and the sum is ~100, or no data and all 0s.
-    total = sum(pcts)
-    assert total == pytest.approx(0.0) or total == pytest.approx(100.0, abs=1e-6)
+    pcts = {r.function: r.pct_cycles for r in rows}
+    assert all(p >= 0.0 for p in pcts.values())
+    # Engine-only renormalisation: the 1000-sample harness stack is
+    # excluded; the remaining 100 engine samples sum to 100 %.
+    assert sum(pcts.values()) == pytest.approx(100.0, abs=1e-6)
+    assert pcts["eval"] == pytest.approx(60.0, abs=1e-6)
+    assert pcts["threats"] == pytest.approx(20.0, abs=1e-6)
+    assert pcts["ordering"] == pytest.approx(10.0, abs=1e-6)
+    assert pcts["board"] == pytest.approx(8.0, abs=1e-6)
+    assert pcts["search_other"] == pytest.approx(2.0, abs=1e-6)
+    # capture identity is carried in the fixture field
+    assert all(r.fixture == "flamegraph-test.folded.txt" for r in rows)
 
 
-def test_bench_breakdown_rejects_zero_depth():
-    with pytest.raises(ValueError):
-        bench.bench_breakdown(fixtures=["empty"], depth=0)
+def test_bench_breakdown_missing_folded_warns(tmp_path: Path, capsys):
+    missing = tmp_path / "nope.folded.txt"
+    rows = bench.bench_breakdown(folded=missing)
+    assert rows == []
+    assert "make flamegraph" in capsys.readouterr().err
 
 
 def test_diff_schema_mismatch_rejects(tmp_path: Path, capsys):

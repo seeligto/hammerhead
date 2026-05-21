@@ -463,33 +463,39 @@ per-run NPS (not a Wilson CI — Wilson is for binomial proportions).
 With small `runs` (e.g. 5) we fall back to min / max as a conservative
 band.
 
-## Per-function cycles breakdown (Phase 14)
+## Per-function cycles breakdown (Phase 14, rederived Phase 25)
 
-`hammerhead bench breakdown` runs each fixture at depth 4 (fixed, no time
-budget) and estimates the share of total search cycles spent in each
-top-level module by combining criterion micro-bench medians with
-calls-per-search counts. Reported as a table:
+`hammerhead bench breakdown` reports the share of engine self-time spent
+in each top-level module, derived from a flamegraph `folded.txt`
+capture. It is a single whole-capture profile — **not** per-fixture (the
+Phase 14 per-fixture/per-depth model is retired; see § Methodology fixes
+(Phase 25)). Reported as a table:
 
 ```json
 {
   "breakdown": [
-    { "fixture": "midgame_12", "depth": 4, "function": "eval",        "pct_cycles": 38.2 },
-    { "fixture": "midgame_12", "depth": 4, "function": "threats",     "pct_cycles": 21.4 },
-    { "fixture": "midgame_12", "depth": 4, "function": "moves",       "pct_cycles":  5.1 },
-    { "fixture": "midgame_12", "depth": 4, "function": "ordering",    "pct_cycles":  8.0 },
-    { "fixture": "midgame_12", "depth": 4, "function": "tt",          "pct_cycles":  4.5 },
-    { "fixture": "midgame_12", "depth": 4, "function": "search_other","pct_cycles": 22.8 }
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "eval",         "pct_cycles": 35.56 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "threats",      "pct_cycles":  9.64 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "moves",        "pct_cycles":  0.00 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "ordering",     "pct_cycles":  7.94 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "tt",           "pct_cycles":  0.00 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "board",        "pct_cycles": 26.20 },
+    { "fixture": "flamegraph-2026-05-21T21-44-40-69e2053.folded.txt", "depth": 0, "function": "search_other", "pct_cycles": 20.66 }
   ]
 }
 ```
 
-Function categories: `eval`, `threats`, `moves`, `ordering`, `tt`,
-`search_other` (residual = 100% − sum). Hard-coded mapping from
-criterion group names to categories.
+The JSON shape is unchanged (`fixture` / `depth` / `function` /
+`pct_cycles`). `fixture` now carries the folded-file name (the capture
+identity); `depth` is always `0`. Function categories: `eval`,
+`threats`, `moves`, `ordering`, `tt`, `board`, `search_other` (residual
+= 100% − sum). `board` is new in Phase 25 — proximity / coords / zobrist
+board-maintenance work is a real ~25% category and was previously hidden
+inside `search_other`.
 
-The numbers are **estimates**, not a profile — caveat their use.
-Their value is trend tracking across phases. Use `make flamegraph`
-for ground-truth profiling.
+The numbers are a **best-effort profile**, not exact. Their value is
+trend tracking across phases. Use `make flamegraph` + `perf report` for
+ground-truth profiling.
 
 > **Phase 25 repair (STEP 2.1).** Phase 24 found this metric
 > structurally broken: it summed raw criterion micro medians with no
@@ -611,12 +617,49 @@ Three measurement-infrastructure repairs surfaced by Phase 24.
 The Phase 14 `bench breakdown` metric (§ Per-function cycles
 breakdown) summed raw criterion micro medians with no call-count
 weighting — structurally broken (Phase 24 § C). STEP 2.1 rederives
-the breakdown by parsing the flamegraph `folded.txt` self-time
-samples, grouping leaf samples by `module::function`. The JSON output
-shape is preserved. When no `folded.txt` exists the subcommand emits
-an empty array and a warning that breakdown requires a flamegraph
-capture. Cross-checked against the Phase 24 flamegraph: output matches
-the manually-derived "% of engine" column in HOTSPOTS.md within ±2 %.
+the breakdown by parsing a flamegraph `folded.txt` capture.
+
+**Folded format.** `inferno-collapse-perf` emits one line per unique
+stack: `frame_a;frame_b;...;leaf COUNT`. Self-time is attributed to the
+**leaf** frame. Frames can contain spaces (generic argument lists), so
+the count is the final whitespace-delimited token, not `$2` of a naive
+split.
+
+**Classification.** Each leaf maps to a bucket two ways, in order:
+
+1. an explicit leaf-function-name table (`_BREAKDOWN_LEAF_FN` in
+   `benchmark.py`), built from the engine source — most hot leaves are
+   inlined under `target-cpu=native` + LTO and carry no `module::`
+   token, so the bare demangled name is the only signal;
+2. otherwise, the nearest `hammerhead_engine_core::<module>::` token
+   walking leaf-inward, mapped via `_BREAKDOWN_MODULE`.
+
+A stack with no search-recursion frame (`pvs_node` / `quiescence_node` /
+`collect_stone1_defense`) is `harness` — the criterion driver, rayon KDE
+analysis, and TT-vec setup allocation — and is **excluded**. Remaining
+percentages are renormalised to engine-only self-time and sum to 100.
+
+**Locating the capture.** Defaults to the newest
+`benches/results/flamegraph-*.folded.txt`; override with
+`bench breakdown --folded PATH`. When no `folded.txt` exists the
+subcommand prints an empty `breakdown` array and a stderr warning that
+breakdown now requires a `make flamegraph` capture — so the `bench all`
+sweep still succeeds when run before a flamegraph has been taken.
+
+**Accuracy / known limits.** Frame-pointer captures are FP-shallow, so a
+sizeable share of leaves are generic helpers (`get`, `mul`, `indices`,
+`eq`) that cannot be confidently attributed; these land in
+`search_other` by design (~20% of the Phase 24 capture). The metric is
+deliberately conservative — it attributes only what is identifiable
+rather than guessing. Cross-checked against the Phase 24 flamegraph
+(`flamegraph-2026-05-21T21-44-40-69e2053.folded.txt`): `tt` reads
+**0.0%**, matching the HOTSPOTS.md `< 0.5%` finding exactly (and for the
+right reason — the TT is genuinely cold — not the old name-mismatch
+artefact); `eval` ~36% and `board` ~26% are in the right order of
+magnitude as the top-two engine costs. Demangled symbol spelling is not
+stable across rustc versions — the `_BREAKDOWN_LEAF_FN` table may need a
+refresh after a toolchain bump; verify against `perf report` when in
+doubt.
 
 ### Flamegraph capture — frame-pointer based
 

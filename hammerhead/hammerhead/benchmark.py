@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import statistics
+import sys
 import time
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -575,59 +577,34 @@ def bench_scaling(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-function cycles breakdown — Phase 14
+# Per-function cycles breakdown — Phase 14, rederived in Phase 25 STEP 2.1
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-_BREAKDOWN_PREFIX_TO_FUNCTION: dict[str, str] = {
-    "eval": "eval",
-    "threats": "threats",
-    "moves": "moves",
-    "ordering": "ordering",
-    "tt": "tt",
-    "axis_bitmap": "eval",  # axis_bitmap micros feed the layer-1 window scan
-    "board": "search_other",
-    "search": "search_other",
-}
-
-
-def _function_for_group(group: str) -> str:
-    """Map a criterion group name to a breakdown bucket. Group names look
-    like ``threats::compute`` or ``eval::cached_eval_cold``; the leading
-    token before ``::`` is the module."""
-    head = group.split("::", 1)[0]
-    return _BREAKDOWN_PREFIX_TO_FUNCTION.get(head, "search_other")
-
-
-def _latest_micro_payload() -> Optional[dict]:
-    """Return the most-recent canonical JSON in ``benches/results/``, if
-    any. Used by :func:`bench_breakdown` to combine search timings with
-    criterion micro medians.
-    """
-    repo_root = CONFIG.source_path.parent
-    results_dir = repo_root / CONFIG.bench.results_dir
-    if not results_dir.is_dir():
-        return None
-    candidates = sorted(
-        (p for p in results_dir.glob("*.json") if p.name != "baseline.json"),
-        reverse=True,
-    )
-    for path in candidates:
-        try:
-            payload = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
-            continue
-        if "micro" in payload:
-            return payload
-    # Fall back to the committed baseline if no live run is on disk.
-    baseline = results_dir / "baseline.json"
-    if baseline.is_file():
-        try:
-            return json.loads(baseline.read_text())
-        except (OSError, json.JSONDecodeError):
-            return None
-    return None
-
+#
+# Phase 24 § C found the original metric structurally broken: it summed
+# raw criterion micro medians with no call-count weighting, so `moves`
+# read 53.9 % (the search never calls the large `generate(r=4/8)` micros)
+# and `tt` read 0.0 % (criterion name mismatch). The metric is now
+# derived from a flamegraph `folded.txt` capture — real leaf self-time.
+#
+# Folded-stacks format (`inferno-collapse-perf`): one line per unique
+# stack, `frame_a;frame_b;...;leaf COUNT`. Self-time is attributed to the
+# LEAF frame. We map the leaf to a category two ways, in order:
+#   1. an explicit leaf-function-name table (`_BREAKDOWN_LEAF_FN`) — most
+#      leaves are heavily inlined and carry no `module::` token, so the
+#      bare demangled name is the only signal;
+#   2. the nearest `hammerhead_engine_core::<module>::` token walking from
+#      the leaf inward (`_BREAKDOWN_MODULE`).
+# A stack with no engine context (no `pvs_node` / `quiescence_node` frame)
+# is classified `harness` and excluded — that bucket is the criterion
+# driver + rayon KDE analysis, ~12-37 % of a capture depending on budget.
+# Percentages are renormalised to engine-only self-time and sum to 100.
+#
+# Caveats: frame-pointer captures are FP-shallow, so a sizeable share of
+# leaves are generic helpers (`get`, `mul`, `indices`) that cannot be
+# attributed and land in `search_other`. Demangled symbol spelling is not
+# perfectly stable across rustc versions — the tables below may need a
+# refresh after a toolchain bump. This is a best-effort trend metric, not
+# a substitute for reading `perf report` directly.
 
 _BREAKDOWN_BUCKETS: tuple[str, ...] = (
     "eval",
@@ -635,78 +612,201 @@ _BREAKDOWN_BUCKETS: tuple[str, ...] = (
     "moves",
     "ordering",
     "tt",
+    "board",
     "search_other",
 )
 
+# Engine module -> breakdown bucket. `axis_bitmap` feeds the Layer-1
+# window scan so it counts as `eval`; `proximity` / `coords` / `zobrist`
+# are board-maintenance work so they count as `board`.
+_BREAKDOWN_MODULE: dict[str, str] = {
+    "eval": "eval",
+    "axis_bitmap": "eval",
+    "threats": "threats",
+    "win": "threats",
+    "moves": "moves",
+    "ordering": "ordering",
+    "tt": "tt",
+    "board": "board",
+    "proximity": "board",
+    "coords": "board",
+    "zobrist": "board",
+    "search": "search_other",
+    "config": "search_other",
+}
+
+# Explicit leaf-function-name -> bucket. Built from the actual engine
+# source (`hammerhead-engine/src/*.rs`); covers the hot inlined leaves
+# that carry no `module::` token in the folded stacks.
+_BREAKDOWN_LEAF_FN: dict[str, str] = {
+    # eval — Layer-1 window scan + AVX2 ternary encode (eval.rs, axis_bitmap.rs)
+    "windows8_run": "eval",
+    "run_forward": "eval",
+    "run_backward": "eval",
+    "populated_range": "eval",
+    "line_id": "eval",
+    "scan_line_8cell": "eval",
+    "encode_ternary_8": "eval",
+    "encode_ternary_8_batch_scalar": "eval",
+    "layer1_window_scan_8cell": "eval",
+    # threats — linear-run scan (threats.rs)
+    "run_pieces": "threats",
+    "coord_at": "threats",
+    "walk_linear_runs": "threats",
+    "classify_linear_run": "threats",
+    "compute_with_scratch": "threats",
+    # ordering — move predicates (ordering.rs); is_threat_move lives in
+    # search.rs but is an ordering-class predicate (qsearch frontier).
+    "bucket_value": "ordering",
+    "would_make_six": "ordering",
+    "axis_run_through_empty": "ordering",
+    "creates_s0": "ordering",
+    "order_moves_with_buckets": "ordering",
+    "blocks_opp_s0": "ordering",
+    "is_threat_move": "ordering",
+    # board — proximity maintenance (proximity.rs)
+    "prox_idx": "board",
+    "add_proximity": "board",
+    "remove_proximity": "board",
+}
+
+# Recognises `hammerhead_engine_core::<module>::` anywhere in a frame.
+_ENGINE_MODULE_RE = re.compile(r"hammerhead_engine_core::([a-z_]+)::")
+# A frame is "search context" if it names one of these recursion entry
+# points — anything not under one is criterion / setup, not engine work.
+_SEARCH_CONTEXT_FRAMES: tuple[str, ...] = (
+    "pvs_node",
+    "quiescence_node",
+    "collect_stone1_defense",
+)
+
+
+def _classify_leaf(frames: list[str]) -> Optional[str]:
+    """Map one folded-stack line to a breakdown bucket.
+
+    ``frames`` is the ``;``-split stack, leaf last. Returns ``None`` for a
+    non-engine (harness / setup) stack — those are excluded from the
+    engine-only renormalisation.
+    """
+    if not any(
+        ctx in fr for fr in frames for ctx in _SEARCH_CONTEXT_FRAMES
+    ):
+        return None
+    leaf = frames[-1].strip()
+    # Strip a trailing generic argument list: `add<...>` -> `add`.
+    leaf_name = leaf.split("<", 1)[0]
+    bucket = _BREAKDOWN_LEAF_FN.get(leaf_name)
+    if bucket is not None:
+        return bucket
+    # Fall back to the nearest engine-module token, leaf-inward.
+    for frame in reversed(frames):
+        m = _ENGINE_MODULE_RE.search(frame)
+        if m is not None:
+            return _BREAKDOWN_MODULE.get(m.group(1), "search_other")
+    return "search_other"
+
+
+def _parse_folded(path: Path) -> dict[str, float]:
+    """Parse a flamegraph ``folded.txt`` into per-bucket sample counts.
+
+    Each line is ``frame_a;frame_b;...;leaf COUNT``. Frames may contain
+    spaces (generic args), so the count is the final whitespace-delimited
+    token. Returns engine-only buckets (harness samples dropped).
+    """
+    per_bucket: dict[str, float] = {b: 0.0 for b in _BREAKDOWN_BUCKETS}
+    for raw in path.read_text().splitlines():
+        line = raw.rstrip()
+        if not line:
+            continue
+        sep = line.rfind(" ")
+        if sep < 0:
+            continue
+        try:
+            count = float(line[sep + 1 :])
+        except ValueError:
+            continue
+        bucket = _classify_leaf(line[:sep].split(";"))
+        if bucket is None:
+            continue
+        per_bucket[bucket] += count
+    return per_bucket
+
+
+def _latest_folded() -> Optional[Path]:
+    """Newest ``flamegraph-*.folded.txt`` in ``benches/results/``, if any."""
+    repo_root = CONFIG.source_path.parent
+    results_dir = repo_root / CONFIG.bench.results_dir
+    if not results_dir.is_dir():
+        return None
+    candidates = sorted(results_dir.glob("flamegraph-*.folded.txt"))
+    return candidates[-1] if candidates else None
+
 
 def bench_breakdown(
-    fixtures: list[str],
-    depth: int,
+    fixtures: Optional[list[str]] = None,
+    depth: int = 0,
     tt_size_mb: Optional[int] = None,
+    folded: Optional[Path] = None,
 ) -> list[BreakdownEntry]:
-    """Estimate the share of search cycles spent in each top-level module.
+    """Per-module engine self-time, derived from a flamegraph capture.
 
-    Runs a fixed-depth search per fixture to anchor the totals to real
-    engine work, then attributes time to categories using the medians of
-    matching criterion micro benches. The result is a stable trend
-    metric, not a true profile — use :command:`make flamegraph` when you
-    need ground truth.
+    Parses the newest ``benches/results/flamegraph-*.folded.txt`` (or the
+    file given by ``folded``), attributes every leaf sample to a
+    breakdown bucket, and renormalises to engine-only self-time so the
+    percentages sum to 100. ``fixtures`` / ``depth`` / ``tt_size_mb`` are
+    accepted for call-site compatibility but unused — the metric is now a
+    single whole-capture profile, not per-fixture.
+
+    Returns one :class:`BreakdownEntry` per bucket. ``fixture`` carries
+    the folded-file name (the capture identity); ``depth`` is 0. If no
+    ``folded.txt`` exists, returns an empty list and warns on stderr —
+    ``bench breakdown`` now requires a ``make flamegraph`` capture.
     """
-    if depth < 1:
-        raise ValueError("depth must be >= 1")
-    micro = _latest_micro_payload()
-    out: list[BreakdownEntry] = []
-    for fixture in fixtures:
-        eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-        _q, _r, _s, _depth_reached, _nodes, _t_ms = eng.bench_best_move(
-            depth=depth
+    path = folded if folded is not None else _latest_folded()
+    if path is None or not path.is_file():
+        print(
+            "warning: bench breakdown found no flamegraph folded.txt in "
+            "benches/results/ — run `make flamegraph` first. "
+            "Emitting an empty breakdown.",
+            file=sys.stderr,
         )
-        per_bucket: dict[str, float] = {b: 0.0 for b in _BREAKDOWN_BUCKETS}
-        if micro is not None:
-            for entry in micro.get("micro", []):
-                if entry.get("name") != fixture:
-                    continue
-                bucket = _function_for_group(entry.get("group", ""))
-                per_bucket[bucket] = per_bucket.get(bucket, 0.0) + float(
-                    entry.get("median_ns", 0.0)
-                )
-        total = sum(per_bucket.values())
-        rows: list[BreakdownEntry] = []
-        if total > 0.0:
-            attributed = 0.0
-            for bucket in _BREAKDOWN_BUCKETS:
-                if bucket == "search_other":
-                    continue
-                pct = per_bucket[bucket] / total * 100.0
-                attributed += pct
-                rows.append(
-                    BreakdownEntry(
-                        fixture=fixture,
-                        depth=depth,
-                        function=bucket,
-                        pct_cycles=pct,
-                    )
-                )
-            rows.append(
-                BreakdownEntry(
-                    fixture=fixture,
-                    depth=depth,
-                    function="search_other",
-                    pct_cycles=max(0.0, 100.0 - attributed),
-                )
+        return []
+    per_bucket = _parse_folded(path)
+    total = sum(per_bucket.values())
+    capture = path.name
+    if total <= 0.0:
+        print(
+            f"warning: bench breakdown parsed no engine samples from "
+            f"{capture} — emitting zeros.",
+            file=sys.stderr,
+        )
+        return [
+            BreakdownEntry(
+                fixture=capture, depth=0, function=b, pct_cycles=0.0
             )
-        else:
-            for bucket in _BREAKDOWN_BUCKETS:
-                rows.append(
-                    BreakdownEntry(
-                        fixture=fixture,
-                        depth=depth,
-                        function=bucket,
-                        pct_cycles=0.0,
-                    )
-                )
-        out.extend(rows)
-    return out
+            for b in _BREAKDOWN_BUCKETS
+        ]
+    rows: list[BreakdownEntry] = []
+    attributed = 0.0
+    for bucket in _BREAKDOWN_BUCKETS:
+        if bucket == "search_other":
+            continue
+        pct = per_bucket[bucket] / total * 100.0
+        attributed += pct
+        rows.append(
+            BreakdownEntry(
+                fixture=capture, depth=0, function=bucket, pct_cycles=pct
+            )
+        )
+    rows.append(
+        BreakdownEntry(
+            fixture=capture,
+            depth=0,
+            function="search_other",
+            pct_cycles=max(0.0, 100.0 - attributed),
+        )
+    )
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -785,14 +885,10 @@ def run_all(
         )
     ]
 
-    br_cfg = CONFIG.bench.breakdown
-    breakdown = [
-        asdict(e)
-        for e in bench_breakdown(
-            fixtures=list(br_cfg.fixtures),
-            depth=br_cfg.depth,
-        )
-    ]
+    # bench_breakdown derives from the newest flamegraph folded.txt; if
+    # no capture exists it returns [] (with a stderr warning) so the
+    # whole-sweep `bench all` still succeeds.
+    breakdown = [asdict(e) for e in bench_breakdown()]
 
     return {
         "nps": nps,

@@ -281,18 +281,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     bs = bsub.add_parser(
         "breakdown",
-        help="per-function cycles breakdown estimate (Phase 14)",
+        help="per-module engine self-time from a flamegraph capture",
     )
     bs.add_argument(
-        "--fixtures",
-        default="",
-        help="comma-separated fixture names; defaults to [bench.breakdown]",
-    )
-    bs.add_argument(
-        "--depth",
-        type=int,
+        "--folded",
         default=None,
-        help="fixed search depth; defaults to [bench.breakdown]",
+        help=(
+            "path to a flamegraph folded.txt; defaults to the newest "
+            "benches/results/flamegraph-*.folded.txt"
+        ),
     )
 
     bs = bsub.add_parser(

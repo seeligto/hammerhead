@@ -242,27 +242,20 @@ def _bench_scaling(args: argparse.Namespace) -> int:
 
 
 def _bench_breakdown(args: argparse.Namespace) -> int:
-    cfg = CONFIG.bench.breakdown
-    fixtures = (
-        [s.strip() for s in args.fixtures.split(",") if s.strip()]
-        if args.fixtures
-        else list(cfg.fixtures)
-    )
-    depth = args.depth if args.depth is not None else cfg.depth
-    rows = bench.bench_breakdown(fixtures=fixtures, depth=depth)
-    label_w = max((len(r.fixture) for r in rows), default=8)
-    label_w = max(label_w, 12)
-    header = (
-        f"{'fixture'.ljust(label_w)}  {'depth':>5}  {'function':>14}"
-        f"  {'pct_cycles':>10}"
-    )
+    folded = Path(args.folded) if getattr(args, "folded", None) else None
+    rows = bench.bench_breakdown(folded=folded)
+    if not rows:
+        # Empty: no flamegraph capture found. bench_breakdown already
+        # warned on stderr; nothing to print, still a success exit.
+        return 0
+    capture = rows[0].fixture
+    print(f"breakdown: {capture}  (% of engine self-time)")
+    label_w = max(len(r.function) for r in rows)
+    header = f"{'function'.ljust(label_w)}  {'pct_cycles':>10}"
     print(header)
     print("─" * len(header))
     for r in rows:
-        print(
-            f"{r.fixture.ljust(label_w)}  {r.depth:>5}  {r.function:>14}"
-            f"  {r.pct_cycles:>9.2f}%"
-        )
+        print(f"{r.function.ljust(label_w)}  {r.pct_cycles:>9.2f}%")
     return 0
 
 
