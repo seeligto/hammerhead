@@ -31,7 +31,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
-use hammerhead_engine_core::search::Engine;
+use hammerhead_engine_core::engine::Engine;
 
 mod common;
 use common::positions::FIXTURES;

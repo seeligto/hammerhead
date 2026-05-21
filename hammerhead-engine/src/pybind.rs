@@ -1,4 +1,4 @@
-//! `PyO3` wrapper. Thin shim over [`crate::search::Engine`]; no game logic.
+//! `PyO3` wrapper. Thin shim over [`crate::engine::Engine`]; no game logic.
 //!
 //! All search work runs inside `py.detach`, so long-running `best_move`
 //! calls release the GIL.
@@ -9,7 +9,7 @@ use pyo3::types::PyDict;
 
 use crate::board::Player;
 use crate::coords::Coord;
-use crate::search::Engine as RustEngine;
+use crate::engine::Engine as RustEngine;
 
 /// `Board` keeps a few `RefCell` / `Cell` caches (lazy threat sets, lazy
 /// static eval), so the wrapper is `!Sync`. `unsendable` lifts `PyO3`'s

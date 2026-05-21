@@ -6,6 +6,7 @@ pub mod axis_bitmap;
 pub mod board;
 pub mod config;
 pub mod coords;
+pub mod engine;
 pub mod eval;
 pub mod moves;
 pub mod ordering;
@@ -27,7 +28,8 @@ pub use coords::{
 pub use eval::{eval, is_mate_for};
 pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
 pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
-pub use search::{Engine, INF, SearchConfig, SearchResult, search_root};
+pub use engine::Engine;
+pub use search::{INF, SearchConfig, SearchResult, search_root};
 pub use threats::{
     ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,
 };

@@ -13,7 +13,8 @@ use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::config::MATE_SCORE;
 use hammerhead_engine_core::coords::{Coord, ORIGIN, hex_distance};
 use hammerhead_engine_core::ordering::OrderingState;
-use hammerhead_engine_core::search::{Engine, SearchConfig, search_root};
+use hammerhead_engine_core::engine::Engine;
+use hammerhead_engine_core::search::{SearchConfig, search_root};
 use hammerhead_engine_core::tt::TranspositionTable;
 
 // ────────────────────────────────────────────────────────────────────────
