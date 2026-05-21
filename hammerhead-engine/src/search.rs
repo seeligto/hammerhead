@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 
 use crate::board::{Board, BoardError, Player};
 use crate::config::{
-    ASP_WINDOW_INITIAL, ASP_WINDOW_WIDEN_FACTOR, DEADLINE_CHECK_NODES, DEFAULT_MAX_DEPTH,
+    ASPIRATION_START_DEPTH, ASP_WINDOW_INITIAL, ASP_WINDOW_WIDEN_FACTOR, DEADLINE_CHECK_NODES,
+    DEFAULT_MAX_DEPTH,
     DEFAULT_MOVE_RADIUS, DEFAULT_TIME_MS, DEFAULT_TT_SIZE_MB, LMR_MIN_DEPTH, LMR_MIN_MOVE_INDEX,
     LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_MAX_PLIES, TIME_STONE1_PCT,
 };
@@ -210,7 +211,7 @@ fn iterate_at_depth(
     let mut delta = cfg.asp_window_initial.max(1);
 
     let (mut alpha, mut beta) = match prev_score {
-        Some(p) if depth >= 4 => (
+        Some(p) if depth >= ASPIRATION_START_DEPTH => (
             p.saturating_sub(delta).max(-INF),
             p.saturating_add(delta).min(INF),
         ),
