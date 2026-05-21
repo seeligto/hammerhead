@@ -7,10 +7,10 @@
 //!    into the build-time `WINDOW_SCORE_8` table, which has the
 //!    extension factor (open / half-open / dead) folded in — so the
 //!    scan is a single lookup, no boundary probes, no runtime multiply.
-//! 2. **Layer 2** — weighted sum of [`ThreatCounts`] from
-//!    [`Board::threats`]. Per-player, X-positive globally. Phase 17
-//!    zeroed the S1/S2 shape weights (ablation verdict), so Layer 2
-//!    contributes the S0 shapes only.
+//! 2. **Layer 2** — weighted sum of the S0 [`ThreatCounts`] (open /
+//!    closed 4 & 5) from [`Board::threats`]. Per-player, X-positive
+//!    globally. (Phase 20 removed the S1/S2 shapes — see the history
+//!    note in `SPEC_EVAL.md`.)
 //! 3. **Layer 3** — minimum vertex cover of the S0
 //!    defense-cells hypergraph. Cover ≥ 3 is forced mate.
 //!
@@ -33,7 +33,7 @@
 )]
 
 use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
-use crate::board::{Board, Player, ShapeWeights};
+use crate::board::{Board, Player};
 use crate::config::{
     CLOSED_4_SCORE, CLOSED_5_SCORE, FORK_COVER2_BONUS, OPEN_4_SCORE, OPEN_5_SCORE, WINDOW_SCORE_8,
 };
@@ -75,9 +75,7 @@ pub fn eval(board: &Board) -> i32 {
 
     let mut score = 0;
     score += layer1_window_scan_8cell(board);
-    let s1s2 = board.eval_s1s2_enabled();
-    let w = board.eval_shape_weights();
-    score += layer2_shapes(&tx.counts, s1s2, w) - layer2_shapes(&to.counts, s1s2, w);
+    score += layer2_shapes(&tx.counts) - layer2_shapes(&to.counts);
     score += fork_x - fork_o;
     score
 }
@@ -105,9 +103,7 @@ pub fn bench_layer1_window_scan(board: &Board) -> i32 {
 pub fn bench_layer2_shapes(board: &Board) -> i32 {
     let tx = board.threats(Player::X);
     let to = board.threats(Player::O);
-    let s1s2 = board.eval_s1s2_enabled();
-    let w = board.eval_shape_weights();
-    layer2_shapes(&tx.counts, s1s2, w) - layer2_shapes(&to.counts, s1s2, w)
+    layer2_shapes(&tx.counts) - layer2_shapes(&to.counts)
 }
 
 /// Bench-only: isolated Layer-3 fork bonus for `player`.
@@ -323,35 +319,15 @@ unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u
 // Layer 2: shape weights
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Weighted sum of the shape counts in `c`. Returned as a per-player
-/// magnitude; the top-level eval subtracts the two players to get the
-/// signed contribution.
-///
-/// S0 shapes (open/closed 4 & 5) are always summed. The S1/S2 shapes
-/// are gated by the `eval_s1s2` Cargo feature (compile-time) and the
-/// `s1s2` runtime flag (Phase 16 ablation — see `SPEC_EVAL.md`). With
-/// the default feature set and the default runtime flag, the result is
-/// identical to Phase 15.
+/// Weighted sum of the S0 shape counts in `c` (open / closed 4 & 5).
+/// Returned as a per-player magnitude; the top-level eval subtracts
+/// the two players to get the signed contribution.
 #[inline]
-fn layer2_shapes(c: &ThreatCounts, s1s2: bool, w: ShapeWeights) -> i32 {
-    let s0 = OPEN_5_SCORE * i32::from(c.open_5)
+fn layer2_shapes(c: &ThreatCounts) -> i32 {
+    OPEN_5_SCORE * i32::from(c.open_5)
         + CLOSED_5_SCORE * i32::from(c.closed_5)
         + OPEN_4_SCORE * i32::from(c.open_4)
-        + CLOSED_4_SCORE * i32::from(c.closed_4);
-    #[cfg(feature = "eval_s1s2")]
-    if s1s2 {
-        return s0
-            + w.open_3 * i32::from(c.open_3)
-            + w.rhombus * i32::from(c.rhombus)
-            + w.arch * i32::from(c.arch)
-            + w.bone * i32::from(c.bone)
-            + w.trapezoid * i32::from(c.trapezoid)
-            + w.open_2 * i32::from(c.open_2)
-            + w.closed_3 * i32::from(c.closed_3)
-            + w.triangle * i32::from(c.triangle);
-    }
-    let _ = (s1s2, w); // unused when the `eval_s1s2` feature is off
-    s0
+        + CLOSED_4_SCORE * i32::from(c.closed_4)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

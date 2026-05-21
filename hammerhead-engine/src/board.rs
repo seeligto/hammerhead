@@ -5,9 +5,7 @@
 //! incrementally — no full scan.
 
 use crate::axis_bitmap::AxisBitmaps;
-use crate::config::{
-    EVAL_S1S2_DEFAULT, MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS,
-};
+use crate::config::{MAX_INCREMENTAL_CENTERS, MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN, for_each_in_range};
 use crate::proximity::{ProximityCounts, SparseCellSet, prox_idx};
 use crate::threats::{self, ThreatScratch, ThreatSet};
@@ -122,49 +120,6 @@ pub struct Board {
     /// Lazily-filled static-eval result. `None` after every mutation,
     /// reassigned on the next call to [`Board::cached_eval`].
     eval_cache: Cell<Option<i32>>,
-    /// Phase 16: Layer 2 S1/S2 ablation runtime flag. `true` ⟹ eval
-    /// counts the S1/S2 shape contributions. Defaults to
-    /// `EVAL_S1S2_DEFAULT`; toggled via [`Board::set_eval_s1s2`] for
-    /// self-play A/B. Persists across [`Board::reset`] (engine config,
-    /// not game state). See `SPEC_EVAL.md § Layer 2 ablation`.
-    eval_s1s2: Cell<bool>,
-    /// Phase 18: runtime-overridable Layer 2 S1/S2 shape weights.
-    /// Defaults to the compile-time `*_SCORE` constants, so an
-    /// un-overridden board evaluates byte-identically to a
-    /// pre-Phase-18 build. Overridden via [`Board::set_eval_shape_weights`]
-    /// for the eval-tuning sweep. Persists across [`Board::reset`]
-    /// (engine config, not game state).
-    eval_shape_weights: Cell<ShapeWeights>,
-}
-
-/// Runtime-overridable Layer 2 S1/S2 shape weights (Phase 18 tuning).
-/// One `i32` per cross-axis shape counted in `ThreatCounts`. `Default`
-/// returns the compile-time `hexo.toml` values.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ShapeWeights {
-    pub open_3: i32,
-    pub rhombus: i32,
-    pub arch: i32,
-    pub bone: i32,
-    pub trapezoid: i32,
-    pub open_2: i32,
-    pub closed_3: i32,
-    pub triangle: i32,
-}
-
-impl Default for ShapeWeights {
-    fn default() -> Self {
-        Self {
-            open_3: crate::config::OPEN_3_SCORE,
-            rhombus: crate::config::RHOMBUS_SCORE,
-            arch: crate::config::ARCH_SCORE,
-            bone: crate::config::BONE_SCORE,
-            trapezoid: crate::config::TRAPEZOID_SCORE,
-            open_2: crate::config::OPEN_2_SCORE,
-            closed_3: crate::config::CLOSED_3_SCORE,
-            triangle: crate::config::TRIANGLE_SCORE,
-        }
-    }
 }
 
 impl Default for Board {
@@ -201,8 +156,6 @@ impl Board {
             threats_dirty_centers: RefCell::new(SmallVec::new()),
             threats_dirty_overflow: Cell::new(false),
             eval_cache: Cell::new(None),
-            eval_s1s2: Cell::new(EVAL_S1S2_DEFAULT),
-            eval_shape_weights: Cell::new(ShapeWeights::default()),
         }
     }
 
@@ -464,22 +417,6 @@ impl Board {
     #[must_use]
     pub fn winner(&self) -> Option<Player> {
         self.winner
-    }
-
-    /// `true` iff Layer 2 S1/S2 shape contributions are enabled in
-    /// eval (Phase 16 ablation runtime flag). Defaults to
-    /// `EVAL_S1S2_DEFAULT`. See `SPEC_EVAL.md § Layer 2 ablation`.
-    #[inline]
-    #[must_use]
-    pub fn eval_s1s2_enabled(&self) -> bool {
-        self.eval_s1s2.get()
-    }
-
-    /// Current Layer 2 S1/S2 shape weights (Phase 18 tuning surface).
-    #[inline]
-    #[must_use]
-    pub fn eval_shape_weights(&self) -> ShapeWeights {
-        self.eval_shape_weights.get()
     }
 
     /// Internal radius check. Assumes ply >= 1.
