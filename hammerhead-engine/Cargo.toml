@@ -66,11 +66,17 @@ debug         = false
 # Phase 14 STEP 0 — without it the flamegraph collapses to nameless
 # `[unknown]` frames.
 [profile.bench]
-inherits      = "release"
-debug         = true
-strip         = "none"
-lto           = "fat"
-codegen-units = 1
+inherits             = "release"
+debug                = true
+strip                = "none"
+lto                  = "fat"
+codegen-units        = 1
+# Frame pointers required for `perf --call-graph fp` flamegraph capture.
+# LTO + `target-cpu=native` would otherwise omit them on leaf functions,
+# collapsing the search recursion into `[unknown]`. ~0-1% NPS on the bench
+# profile only; the production cdylib profile is separate and untouched.
+# See specs/SPEC_BENCHMARKS.md § Flamegraph capture — frame-pointer based.
+force-frame-pointers = "yes"
 
 [[bench]]
 name = "bench_board"
