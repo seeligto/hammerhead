@@ -10,8 +10,8 @@
 //! (the same window that constrains the per-cell zobrist key table); the
 //! array length is `LINE_ID_RANGE = 2 * ZOBRIST_WINDOW + 1`. Phase 13
 //! replaced the prior `FxHashMap<i16, LineBitmap>` storage after the Phase
-//! 12 flamegraph identified hashbrown probes inside `window6` / `is_set`
-//! / `line` as the largest user-space cost. See `SPEC_ENGINE.md`.
+//! 12 flamegraph identified hashbrown probes inside the window / `is_set`
+//! / `line` scans as the largest user-space cost. See `SPEC_ENGINE.md`.
 
 // All `as usize` / `as i16` casts in this module index into a bitmap whose
 // range has been validated by `in_range` or `word_index`. Pedantic clippy

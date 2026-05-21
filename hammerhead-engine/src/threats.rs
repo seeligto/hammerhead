@@ -97,9 +97,6 @@ impl ThreatScratch {
     }
 }
 
-impl ThreatSet {
-}
-
 /// Compute the threat set for `player` on `board`.
 ///
 /// Detection is a single linear-run scan over every populated axis line.
