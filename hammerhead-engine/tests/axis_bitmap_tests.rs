@@ -103,17 +103,6 @@ fn run_length_through_other_axis() {
 }
 
 #[test]
-fn window6_aligned() {
-    let mut axes = AxisBitmaps::new();
-    // Axis Q, line_id r=0. Set q = 0, 2, 4 → bits 0, 2, 4 within window starting at q=0.
-    for q in [0i16, 2, 4] {
-        axes.set(Coord::new(q, 0), Player::X);
-    }
-    let w = axes.window6(Axis::Q, 0, 0, Player::X);
-    assert_eq!(w, 0b01_0101);
-}
-
-#[test]
 #[should_panic(expected = "out of zobrist window")]
 #[cfg(debug_assertions)]
 fn out_of_window_line_id_panics_in_debug() {

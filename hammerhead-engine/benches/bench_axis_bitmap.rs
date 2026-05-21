@@ -45,45 +45,6 @@ fn bench_set_clear(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_window6(c: &mut Criterion) {
-    let mut group = c.benchmark_group("axis_bitmap::window6");
-    for fx in FIXTURES {
-        let board = (fx.build)();
-        // Pre-collect per-(axis, player) line ids so the timed body
-        // doesn't allocate a Vec on every iteration.
-        let mut probes: Vec<(Axis, Player, Vec<i16>)> = Vec::with_capacity(6);
-        for axis in Axis::all() {
-            for player in [Player::X, Player::O] {
-                probes.push((
-                    axis,
-                    player,
-                    board.axes().line_ids(axis, player).collect(),
-                ));
-            }
-        }
-        group.bench_function(fx.name, |b| {
-            b.iter(|| {
-                let mut sum = 0u32;
-                for (axis, player, line_ids) in &probes {
-                    for &line_id in line_ids {
-                        if let Some(line) = board.axes().line(*axis, *player, line_id)
-                            && let Some((lo, hi)) = line.populated_range()
-                        {
-                            for pos in lo..=hi {
-                                sum += u32::from(
-                                    board.axes().window6(*axis, line_id, pos, *player),
-                                );
-                            }
-                        }
-                    }
-                }
-                black_box(sum)
-            });
-        });
-    }
-    group.finish();
-}
-
 fn bench_run_through(c: &mut Criterion) {
     let mut group = c.benchmark_group("axis_bitmap::run_through");
     for fx in FIXTURES {
@@ -143,7 +104,6 @@ fn bench_populated_range(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_set_clear,
-    bench_window6,
     bench_run_through,
     bench_populated_range
 );
