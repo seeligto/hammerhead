@@ -667,13 +667,32 @@ doubt.
 `perf --call-graph fp` (frame pointers), **not** `--call-graph dwarf`.
 The dwarf unwinder's 8 KiB stack snapshot cannot unwind the LTO'd
 `pvs_node → pvs_dance → quiescence_node` recursion and collapses every
-search sample into an unattributable `[unknown]` leaf. The
-`[profile.bench]` profile sets `force-frame-pointers = "yes"` so LTO +
-`target-cpu=native` cannot omit frame pointers on leaf functions.
+search sample into an unattributable `[unknown]` leaf. `fp` is the only
+capture mode — there is intentionally no `dwarf` fallback or env-toggle,
+since a silent fallback would re-introduce the Phase 24 regression.
 
-To verify a capture is good: run `make flamegraph`, inspect the top of
-the generated `folded.txt`, and confirm function names are real
-(`eval::eval`, `threats::compute_*`) and not `[unknown]`.
+Frame pointers are pinned in two places:
+
+- **`[profile.bench]` sets `force-frame-pointers = "yes"`** — the
+  durable lock. LTO + `target-cpu=native` would otherwise omit frame
+  pointers on leaf functions even with `debug = true` / `strip = "none"`.
+- `scripts/flamegraph.sh` also passes `-C force-frame-pointers=yes` via
+  `RUSTFLAGS` when building the bench binary. This is redundant with the
+  profile setting but harmless; the profile setting is authoritative and
+  covers any `cargo bench` invocation, not just the script.
+
+To verify a capture is good: run `make flamegraph`, then inspect the
+generated `folded.txt`:
+
+```
+F=$(ls -t benches/results/flamegraph-*.folded.txt | head -1)
+grep -c 'eval' "$F"        # non-trivial count (hundreds+) — real frames
+grep -c '\[unknown\]' "$F" # should be low / zero, not dominating
+head -3 "$F"               # top stacks name real fns, not [unknown]/libc
+```
+
+Real frames look like `..._search..._node;..._eval...;... N`; a broken
+dwarf capture collapses to `bench_search;[unknown] N`.
 
 ### TT statistics — `tt_stats` feature on bench builds
 
