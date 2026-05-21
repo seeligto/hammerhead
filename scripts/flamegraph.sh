@@ -46,8 +46,16 @@ done
 # folded-stack text without re-running the workload.
 cd "${REPO_ROOT}/hammerhead-engine"
 
-# Build the bench binary with debug symbols (configured in [profile.bench]).
-cargo bench --bench bench_search --no-run >/dev/null
+# Build the bench binary with frame pointers. `perf --call-graph fp` walks
+# the frame-pointer chain — depth-unlimited and CFI-independent — whereas
+# perf's `dwarf` unwinder cannot follow the LTO'd recursive search: it runs
+# out of captured stack mid-recursion (even at a 64 KiB dump) and collapses
+# every search sample into an unattributable `[unknown]` / libc leaf, so
+# only shallow setup code (Engine::new, clear_tt) is ever attributed.
+# `target-cpu=native` is re-stated explicitly because a `RUSTFLAGS` env var
+# overrides `.cargo/config.toml` wholesale rather than appending to it.
+RUSTFLAGS="-C target-cpu=native -C force-frame-pointers=yes" \
+    cargo bench --bench bench_search --no-run >/dev/null
 
 # Pick the most recent bench_search executable in target/release/deps.
 BENCH_BIN=$(ls -t target/release/deps/bench_search-* 2>/dev/null \
@@ -58,10 +66,10 @@ if [ -z "${BENCH_BIN}" ]; then
     exit 1
 fi
 
-# Record samples. `--call-graph dwarf` produces useful stacks for Rust;
-# `-F 997` is the standard non-aliasing sampling rate.
+# Record samples. `--call-graph fp` walks the frame-pointer chain built
+# into the binary above. `-F 997` is the standard non-aliasing rate.
 perf record \
-    --call-graph dwarf \
+    --call-graph fp \
     -F 997 \
     -o "${PERF_DATA}" \
     --quiet \
