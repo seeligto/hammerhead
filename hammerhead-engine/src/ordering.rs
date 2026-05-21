@@ -2,8 +2,8 @@
 //!
 //! Stateful: killers (per-ply) and history (global) live in
 //! [`OrderingState`], owned by the search driver. Buckets and encoding —
-//! see `SPEC_ENGINE.md` "Ordering". Approximate predicates for
-//! `creates_s0` / `creates_s1` are documented inline.
+//! see `SPEC_ENGINE.md` "Ordering". The approximate `creates_s0`
+//! predicate is documented inline.
 
 use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
@@ -169,9 +169,9 @@ fn priority(bucket: u8, history: u32) -> u32 {
 }
 
 /// Encoding value for `m` per `SPEC_ENGINE.md` "Ordering". First match
-/// wins; values 10..=1 (with gaps at 4 and 2 — value 4 was the
-/// Phase-17-disabled creates-S1 bucket, and 0 is reserved for the
-/// unused tie-break term). Higher = sorted earlier.
+/// wins; values 10..=1 (with gaps at 4 and 2 — value 4 was the removed
+/// creates-S1 bucket, and 0 is reserved for the unused tie-break term).
+/// Higher = sorted earlier.
 ///
 /// Exposed to the search crate so LMR and check-extension decisions can
 /// reuse the same predicates without recomputing them.
@@ -207,11 +207,9 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if blocks_opp_s0(ctx.board, m, ctx.side) {
         return 5;
     }
-    // Phase 17: the creates-S1 bucket (encoding value 4) is disabled —
-    // the S1/S2 ablation A/B was net-negative, so a creates-S1 move now
-    // falls through to the killer / history buckets. The `creates_s1`
-    // predicate itself is retained for the deferred eval-tuning phase.
-    // See `SPEC_EVAL.md § Layer 2 ablation`.
+    // The creates-S1 bucket (encoding value 4) was removed in Phase 20
+    // with the rest of S1/S2 detection; a run-extending move falls
+    // through to the killer / history buckets.
     if ctx.killers.contains(m) {
         return 3;
     }
@@ -291,29 +289,6 @@ pub(crate) fn blocks_opp_s0(board: &Board, m: Coord, side: Player) -> bool {
         .s0_instances
         .iter()
         .any(|inst| inst.defense_cells.contains(&m))
-}
-
-/// Approximation of "creates an S1 threat for `side`" — see
-/// `SPEC_ENGINE.md` "Ordering — Approximations". Fires when the virtual
-/// placement extends an own axis run to length ≥ 3. Catches open-3
-/// directly and most rhombus / arch / trapezoid / bone extensions whose
-/// added stone is collinear with two existing stones; pure non-collinear
-/// shapes are bucket-7 noise per spec.
-///
-/// Gated by the `eval_s1s2` Cargo feature. Phase 17 disabled the
-/// creates-S1 ordering bucket (the S1/S2 ablation A/B was
-/// net-negative), so this predicate currently has no caller — it is
-/// retained, behind the feature, as a tunable surface for the deferred
-/// eval-tuning phase. See `SPEC_EVAL.md § Layer 2 ablation`.
-#[cfg(feature = "eval_s1s2")]
-#[allow(dead_code)]
-fn creates_s1(board: &Board, m: Coord, side: Player) -> bool {
-    for axis in Axis::all() {
-        if axis_run_through_empty(board, m, axis, side) >= 3 {
-            return true;
-        }
-    }
-    false
 }
 
 /// Reconstruct an axis-line cell from its `(line_id, pos)` pair. Mirrors

@@ -382,14 +382,6 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         (&["engine", "eval", "closed_5"], "CLOSED_5_SCORE"),
         (&["engine", "eval", "open_4"], "OPEN_4_SCORE"),
         (&["engine", "eval", "closed_4"], "CLOSED_4_SCORE"),
-        (&["engine", "eval", "open_3"], "OPEN_3_SCORE"),
-        (&["engine", "eval", "rhombus"], "RHOMBUS_SCORE"),
-        (&["engine", "eval", "arch"], "ARCH_SCORE"),
-        (&["engine", "eval", "bone"], "BONE_SCORE"),
-        (&["engine", "eval", "trapezoid"], "TRAPEZOID_SCORE"),
-        (&["engine", "eval", "open_2"], "OPEN_2_SCORE"),
-        (&["engine", "eval", "closed_3"], "CLOSED_3_SCORE"),
-        (&["engine", "eval", "triangle"], "TRIANGLE_SCORE"),
         (
             &["engine", "eval", "overlap_bonus_x10"],
             "OVERLAP_BONUS_X10",
@@ -418,13 +410,6 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         7,
     );
     emit_window_score_table(out, cfg);
-    // Phase 16: Layer 2 S1/S2 ablation compile-time default.
-    emit_bool(
-        out,
-        cfg,
-        &["engine", "eval", "eval_s1s2_default"],
-        "EVAL_S1S2_DEFAULT",
-    );
 }
 
 /// Read and validate `window_k_scores`, then emit the Layer-1 window
@@ -792,13 +777,6 @@ fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_u8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: u8 = {v};").unwrap();
-}
-
-fn emit_bool(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
-    let v = get(cfg, path)
-        .as_bool()
-        .unwrap_or_else(|| panic!("hexo.toml {} not a bool", path.join(".")));
-    writeln!(out, "pub const {name}: bool = {v};").unwrap();
 }
 
 fn emit_f32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {

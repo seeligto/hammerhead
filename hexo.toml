@@ -21,37 +21,15 @@ mate_score = 1_000_000
 # S0 (mate-in-one). Sized so two non-overlapping open-4s outrank any
 # plausible Layer 2 sum; the fork-mate path in Layer 3 returns
 # MATE_SCORE, so these are the *non-mate* upper bounds.
+#
+# The S1/S2 shape weights (open_3 / rhombus / arch / bone / trapezoid /
+# open_2 / closed_3 / triangle) were zeroed in Phase 17 and removed
+# with the detection code in Phase 20 — the ablation verdict was DROP.
+# See SPEC_EVAL.md § Layer 2 history.
 open_5   = 800_000
 closed_5 = 500_000
 open_4   = 60_000
 closed_4 = 20_000
-
-# S1 (pre-emptives, mate-in-two if undefended)
-# Phase 17: zeroed out. The 200-game ablation A/B (S1/S2-enabled vs
-# disabled) scored 29.0% [Wilson 23.2-35.6%] for the enabled side —
-# the S1/S2 contributions are net-negative at these weights. Detection
-# is retained (cross-axis matchers, ThreatCounts fields, the eval_s1s2
-# feature + set_eval_s1s2 toggle); only the eval weights are zeroed,
-# leaving a tunable surface for a dedicated eval-tuning phase. See
-# SPEC_EVAL.md § Layer 2 ablation and SPEC_ROADMAP.md Phase 18+.
-#
-# Phase 18 Stage A — Layer 1 anchors. Each weight is restated as
-# weight = alpha * A_shape, where A_shape sums window_k_scores over the
-# shape's maximal straight runs (the Layer 1 footprint). Anchors:
-#   open_3=256  rhombus=160  arch=64  bone=416  trapezoid=416
-#   open_2=32   closed_3=64  triangle=96
-# Phase 18 swept alpha per shape — verdict DROP, no weight beats the
-# baseline. Weights stay 0. See SPEC_EVAL.md § Phase 18.
-open_3    = 0
-rhombus   = 0
-arch      = 0
-bone      = 0
-trapezoid = 0
-
-# S2 (slower pre-emptives) — zeroed in Phase 17, same rationale.
-open_2    = 0
-closed_3  = 0
-triangle  = 0
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
@@ -75,11 +53,6 @@ fork_cover2_bonus = 4000
 
 # Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
 overlap_bonus_x10 = 15  # 1.5x as integer ratio /10
-
-# Phase 16: Layer 2 S1/S2 ablation — see SPEC_EVAL.md § Layer 2 ablation.
-# Compile-time default (feature `eval_s1s2`). Runtime override available
-# via Engine::set_eval_s1s2(bool) for self-play A/B.
-eval_s1s2_default = true
 
 [engine.threats]
 recompute_radius = 5

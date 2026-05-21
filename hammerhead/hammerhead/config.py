@@ -53,20 +53,11 @@ class EvalConfig:
     closed_5: int
     open_4: int
     closed_4: int
-    open_3: int
-    rhombus: int
-    arch: int
-    bone: int
-    trapezoid: int
-    open_2: int
-    closed_3: int
-    triangle: int
     window_k_scores: tuple[int, ...]
     open_extension_factor: int
     closed_extension_factor: int
     fork_cover2_bonus: int
     overlap_bonus_x10: int
-    eval_s1s2_default: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,20 +252,11 @@ def load() -> HexoConfig:
             closed_5=e["closed_5"],
             open_4=e["open_4"],
             closed_4=e["closed_4"],
-            open_3=e["open_3"],
-            rhombus=e["rhombus"],
-            arch=e["arch"],
-            bone=e["bone"],
-            trapezoid=e["trapezoid"],
-            open_2=e["open_2"],
-            closed_3=e["closed_3"],
-            triangle=e["triangle"],
             window_k_scores=tuple(e["window_k_scores"]),
             open_extension_factor=e["open_extension_factor"],
             closed_extension_factor=e["closed_extension_factor"],
             fork_cover2_bonus=e["fork_cover2_bonus"],
             overlap_bonus_x10=e["overlap_bonus_x10"],
-            eval_s1s2_default=bool(e["eval_s1s2_default"]),
         ),
         threats=ThreatsConfig(
             recompute_radius=t["recompute_radius"],
