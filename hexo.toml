@@ -52,16 +52,8 @@ fork_cover2_bonus = 4000
 # § Tempo.)
 
 [engine.threats]
-recompute_radius = 5
-cluster_radius   = 2
 # guard against pathological positions (worst-case all-stones-in-one-cluster)
 max_s0_instances_per_player = 64
-# Phase 15: per-read cap on dirty-center accumulation. When the dirty-center
-# vec fills before a `threats()` read, the next read falls back to a full
-# recompute. Bounds incremental work between reads at MAX_INCREMENTAL_CENTERS
-# rescans (cheap, since each is a small neighbourhood); also bounds the
-# SmallVec inline capacity on Board.
-max_incremental_centers = 4
 
 [engine.tt]
 # Default size for the transposition table. Two-bucket slots (~64 bytes each);

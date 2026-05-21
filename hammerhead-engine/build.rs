@@ -508,29 +508,11 @@ fn emit_window_score_8_table(out: &mut String, cfg: &toml::Value, k_scores: &[i3
 }
 
 fn emit_threats(out: &mut String, cfg: &toml::Value) {
-    emit_i16(
-        out,
-        cfg,
-        &["engine", "threats", "recompute_radius"],
-        "THREAT_RECOMPUTE_RADIUS",
-    );
-    emit_i16(
-        out,
-        cfg,
-        &["engine", "threats", "cluster_radius"],
-        "THREAT_CLUSTER_RADIUS",
-    );
     emit_usize(
         out,
         cfg,
         &["engine", "threats", "max_s0_instances_per_player"],
         "MAX_S0_INSTANCES",
-    );
-    emit_usize(
-        out,
-        cfg,
-        &["engine", "threats", "max_incremental_centers"],
-        "MAX_INCREMENTAL_CENTERS",
     );
 }
 
