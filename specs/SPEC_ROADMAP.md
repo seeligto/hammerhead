@@ -29,6 +29,8 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 21 | SRP audit + deletion-sweep investigation (read-only) | ✅ done |
 | 22 | deletion sweep — vestigial incremental machinery, dead config emits, `window6`, `notation.py` | ✅ done |
 | 23 | SRP splits — `search`/`engine`, `board` proximity helpers, `cli.py`, `promote.py` | ✅ done |
+| 24 | performance investigation — read-only HOTSPOTS refresh | ✅ done |
+| 25 | optimization quick wins + measurement cleanup | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -499,35 +501,110 @@ assessed and kept — cohesive enough that a split would be cosmetic.
 **Result**: public API surface unchanged; reference node counts
 byte-identical pre-Phase-22 / post-Phase-23.
 
-## Phase 24 candidates (deferred follow-ups)
+## Phase 24 — Performance Investigation
 
-Carried forward from the Phase 18 candidate list — items still open
-after Phases 22–23.
+Read-only / measurement-only phase. No engine code changed. Refreshed
+`benches/results/HOTSPOTS.md` against a frame-pointer flamegraph +
+criterion sweep and produced `subagents/reports/phase24-perf-investigation.md`
+— the scoping input for Phase 25.
 
-- **Eval tuning (S1/S2 shapes)** — **closed**. Phase 18 swept
-  corrected weights (verdict DROP) and Phase 20 removed the detection
-  code outright. The S1/S2 surface no longer exists; any future
-  positional-eval work starts from a clean slate, not a re-enable.
-  See `SPEC_EVAL.md § Layer 2 history`.
-- **TT bucket layout**: 4-bucket or hash-folding to lift mid-tree
-  collision rate.
-- **Move-ordering bucket refinement** (post-S1/S2 cleanup).
-- **`creates_s0` per-axis run cache (take 3)**: the Phase 15 STEP 4
-  variant was reverted (commit 15c9638); revisit with a different
-  caching key.
-- **Per-line `LineContribution` cache**.
+Key findings: NPS +23–28 % across every fixture since Phase 17 (the
+Phase 20 S1/S2-detection removal dividend), 32/32 byte-identical
+reference node counts, the engine is compute-bound (IPC 4.38, branch
+mispredict 0.35 %, LLC miss 2.9 %). The TT is 98 % empty with <1 %
+collisions — the long-standing "4-bucket TT" candidate is **dead**.
+Current hotspot ranking: Layer-1 window scan (~31 % of engine) >
+`threats::compute` (~21 %) > `ordering` predicates (~20 %) >
+`for_each_in_range`/proximity (~18 %) > search recursion (~6 %).
+
+## Phase 25 — Optimization Quick Wins + Measurement Cleanup
+
+**Goal**: bundle three low-risk, output-identical optimizations from
+the Phase 24 candidate ranking plus three measurement-infrastructure
+cleanups. Pure throughput phase — reference node counts byte-identical
+before/after is the gate; no `make vs` gating needed.
+
+Optimization work stream:
+
+1. **Bit-parallel `LineBitmap` run scan + shared line-lookup cache**
+   (Phase 24 candidate #1). `run_forward`/`run_backward` per-cell
+   `get()` loops replaced with masked `u64` reads
+   (`trailing_ones`/`leading_zeros`); a per-`order_moves` line-lookup
+   cache so candidates on a shared `(axis, line_id)` resolve once.
+   Speeds `would_make_six`, `creates_s0`, `run_endpoints` and win
+   detection. Resolves the Phase 24 `creates_s0` per-axis run cache
+   (take 3) candidate — broadened to a bit-parallel run scan — and
+   folds in the perf angle of move-ordering refinement.
+2. **`threats::compute` micro-opts** (candidate #3). Per-player piece
+   iteration (`Board::pieces_of(player)`) replaces the full-history
+   filter walk.
+3. **`for_each_in_range` precomputed offset tables** (candidate #4).
+   Fixed-radius (r=2, r=8) offset tables replace the runtime
+   hex-distance `dq/dr` loop.
+
+Cleanup work stream:
+
+4. **`bench breakdown` metric repaired** — the Phase 14 metric summed
+   raw criterion medians with no call-count weighting; rederived from
+   flamegraph self-time (ground truth).
+5. **Flamegraph frame-pointer capture locked down** — Phase 24 fixed
+   the dwarf-unwinder breakage; the `force-frame-pointers` /
+   `--call-graph fp` requirement is now documented + regression-proofed.
+6. **TT stats build hygiene** — `tt_stats` is a Cargo feature off in
+   release; `make bench` / `make bench-baseline` now build with it so
+   `baseline.json` populates `tt_hit_rate`. Production builds stay
+   feature-free.
+
+Out of scope (deferred — see Phase 26 candidates): per-line
+`LineContribution` cache, search-internal proximity skipping.
+
+**Reference node counts are the regression net.** All shipped changes
+are output-identical by design; `make bench reference` byte-identical
+pre/post.
+
+## Phase 26 candidates (deferred follow-ups)
+
+Carried forward — items still open after Phase 25.
+
+- **Per-line `LineContribution` cache** (Phase 24 candidate #2): Layer
+  1 (~31 % of engine) re-scans every populated line on every leaf
+  eval. Cache per-`(axis,line_id)` Layer-1 contribution on `Board`,
+  invalidate the ≤3 lines a placed stone touches. High payoff
+  (~+8–15 %), high difficulty (cache-invalidation lifecycle) —
+  warrants a dedicated phase.
+- **Search-internal `place` / proximity-skip** (Phase 24 candidate
+  #5): the r=8 outer-proximity walk is dead work inside search (every
+  searched move is a provably-legal r=2 inner candidate). A
+  `place_for_search` path could skip it. Behaviour-touching at the
+  contract level — needs strength gating.
 - **`[bot]` vs `[engine.search]` time-budget drift**: `[bot]
   default_time_per_move_ms` and `[engine.search] default_time_ms` are
-  both 1000ms. Fold if always coupled.
+  both 1000ms. Config hygiene — fold if always coupled.
 - **`find_pv` eviction tolerance**: best-effort; returns shorter PV
   if TT loses entries between root and walk.
-- **Radius-theory colony discounting** in eval (if anyone still
-  wants it).
+- **Radius-theory colony discounting** in eval (deferred eval
+  feature; on the v1 out-of-scope list).
 - **LMR retune** now that perf headroom exists for deeper search.
+- **Incremental threat recompute** (revisit) — the Phase 15 idea
+  reverted at `15c9638`; the natural follow-on once the
+  `LineContribution` cache proves the invalidation pattern.
 - **Algorithm work**: revisit null-move pruning under two-stone
   parity.
 - **Lazy-SMP parallel search**.
 - **Opening book**, **endgame tables**, **WebSocket live integration**.
+
+Closed since the Phase 24 list:
+
+- **Eval tuning (S1/S2 shapes)** — closed at Phase 18/20 (verdict
+  DROP, detection code removed).
+- **TT bucket layout (4-bucket / hash-folding)** — dead. Phase 24 § E:
+  TT 98 % empty, <1 % collisions, not in flamegraph self-time. Solves
+  a non-problem.
+- **`creates_s0` per-axis run cache (take 3)** — resolved by Phase 25
+  STEP 1.1 (broadened to a bit-parallel run scan).
+- **Move-ordering bucket refinement** — the perf angle folded into
+  Phase 25 STEP 1.1; pure bucket-*quality* refinement is a strength
+  change, deferred to a strength-focused phase (not a perf candidate).
 
 ## Phase 15 reviewer-pass fixes
 

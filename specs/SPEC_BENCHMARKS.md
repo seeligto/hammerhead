@@ -491,6 +491,14 @@ The numbers are **estimates**, not a profile — caveat their use.
 Their value is trend tracking across phases. Use `make flamegraph`
 for ground-truth profiling.
 
+> **Phase 25 repair (STEP 2.1).** Phase 24 found this metric
+> structurally broken: it summed raw criterion micro medians with no
+> call-count weighting, so `moves` showed as 53.9 % of `midgame_30`
+> d=4 (the `generate(r=4/8)` micros are large but the search runs
+> only r=2) and `tt` always read 0.0 % (criterion name mismatch).
+> Phase 25 STEP 2.1 rederives the breakdown directly from flamegraph
+> self-time samples (ground truth). See § Methodology fixes (Phase 25).
+
 ## Future extensions (post-baseline)
 
 - Memory benchmarks: `peak_rss` per fixture at depth N.
@@ -593,3 +601,44 @@ game, ~240 s/game sequential) finishes in
 CLI / Makefile:
    make vs N_GAMES=200 TIME_MS=1000 N_WORKERS=14
    make vs N_GAMES=50 TIME_MS=500 TEST=sprt   # SPRT mode unchanged
+
+## Methodology fixes (Phase 25)
+
+Three measurement-infrastructure repairs surfaced by Phase 24.
+
+### `bench breakdown` — derived from flamegraph self-time
+
+The Phase 14 `bench breakdown` metric (§ Per-function cycles
+breakdown) summed raw criterion micro medians with no call-count
+weighting — structurally broken (Phase 24 § C). STEP 2.1 rederives
+the breakdown by parsing the flamegraph `folded.txt` self-time
+samples, grouping leaf samples by `module::function`. The JSON output
+shape is preserved. When no `folded.txt` exists the subcommand emits
+an empty array and a warning that breakdown requires a flamegraph
+capture. Cross-checked against the Phase 24 flamegraph: output matches
+the manually-derived "% of engine" column in HOTSPOTS.md within ±2 %.
+
+### Flamegraph capture — frame-pointer based
+
+`make flamegraph` (`scripts/flamegraph.sh`) captures with
+`perf --call-graph fp` (frame pointers), **not** `--call-graph dwarf`.
+The dwarf unwinder's 8 KiB stack snapshot cannot unwind the LTO'd
+`pvs_node → pvs_dance → quiescence_node` recursion and collapses every
+search sample into an unattributable `[unknown]` leaf. The
+`[profile.bench]` profile sets `force-frame-pointers = "yes"` so LTO +
+`target-cpu=native` cannot omit frame pointers on leaf functions.
+
+To verify a capture is good: run `make flamegraph`, inspect the top of
+the generated `folded.txt`, and confirm function names are real
+(`eval::eval`, `threats::compute_*`) and not `[unknown]`.
+
+### TT statistics — `tt_stats` feature on bench builds
+
+TT stats are gated behind the `tt_stats` Cargo feature (§ TT
+statistics) so production builds stay zero-overhead. Phase 24 found
+that the production `make bench` build records `tt_hit_rate: null`
+because the feature is off — the `--tt-stats` flag was a no-op.
+`make bench` and `make bench-baseline` now build with
+`--features tt_stats` so `baseline.json` populates `tt_hit_rate`.
+`make build` (production / SDK) and `make bench-quick` /
+`make bench-perf` stay on the feature-free build.
