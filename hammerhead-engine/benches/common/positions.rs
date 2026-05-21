@@ -31,9 +31,3 @@ pub struct Fixture {
 }
 
 include!(concat!(env!("OUT_DIR"), "/fixtures_generated.rs"));
-
-/// Lookup by fixture name.
-#[allow(dead_code)]
-pub fn by_name(name: &str) -> Option<&'static Fixture> {
-    FIXTURES.iter().find(|f| f.name == name)
-}
