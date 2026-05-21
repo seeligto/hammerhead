@@ -17,15 +17,15 @@ history.)
 
 ## Layer 1: Window Scan
 
-For each axis, slide 6-cell window across active board region.
+For each axis, slide a window across the active board region and
+score each window by the count of own stones inside it. Windows
+mixing both colours are dead (score 0). The scan is implemented as
+an 8-cell lookup table (see below); the inner six cells carry the
+own-stone count `k`, the two boundary cells select the extension
+factor.
 
-For each window: count own `k`, opponent `o`, empty `e`. (`k + o + e = 6`)
-
-- If `o > 0` and `k > 0`: dead. Score 0.
-- If `o > 0`: opponent-only (count for them).
-- If `k > 0`: live for own player.
-
-Window score table (`window_k_scores` in `hexo.toml`):
+Window score table (`window_k_scores` in `hexo.toml`), indexed by
+own-stone count `k` in the inner six cells:
 | `k` | base score |
 |---|---|
 | 0 | 0 |
@@ -53,7 +53,7 @@ relevant extension factor (open_extension_factor = 4,
 closed_extension_factor = 1, dead = 0). The factor logic is
 collapsed into the table:
 
-  let c_inner = [c1, c2, c3, c4, c5, c6];     // the original 6-cell window
+  let c_inner = [c1, c2, c3, c4, c5, c6];     // the inner 6-cell window
   let base = if c_inner is single-color X-only with k stones:
                   window_k_scores[k]
              else if single-color O-only:
@@ -220,16 +220,16 @@ pub fn eval(board: &Board) -> i32 {
 
 Mate-distance tracking: subtract `ply` from `MATE_SCORE` so search prefers faster mates.
 
-## Incremental Maintenance
+## Caching
 
-Every layer cached. On `place(c)`:
-- Window scan: invalidate 18 windows max (3 axes × 6 windows touching `c`)
-- Shape: re-evaluate piece clusters within radius 5 of `c`
-- Fork: recompute defense sets only for invalidated shapes
-
-On `undo(c)`: same, reverse.
-
-Avoid full-board scan in search inner loop.
+The eval result is cached on the `Board` and invalidated by a dirty
+flag on every `place` / `undo`. The next `eval()` after a mutation
+recomputes all three layers by a full linear-run scan over the
+active board region; a clean read returns the cached score
+directly. (Phases 5–16 sketched a per-layer incremental-maintenance
+scheme; it never outperformed the full scan once Layer 1 became the
+8-cell table and the S1/S2 shapes were removed — see § Layer 2
+history.)
 
 ## Tuning
 

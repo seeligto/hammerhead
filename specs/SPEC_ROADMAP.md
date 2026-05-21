@@ -26,6 +26,8 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 18 | repo hygiene + S1/S2 eval-weight tuning sweep (verdict DROP) | ✅ done |
 | 19 | clean SDK / `hammerhead` package | ✅ done |
 | 20 | remove idle S1/S2 detection code | ✅ done |
+| 21 | SRP audit + deletion-sweep investigation (read-only) | ✅ done |
+| 22 | deletion sweep — vestigial incremental machinery, dead config emits, `window6`, `notation.py` | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -416,7 +418,78 @@ collapsed to a single linear-run scan. The dirty-center machinery on
 depths); ~16–20 % NPS gain from eliminating the per-read detection
 cost. See `SPEC_EVAL.md § Layer 2 history`.
 
-## Phase 18 candidates (deferred follow-ups)
+## Phase 21 — SRP Audit + Deletion-Sweep Investigation
+
+Read-only investigation. No code changed. Audited every source file
+for single-responsibility violations and swept `src/` / `tests/` /
+`benches/` / `hammerhead/` for dead and vestigial code. Output:
+`subagents/reports/phase21-investigation.md` — the scoping input for
+Phases 22–23.
+
+## Phase 22 — Deletion Sweep
+
+**Goal**: subtract the dead and vestigial code confirmed by the
+Phase 21 investigation. Pure subtraction — zero search-behaviour
+change, reference node counts byte-identical before/after.
+
+Removed:
+
+- **Vestigial incremental-threats machinery**: the `centers` /
+  `prior` parameters of `threats::compute` / `compute_with_scratch`
+  (Phase 14/15 introduced them for an incremental reconcile path;
+  Phase 17 made the full linear scan the only live path), the
+  `Board` dirty-center accumulator (`threats_dirty_centers`,
+  `threats_dirty_overflow` and their `*_for_test` accessors), and
+  the tautological incremental-vs-full oracle tests. The bare
+  `threats_dirty: Cell<bool>` flag is retained — it still gates the
+  reconcile.
+- **Orphan threat-radius config**: `[engine.threats] recompute_radius`
+  / `cluster_radius` / `max_incremental_centers` and their `build.rs`
+  emits.
+- **Dead config emits**: emitted-but-unread `build.rs` constants
+  (`OVERLAP_BONUS_X10`, the runtime `WINDOW_K_SCORES` const — the
+  toml array is kept, it still feeds the Layer 1 score table —
+  `EXTENDED_MOVE_RADIUS`, `MOVE_GEN_OUTER_RADIUS`,
+  `FULL_LEGALITY_RADIUS`, `MOVE_CAP`, the `BENCH_*` consts).
+- **Dead fork primitive**: `ThreatSet::is_mate_pending` +
+  `threats::single_cell_blocks_all` — a duplicate of `eval.rs`'s live
+  `single_cell_covers_all`, kept alive only by tests.
+- **`window6`** (`LineBitmap` / `AxisBitmaps`) — superseded by the
+  8-cell window-scan table in Phase 17.
+- **`notation.py`** — an unreferenced stub module (also kills the
+  duplicate `GameRecord` shadowing bug).
+- **`benchmark.py` match stubs** + the `analyze` CLI subcommand —
+  unreferenced shells.
+- **`creates_s1` test naming residue** — renamed after the Phase 17
+  hybrid removal (naming-only, no behaviour change).
+
+**Fix-not-delete**: `search.rs` hardcoded `depth >= 4` for the
+aspiration-window start; `ASPIRATION_START_DEPTH` is now wired in
+from `hexo.toml` per the CLAUDE.md magic-number rule.
+
+**Result**: ~500–650 LOC removed; reference node counts
+byte-identical (the dirty-accumulator removal is the only
+behaviour-adjacent change and the parity gate confirmed it).
+
+## Phase 23 — SRP Splits
+
+**Goal**: split bloated files per the Phase 21 investigation. Pure
+file moves on top of the smaller post-Phase-22 tree — zero behaviour
+change, reference node counts byte-identical.
+
+- `search.rs` → `search.rs` (algorithm) + `engine.rs` (the `Engine`
+  game-state handle).
+- `board.rs` → smaller `board.rs` + extracted helpers (proceeded only
+  if `board.rs` stayed > 500 LOC post-Phase-22).
+- `cli.py` → split by subcommand group.
+- `promote.py` → 3-way split (match / sprt / worktree).
+
+`axis_bitmap.rs` and `benchmark.py` were assessed and kept.
+
+## Phase 24 candidates (deferred follow-ups)
+
+Carried forward from the Phase 18 candidate list — items still open
+after Phases 22–23.
 
 - **Eval tuning (S1/S2 shapes)** — **closed**. Phase 18 swept
   corrected weights (verdict DROP) and Phase 20 removed the detection

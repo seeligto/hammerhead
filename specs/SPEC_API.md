@@ -105,9 +105,8 @@ outside the `HammerheadError` family.
 Planned, not yet implemented — documented here so the surface is honest:
 
 - **String move notation.** `play` accepts only `Move` tuples; passing a
-  `str` raises `NotationError`. BKE / BSN / HXN parsing arrives with the
-  `hammerhead.notation` module. At that point `play` will also accept
-  BKE strings and `Bot` will gain `to_notation()` / `from_notation()`.
+  `str` raises `NotationError`. BKE / BSN / HXN string parsing is not
+  planned for v1.
 - **`threats(side)`** — per-side threat-shape report. Needs new PyO3
   surface (the engine's `ThreatCounts` is not exposed today).
 - **`board_ascii`** — ASCII board renderer. Needs a new engine accessor.
@@ -186,7 +185,6 @@ emits `hammerhead bot ready` to stdout once and flushes before reading.
 hammerhead play                            # human vs bot REPL
 hammerhead selfplay -n N                   # bot vs bot, log winners
 hammerhead bench [...]                     # benchmark suite
-hammerhead analyze <bsn>                   # placeholder (BSN parsing deferred)
 hammerhead bot [--tt-size-mb MB]           # subprocess protocol (above)
 hammerhead match CURRENT BEST              # generic two-binary match (Phase 11)
 hammerhead promote [--dry-run]             # current vs .bestref worktree (Phase 11)
@@ -219,5 +217,3 @@ Engine version in `hammerhead-engine/Cargo.toml`, re-exported as
 - WebSocket client for live play on hexo.did.science
 - SealBot harness (HTTP or socket)
 - Self-play data export for ML tuning
-- `hammerhead.notation` — BKE / BSN / HXN parsers; unblocks string moves
-  in `Bot.play` and `analyze`

@@ -343,7 +343,7 @@ case once a line is established.
 `±2 * ZOBRIST_WINDOW` (default 127 → 509 entries per axis-player; the
 2× factor accommodates axis-S `line_id = q + r`). The Phase 12
 flamegraph showed hashbrown probes inside `AxisBitmaps::line` /
-`is_set` / `window6` consuming ~500 M samples — the largest user-space
+`is_set` / window scans consuming ~500 M samples — the largest user-space
 cost after the bench-harness TT allocator artifact. Replacing the
 `FxHashMap<i16, LineBitmap>` with a fixed flat array reduces every probe
 to a single bounds-checked array load. Out-of-range line IDs are a bug
@@ -370,10 +370,6 @@ impl AxisBitmaps {
     /// on `axis`. Returns 0 if `c` is not occupied by `player` on that line.
     /// Walks at most ±5 positions; bounded O(1).
     pub fn run_length_through(&self, c: Coord, axis: Axis, player: Player) -> u8;
-
-    /// 6-bit window starting at position `pos` of `axis` line `line_id` for
-    /// `player`. Used by eval window scan (Layer 1) later.
-    pub fn window6(&self, axis: Axis, line_id: i16, pos: i16, player: Player) -> u8;
 }
 ```
 
@@ -447,17 +443,13 @@ pub struct ThreatSet {
 ### Operations
 
 ```rust
-pub fn compute(
-    board: &Board,
-    player: Player,
-    center: Option<Coord>,
-    prior: Option<&ThreatSet>,
-) -> ThreatSet;
+pub fn compute(board: &Board, player: Player) -> ThreatSet;
 ```
 
-`center = None` → full recompute (used on `Board::reset`).
-`center = Some(c)` + `prior = Some(_)` → incremental: drop instances
-within radius 5 of `c`, rescan, merge.
+Always a full recompute by linear-run scan. (Phases 14–15 carried
+`centers` / `prior` parameters for an incremental reconcile path;
+Phase 17 made the full scan the only live path and Phase 22 removed
+the vestigial parameters.)
 
 ### Cache on Board
 
@@ -466,8 +458,6 @@ within radius 5 of `c`, rescan, merge.
 threats_x: RefCell<ThreatSet>,
 threats_o: RefCell<ThreatSet>,
 threats_dirty: Cell<bool>,
-threats_dirty_centers: RefCell<SmallVec<[Coord; MAX_INCREMENTAL_CENTERS]>>,
-threats_dirty_overflow: Cell<bool>,
 ```
 
 Public accessor:
@@ -475,27 +465,18 @@ Public accessor:
 pub fn threats(&self, player: Player) -> Ref<ThreatSet>;
 ```
 
-Invariants (Phase 15):
+Invariants:
 
-- `threats_dirty == false` ⟹ `threats_x` / `threats_o` hold the current
-  cached threats, and `threats_dirty_centers` is empty. The hot path
-  returns the cached `Ref` with a single `RefCell::borrow` — no
-  `Option::is_some` projection (STEP 3 dropped the prior
-  `RefCell<Option<ThreatSet>>` wrapper).
-- `threats_dirty == true` ⟹ the cached threats may be stale and must be
-  reconciled against `threats_dirty_centers` on next read.
-- `threats_dirty_centers` records the just-placed / just-undone coord
-  of every `place` / `undo` since the last `threats()` read. Bounded
-  by `MAX_INCREMENTAL_CENTERS` (default 4 from `hexo.toml`). On
-  overflow `threats_dirty_overflow` is set and further pushes are
-  dropped; the next reconcile passes an empty `centers` slice to
-  force a full recompute (the dropped centers may have invalidated
-  regions we no longer know about).
-- The `Cell<bool>` flag short-circuits the cache lookup hot path:
-  clean reads do a single `RefCell::borrow` and a direct return.
+- `threats_dirty == false` ⟹ `threats_x` / `threats_o` hold the
+  current cached threats. The hot path returns the cached `Ref` with
+  a single `RefCell::borrow`.
+- `threats_dirty == true` ⟹ the cached threats are stale; the next
+  `threats()` read triggers a full recompute and clears the flag.
+- Every `place` / `undo` sets `threats_dirty`. The `Cell<bool>` flag
+  short-circuits the cache lookup hot path: clean reads do a single
+  `RefCell::borrow` and a direct return.
 - Initial state after `Board::new` / `Board::reset`: both caches hold
-  `ThreatSet::default()` (empty), dirty flag `false`, centers vec
-  empty.
+  `ThreatSet::default()` (empty), dirty flag `false`.
 
 ## Win Detection (`win.rs`)
 
