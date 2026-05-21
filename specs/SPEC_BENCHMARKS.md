@@ -690,15 +690,15 @@ search sample into an unattributable `[unknown]` leaf. `fp` is the only
 capture mode — there is intentionally no `dwarf` fallback or env-toggle,
 since a silent fallback would re-introduce the Phase 24 regression.
 
-Frame pointers are pinned in two places:
-
-- **`[profile.bench]` sets `force-frame-pointers = "yes"`** — the
-  durable lock. LTO + `target-cpu=native` would otherwise omit frame
-  pointers on leaf functions even with `debug = true` / `strip = "none"`.
-- `scripts/flamegraph.sh` also passes `-C force-frame-pointers=yes` via
-  `RUSTFLAGS` when building the bench binary. This is redundant with the
-  profile setting but harmless; the profile setting is authoritative and
-  covers any `cargo bench` invocation, not just the script.
+Frame pointers are forced by `scripts/flamegraph.sh`, which builds the
+bench binary with `RUSTFLAGS=-C force-frame-pointers=yes`. LTO +
+`target-cpu=native` would otherwise omit them on leaf functions even
+with `debug = true` / `strip = "none"`, collapsing the search recursion
+into `[unknown]`. Cargo exposes no `[profile]` key for frame pointers
+(`profile.bench.force-frame-pointers` is silently ignored as an unused
+manifest key), so the `RUSTFLAGS` route in the script is the single
+mechanism. `[profile.bench]` keeps `debug = true` / `strip = "none"` so
+`perf` can symbolize the captured frames.
 
 To verify a capture is good: run `make flamegraph`, then inspect the
 generated `folded.txt`:
