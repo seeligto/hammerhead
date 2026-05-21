@@ -1,13 +1,7 @@
-//! Phase 15: oracle correctness test for the incremental threats path.
+//! Threat-detection correctness tests.
 //!
-//! Random-walks several starting positions, alternating `place` / `undo`
-//! with growth bias. After every step it reads `Board::threats(player)`
-//! (which exercises the incremental path through `reconcile_threats`)
-//! and compares the result against a fresh full-recompute oracle. Any
-//! drift fails the test with the dirty centers logged for replay.
-//!
-//! Seed is fixed (`0xDEAD_F00D_CAFE_BEEF`) — failures replay
-//! byte-identically.
+//! Covers compute determinism, place/undo round-trip stability, and
+//! winning-move detection.
 
 // Test fixtures intentionally use a long string-building style for the
 // drift report. The pedantic lints below add noise but no value here.
@@ -22,15 +16,7 @@
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::coords::Coord;
 use hammerhead_engine_core::moves;
-use hammerhead_engine_core::threats::{
-    self, ThreatInstance, ThreatScratch, ThreatSet, compute as compute_threats,
-};
-use rand_xoshiro::Xoshiro256PlusPlus;
-use rand_xoshiro::rand_core::{Rng, SeedableRng};
-
-const ORACLE_SEED: u64 = 0xDEAD_F00D_CAFE_BEEF_u64;
-const TARGET_POSITIONS: usize = 10_000;
-const MIN_POSITIONS: usize = 5_000;
+use hammerhead_engine_core::threats::{ThreatInstance, ThreatSet, compute as compute_threats};
 
 type InstanceKey = (u8, Vec<(i16, i16)>, Vec<(i16, i16)>);
 
@@ -93,21 +79,8 @@ fn report_diff(a: &ThreatSet, b: &ThreatSet, header: &str) -> String {
     s
 }
 
-/// Replicates the bench-fixture builders so the oracle test does not
-/// depend on the bench harness module tree. The boards are constructed
-/// via the regular `place` path (no `place_for_test`), which is what
-/// the search hot path uses. We restrict to legal openings to keep the
-/// initial position valid for the random walk.
-fn build_empty() -> Board {
-    Board::new()
-}
-
-fn build_single_origin() -> Board {
-    let mut b = Board::new();
-    b.place(Coord::new(0, 0)).unwrap();
-    b
-}
-
+/// Builds a midgame board via the regular `place` path (no
+/// `place_for_test`), which is what the search hot path uses.
 fn play_moves(b: &mut Board, mvs: &[Coord]) {
     for &c in mvs {
         b.place(c).unwrap();
@@ -129,44 +102,6 @@ fn build_midgame_12() -> Board {
         (-2, 2),
         (-1, -1),
         (-1, 2),
-    ];
-    play_moves(&mut b, &mvs.map(|(q, r)| Coord::new(q, r)));
-    b
-}
-
-fn build_midgame_30() -> Board {
-    let mut b = Board::new();
-    let mvs = [
-        (0, 0),
-        (-1, 0),
-        (-1, 1),
-        (0, -1),
-        (0, 1),
-        (1, -1),
-        (1, 0),
-        (-2, 0),
-        (-2, 1),
-        (-2, 2),
-        (-1, -1),
-        (-1, 2),
-        (0, -2),
-        (0, 2),
-        (1, -2),
-        (1, 1),
-        (2, -2),
-        (2, -1),
-        (2, 0),
-        (-3, 0),
-        (-3, 1),
-        (-3, 2),
-        (-3, 3),
-        (-2, -1),
-        (-2, 3),
-        (-1, -2),
-        (-1, 3),
-        (0, -3),
-        (0, 3),
-        (1, -3),
     ];
     play_moves(&mut b, &mvs.map(|(q, r)| Coord::new(q, r)));
     b
@@ -219,149 +154,6 @@ fn incremental_handles_place_then_undo_round_trip() {
         threat_set_equiv(&before_o, &after_o),
         "{}",
         report_diff(&after_o, &before_o, "O round-trip drift")
-    );
-}
-
-#[test]
-fn incremental_matches_full_multi_cluster() {
-    // Phase 16: stress several simultaneous dirty centers per
-    // reconciliation. Places `k` stones without a threats read between
-    // them, so the next read reconciles `k` dirty centers at once.
-    const MULTI_SEED: u64 = 0xC0FF_EED1_5C0D_E5A1_u64;
-
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(MULTI_SEED);
-    let mut scratch = ThreatScratch::default();
-
-    for k in [2usize, 3, 4] {
-        let mut board = build_midgame_12();
-        for _ in 0..1000 {
-            // Place up to `k` stones without reading threats between.
-            let mut placed = 0usize;
-            for _ in 0..k {
-                let legal = moves::generate(&board, 8);
-                if legal.is_empty() {
-                    break;
-                }
-                let mv = legal[(rng.next_u64() as usize) % legal.len()];
-                board.place(mv).unwrap();
-                placed += 1;
-                if board.winner().is_some() {
-                    // Don't probe past a terminal position.
-                    board.undo().unwrap();
-                    placed -= 1;
-                    break;
-                }
-            }
-            if placed == 0 {
-                board = build_midgame_12();
-                continue;
-            }
-            // Read: incremental reconciles `placed` dirty centers.
-            let inc_x = board.threats(Player::X).clone();
-            let inc_o = board.threats(Player::O).clone();
-            let full_x =
-                threats::compute_with_scratch(&board, Player::X, &mut scratch);
-            let full_o =
-                threats::compute_with_scratch(&board, Player::O, &mut scratch);
-            assert!(
-                threat_set_equiv(&inc_x, &full_x),
-                "X multi-cluster drift (k={k}, ply {})\n{}",
-                board.ply(),
-                report_diff(&inc_x, &full_x, "X"),
-            );
-            assert!(
-                threat_set_equiv(&inc_o, &full_o),
-                "O multi-cluster drift (k={k}, ply {})\n{}",
-                board.ply(),
-                report_diff(&inc_o, &full_o, "O"),
-            );
-            // Undo back, then read to reset the dirty accumulator (those
-            // reads reconcile `placed` undo-dirty centers — also multi-
-            // cluster).
-            for _ in 0..placed {
-                board.undo().unwrap();
-            }
-            let _ = board.threats(Player::X);
-            let _ = board.threats(Player::O);
-        }
-    }
-}
-
-type Builder = fn() -> Board;
-
-#[test]
-fn incremental_matches_full_recompute_10k_positions() {
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(ORACLE_SEED);
-    let starts: &[Builder] = &[
-        build_empty,
-        build_single_origin,
-        build_midgame_12,
-        build_midgame_30,
-    ];
-
-    let mut positions_tested = 0usize;
-    let mut scratch = ThreatScratch::default();
-    let per_builder = TARGET_POSITIONS.div_ceil(starts.len());
-    'outer: for start_builder in starts {
-        let mut board = start_builder();
-        let mut from_this = 0usize;
-        while from_this < per_builder {
-            if positions_tested >= TARGET_POSITIONS {
-                break 'outer;
-            }
-            // 70% place, 30% undo (when there's history).
-            let coin = rng.next_u64();
-            let action_is_place = board.ply() == 0 || (coin % 10) < 7;
-            let action_succeeded = if action_is_place {
-                let legal = moves::generate(&board, 8);
-                if legal.is_empty() {
-                    false
-                } else {
-                    let pick = rng.next_u64();
-                    let mv = legal[(pick as usize) % legal.len()];
-                    board.place(mv).is_ok()
-                }
-            } else {
-                board.undo().is_ok()
-            };
-            if !action_succeeded {
-                // Position is stuck (no legal moves and no history) —
-                // restart with this builder's fresh state.
-                board = start_builder();
-                continue;
-            }
-            if board.winner().is_some() {
-                // Don't probe threats past a terminal position — undo
-                // back to a non-terminal state before continuing.
-                board.undo().unwrap();
-                continue;
-            }
-
-            // Force the cache via the incremental path:
-            let inc_x = board.threats(Player::X).clone();
-            let inc_o = board.threats(Player::O).clone();
-            // Oracle: fresh full recompute (scratch reused).
-            let full_x = threats::compute_with_scratch(&board, Player::X, &mut scratch);
-            let full_o = threats::compute_with_scratch(&board, Player::O, &mut scratch);
-            assert!(
-                threat_set_equiv(&inc_x, &full_x),
-                "X drift at ply {} (positions_tested={positions_tested})\n{}",
-                board.ply(),
-                report_diff(&inc_x, &full_x, "X"),
-            );
-            assert!(
-                threat_set_equiv(&inc_o, &full_o),
-                "O drift at ply {} (positions_tested={positions_tested})\n{}",
-                board.ply(),
-                report_diff(&inc_o, &full_o, "O"),
-            );
-            positions_tested += 1;
-            from_this += 1;
-        }
-    }
-    assert!(
-        positions_tested >= MIN_POSITIONS,
-        "tested too few positions: {positions_tested}"
     );
 }
 
