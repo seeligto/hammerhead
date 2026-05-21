@@ -57,7 +57,6 @@ class EvalConfig:
     open_extension_factor: int
     closed_extension_factor: int
     fork_cover2_bonus: int
-    overlap_bonus_x10: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,13 +77,9 @@ class SearchConfigDefaults:
     default_max_depth: int
     default_time_ms: int
     default_move_radius: int
-    extended_move_radius: int
-    full_legality_radius: int
-    move_cap: int
     deadline_check_nodes: int
     aspiration_start_depth: int
     move_gen_inner_radius: int
-    move_gen_outer_radius: int
     time_stone1_pct: float
     asp_window_initial: int
     asp_window_widen_factor: int
@@ -256,7 +251,6 @@ def load() -> HexoConfig:
             open_extension_factor=e["open_extension_factor"],
             closed_extension_factor=e["closed_extension_factor"],
             fork_cover2_bonus=e["fork_cover2_bonus"],
-            overlap_bonus_x10=e["overlap_bonus_x10"],
         ),
         threats=ThreatsConfig(
             recompute_radius=t["recompute_radius"],
@@ -271,13 +265,9 @@ def load() -> HexoConfig:
             default_max_depth=s["default_max_depth"],
             default_time_ms=s["default_time_ms"],
             default_move_radius=s["default_move_radius"],
-            extended_move_radius=s["extended_move_radius"],
-            full_legality_radius=s["full_legality_radius"],
-            move_cap=s["move_cap"],
             deadline_check_nodes=s["deadline_check_nodes"],
             aspiration_start_depth=s["aspiration_start_depth"],
             move_gen_inner_radius=s["move_gen_inner_radius"],
-            move_gen_outer_radius=s["move_gen_outer_radius"],
             time_stone1_pct=float(s["time_stone1_pct"]),
             asp_window_initial=s["asp_window_initial"],
             asp_window_widen_factor=s["asp_window_widen_factor"],

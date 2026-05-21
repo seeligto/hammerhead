@@ -51,9 +51,6 @@ fork_cover2_bonus = 4000
 # dropped together with the S1/S2 contributions. See SPEC_EVAL.md
 # § Tempo.)
 
-# Overlapping-quads bonus multiplier (veganwater45 finisher shapes)
-overlap_bonus_x10 = 15  # 1.5x as integer ratio /10
-
 [engine.threats]
 recompute_radius = 5
 cluster_radius   = 2
@@ -75,9 +72,6 @@ default_size_mb = 64
 default_max_depth      = 64
 default_time_ms        = 1000
 default_move_radius    = 2
-extended_move_radius   = 4
-full_legality_radius   = 8
-move_cap               = 30
 deadline_check_nodes   = 4096
 aspiration_start_depth = 4
 
@@ -103,7 +97,6 @@ max_check_extensions = 4
 
 # Move-generation tuning. See SPEC_ENGINE.md "Move Generation".
 move_gen_inner_radius = 2     # default radius for normal search nodes
-move_gen_outer_radius = 4     # extended search (anti-colony)
 
 [engine.ordering]
 # Move-ordering tuning. See SPEC_ENGINE.md "Ordering".

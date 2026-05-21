@@ -62,30 +62,11 @@ fn main() {
 }
 
 fn emit_bench(out: &mut String, cfg: &toml::Value) {
-    emit_u64(
-        out,
-        cfg,
-        &["bench", "default_time_ms"],
-        "BENCH_DEFAULT_TIME_MS",
-    );
     emit_u32(
         out,
         cfg,
         &["bench", "schema_version"],
         "BENCH_SCHEMA_VERSION",
-    );
-    // Phase 12: reference node-count config.
-    emit_u32(
-        out,
-        cfg,
-        &["bench", "reference", "max_depth"],
-        "BENCH_REFERENCE_MAX_DEPTH",
-    );
-    emit_u32(
-        out,
-        cfg,
-        &["bench", "reference", "budget_s"],
-        "BENCH_REFERENCE_BUDGET_S",
     );
 }
 
@@ -383,10 +364,6 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         (&["engine", "eval", "open_4"], "OPEN_4_SCORE"),
         (&["engine", "eval", "closed_4"], "CLOSED_4_SCORE"),
         (
-            &["engine", "eval", "overlap_bonus_x10"],
-            "OVERLAP_BONUS_X10",
-        ),
-        (
             &["engine", "eval", "open_extension_factor"],
             "OPEN_EXTENSION_FACTOR",
         ),
@@ -402,13 +379,6 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
     for (path, name) in scalars {
         emit_i32(out, cfg, path, name);
     }
-    emit_i32_array(
-        out,
-        cfg,
-        &["engine", "eval", "window_k_scores"],
-        "WINDOW_K_SCORES",
-        7,
-    );
     emit_window_score_table(out, cfg);
 }
 
@@ -593,19 +563,6 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "default_move_radius"],
         "DEFAULT_MOVE_RADIUS",
     );
-    emit_i16(
-        out,
-        cfg,
-        &["engine", "search", "extended_move_radius"],
-        "EXTENDED_MOVE_RADIUS",
-    );
-    emit_i16(
-        out,
-        cfg,
-        &["engine", "search", "full_legality_radius"],
-        "FULL_LEGALITY_RADIUS",
-    );
-    emit_usize(out, cfg, &["engine", "search", "move_cap"], "MOVE_CAP");
     emit_u64(
         out,
         cfg,
@@ -623,12 +580,6 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         cfg,
         &["engine", "search", "move_gen_inner_radius"],
         "MOVE_GEN_INNER_RADIUS",
-    );
-    emit_i16(
-        out,
-        cfg,
-        &["engine", "search", "move_gen_outer_radius"],
-        "MOVE_GEN_OUTER_RADIUS",
     );
     emit_f32(
         out,
@@ -786,20 +737,3 @@ fn emit_f32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     writeln!(out, "pub const {name}: f32 = {v}_f32;").unwrap();
 }
 
-fn emit_i32_array(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str, len: usize) {
-    let arr = get(cfg, path)
-        .as_array()
-        .unwrap_or_else(|| panic!("hexo.toml {} not an array", path.join(".")));
-    assert_eq!(
-        arr.len(),
-        len,
-        "hexo.toml {} must have {len} entries",
-        path.join(".")
-    );
-    let body = arr
-        .iter()
-        .map(|v| v.as_integer().expect("array item not int").to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    writeln!(out, "pub const {name}: [i32; {len}] = [{body}];").unwrap();
-}
