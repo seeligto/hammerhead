@@ -417,8 +417,9 @@ required here — design is rotation-friendly by construction.
 
 ## Threats (`threats.rs`)
 
-Detects WSC-shape patterns. Produces counts + S0 threat instances with
-defense cells. Cached on board, recomputed incrementally.
+Detects WSC S0-shape patterns. Produces counts + S0 threat instances
+with defense cells. Cached on board, recomputed by a linear-run scan
+on the first read after a mutation.
 
 ### Types
 
@@ -426,9 +427,6 @@ defense cells. Cached on board, recomputed incrementally.
 pub struct ThreatCounts {
     pub open_5: u8, pub closed_5: u8,
     pub open_4: u8, pub closed_4: u8,
-    pub open_3: u8, pub rhombus: u8, pub arch: u8,
-    pub bone: u8, pub trapezoid: u8,
-    pub open_2: u8, pub closed_3: u8, pub triangle: u8,
 }
 
 #[repr(u8)]
@@ -814,8 +812,10 @@ Stable bucket sort over candidate moves. Buckets, highest priority first
   9. Static delta-eval / proximity tie-break           — was 10
 
 Phase 17 disabled the old bucket 7, "Creates S1 threat" (the S1/S2
-ablation A/B was net-negative — see `SPEC_EVAL.md § Layer 2 ablation`).
-A creates-S1 move now falls through to the killer / history buckets.
+ablation A/B was net-negative — see `SPEC_EVAL.md § Layer 2 history`).
+Phase 20 removed the `creates_s1` predicate with the rest of S1/S2
+detection; a run-extending move falls through to the killer / history
+buckets.
 
 Encoding: `u32 priority = (bucket << 24) | (history_score & 0x00FF_FFFF)`.
 Buckets 1–6 occupy bucket values 10..5 respectively; bucket 7 (killer)
@@ -841,9 +841,9 @@ global `FxHashMap<(Coord, Player), u32>` history. The search driver calls:
 
 ### Approximations (v1)
 
-The exact `creates_s0` and `creates_s1` predicates would require a
-make/undo + threat-recompute per candidate move — too expensive in the
-inner loop. v1 uses cheap virtual-place axis-run probes:
+The exact `creates_s0` predicate would require a make/undo +
+threat-recompute per candidate move — too expensive in the inner
+loop. v1 uses a cheap virtual-place axis-run probe:
 
 - **creates_s0**: for each of the three axes, compute the run length
   `total = 1 + run_backward(pos) + run_forward(pos)` that would result
@@ -852,15 +852,8 @@ inner loop. v1 uses cheap virtual-place axis-run probes:
   the run's endpoints is not occupied by the opponent (i.e. some
   extension to 6 is reachable). Three axis-bitmap lookups, no `RefCell`
   borrow, catches new-S0-creators that the threats cache hasn't seen.
-- **creates_s1**: the same virtual-place probe triggers when `total ≥ 3`
-  on any axis. Catches open-3 directly and most rhombus / arch /
-  trapezoid / bone extensions whose added stone is collinear with two
-  existing stones. Phase 17 disabled the creates-S1 ordering bucket, so
-  this predicate currently has no caller — it is retained (behind the
-  `eval_s1s2` feature) as a tunable surface for the deferred
-  eval-tuning phase.
 
-Both predicates are O(constant) in the hex neighbourhood of `m`.
+The predicate is O(constant) in the hex neighbourhood of `m`.
 
 ### Win detection in ordering
 

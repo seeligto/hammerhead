@@ -13,7 +13,7 @@ Three layers:
 
 (Phase 5–16 also carried an advisory tempo term; Phase 17 dropped it
 together with the S1/S2 contributions — see § Tempo and § Layer 2
-ablation.)
+history.)
 
 ## Layer 1: Window Scan
 
@@ -107,79 +107,35 @@ S0 weights chosen so two non-overlapping open-4s (= fork mate via
 Layer 3) outranks any plausible Layer 2 sum. Empirical tuning in
 Phase 10 self-play.
 
-**All S1/S2 `Score` values are `0`.** Phase 17 zeroed them (the
-double-counting fault — see § Layer 2 ablation); the Phase 18 tuning
-sweep found no weight beats the baseline, verdict DROP (see § Phase
-18). The W/S/C tuples below are retained as WSC theory; the `Score`
-column reflects the shipped `hexo.toml` weights.
-
-### S1 pre-emptives (mate-in-two-moves if undefended)
-
-| Shape | W | S | C | Score |
-|---|---|---|---|---|
-| Open 3 `_XXX_` | 3 | 1 | 2 | 0 |
-| Rhombus (4-piece diamond) | 3 | 1 | 2 | 0 |
-| Arch / Banana | 3 | 1 | 2 | 0 |
-| Bone / Bowtie (5-piece) | 4+ | 1 | 2 | 0 |
-| Trapezoid / Pentagon | 3+ | 1 | 2 | 0 |
-
-### S2 pre-emptives
-
-| Shape | W | S | C | Score |
-|---|---|---|---|---|
-| Open 2 isolated | 2 | 2 | 2 | 0 |
-| Closed 3 | 2 | 2 | 2 | 0 |
-| Triangle (3 mutually adjacent hexes) | 2 | 2 | 2 | 0 |
+Layer 2 detects S0 shapes only. The S1/S2 pre-emptive shapes (open_3
+/ rhombus / arch / bone / trapezoid / open_2 / closed_3 / triangle)
+were eval-only contributions; their weights were zeroed in Phase 17
+and the detection code was removed in Phase 20 — see § Layer 2
+history.
 
 ### Detection method
 
-Shape detection runs after window scan. Inputs: piece set local to last move, axis lines.
+Shape detection runs after the window scan, over the piece set of
+`player`.
 
 Algorithm:
 
-1. On `place(c, p)` and `undo(c, p)`, mark `threats_dirty = true` and
-   push `c` into `threats_dirty_centers` (Phase 15 — was a single
-   `Option<Coord>` pre-Phase-15). The push is bounded by
-   `MAX_INCREMENTAL_CENTERS` (default 4); further pushes set
-   `threats_dirty_overflow` and the next reconcile falls back to full
-   recompute.
-2. On `threats(player)` read: if dirty, reconcile.
-   - **Full path** (`centers.is_empty()` from the overflow fallback,
-     OR `prior` is `None` from the initial read, OR the scratch
-     breakdown for this player is empty): re-walk every piece's
-     linear runs AND every piece's cross-axis pattern matches.
-     Repopulates `scratch.cross_axis_<player>` for the next call.
-   - **Incremental path** (otherwise): re-walk every piece's linear
-     runs (so `s0_instances` iteration order is preserved
-     bit-for-bit vs `full_recompute`; this is load-bearing for
-     `search.rs` `collect_stone1_defense`). Cross-axis pattern
-     matching runs only for anchors within
-     `THREAT_CLUSTER_RADIUS` (default 2) of any dirty center;
-     other anchors inherit their contribution from the scratch
-     breakdown via a linear scan.
-   - Clear `dirty_centers` and `dirty_overflow` after reconciliation;
-     set `threats_dirty = false`.
-3. Linear shapes (open_5, closed_5, open_4, closed_4, open_3,
-   closed_3, open_2): per piece of `player`, walk each of the 3
-   axes ±5 cells via `axis_bitmap`. Classify maximal own-run
-   endpoints as open / closed / dead. Match against shape table.
-   (Same in full and incremental paths.)
-4. Cross-axis shapes (rhombus, triangle, arch, bone, trapezoid):
-   per piece (anchor), pattern-match against the static template
-   set. Full path runs this for every piece; incremental skips
-   pieces > `THREAT_CLUSTER_RADIUS` from every dirty center and
-   inherits their contribution from the scratch breakdown.
-5. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord;
+1. `place(c, p)` / `undo(c, p)` set `threats_dirty = true`.
+2. A `threats(player)` read reconciles when dirty: a single
+   linear-run scan over every piece of `player`, walking each of the
+   3 axes ±5 cells via `axis_bitmap`. Maximal own-run endpoints are
+   classified open / closed / dead and matched against the S0 shape
+   table. `s0_instances` is emitted in piece-then-axis order
+   (load-bearing for `search.rs` `collect_stone1_defense`).
+3. Per S0 threat instance: compute `defense_cells: SmallVec<[Coord;
    4]>` such that placing any one of these denies completion next
    stone.
 
-Cache shape counts incrementally per player:
+Cache shape counts per player:
 ```rust
 struct ThreatCounts {
     open_5: u8, closed_5: u8,
     open_4: u8, closed_4: u8,
-    open_3: u8, rhombus: u8, arch: u8, bone: u8, trapezoid: u8,
-    open_2: u8, closed_3: u8, triangle: u8,
 }
 ```
 
@@ -230,7 +186,7 @@ Phases 5–16 carried an advisory tempo term:
 
 Phase 17 removed `tempo_score` entirely. It was derived from the
 `open_3` count — an S1 metric — and the S1/S2 ablation A/B found the
-S1/S2 family net-negative (see § Layer 2 ablation). With S1/S2
+S1/S2 family net-negative (see § Layer 2 history). With S1/S2
 contributions zeroed, keeping a single open_3-derived term in
 isolation had no justification, so the function, its callsite, and
 the `tempo_weight` config key (with its `TEMPO_WEIGHT` codegen) were
@@ -256,7 +212,7 @@ pub fn eval(board: &Board) -> i32 {
 
     let mut score = 0;
     score += layer1_window_scan(board);
-    score += layer2_shapes(&tx.counts) - layer2_shapes(&to.counts);
+    score += layer2_shapes(tx.counts) - layer2_shapes(to.counts);
     score += fork_x - fork_o;
     score
 }
@@ -310,237 +266,37 @@ open-four: both extension endpoints (size 2). For closed-four: the
 single open extension (size 1). For open-five: both endpoints (size 2).
 For closed-five: the one open endpoint (size 1).
 
-## Layer 2 ablation (Phase 16)
+## Layer 2 history — S1/S2 shapes (removed Phase 20)
 
-S0 shapes (open_5 / closed_5 / open_4 / closed_4) are **structurally
-required**: ordering uses them for buckets 5-6 (creates/blocks S0),
-search uses them for quiescence + check extension, Layer 3 uses
-them for fork detection. They cannot be ablated without breaking
-search.
+Layer 2 once carried a second tier of "pre-emptive" shapes beyond the
+S0 mate-in-one threats:
 
-S1/S2 shapes (open_3 / rhombus / arch / bone / trapezoid / open_2
-/ closed_3 / triangle) are **eval-only contributions**. They affect
-move ordering at bucket 7 (creates S1) and the static eval score
-via `layer2_shapes`. They do NOT participate in quiescence, check
-extension, or fork detection.
+- **S1** (mate-in-two if undefended): open-3, rhombus, arch, bone,
+  trapezoid.
+- **S2** (slower pre-emptives): isolated open-2, closed-3, triangle.
 
-Phase 16 introduces a Cargo feature `eval_s1s2` (default ON) that
-gates S1/S2 contributions. When disabled:
+S1/S2 shapes were eval-only — they fed `layer2_shapes` and a
+move-ordering bucket, but never quiescence, check extension, or fork
+detection. Detection mixed an axis-line scan (open-3 / closed-3 /
+open-2) with cross-axis pattern matchers (the four-plus-piece shapes).
 
-- `ThreatCounts` S1/S2 fields are still computed (cheap) but
-  `layer2_shapes` skips them
-- Ordering bucket 7 (creates S1) is disabled
-- `threats::compute` skips the cross-axis pattern matchers entirely
-  (saves the matches_pattern<2,3> cost for non-S0 shapes)
+Timeline:
 
-When enabled (default): behaviour unchanged from Phase 15.
+- **Phase 16** introduced an `eval_s1s2` Cargo feature and a runtime
+  toggle to A/B the contribution.
+- **Phase 17** ran a 200-game ablation: S1/S2-enabled scored 29.0 %
+  (Wilson [23.2 %, 35.6 %]) — verdict DROP. The weights were zeroed
+  in `hexo.toml`, the ordering bucket disabled, and the `tempo_score`
+  term (derived from `open_3`) removed. Detection code was kept as a
+  tunable surface.
+- **Phase 18** swept corrected weights (coordinate descent, 56 cells,
+  plus an all-shapes interaction test). No weight beat the baseline;
+  the full family lost at 38.5 % at α=1.0. Verdict DROP, confirmed.
+- **Phase 20** removed the now-confirmed-idle detection entirely: the
+  cross-axis matchers, the S1/S2 `ThreatCounts` fields, the
+  `layer2_shapes` S1/S2 term, the weight constants, the `eval_s1s2`
+  feature, and the runtime overrides. The cross-axis matchers were
+  the sole beneficiary of the Phase 15 incremental reconcile path, so
+  that path collapsed to a single linear-run scan.
 
-In addition to the compile-time feature, a runtime override
-(`Engine::set_eval_s1s2(bool)`, exposed via PyO3) toggles the S1/S2
-contribution for self-play A/B testing. When the `eval_s1s2` feature
-is OFF the override does not exist; when ON it defaults to `true`.
-
-This is **infrastructure**, not a removal. The decision of whether
-to keep S1/S2 on by default is deferred to Phase 17+ based on
-self-play A/B data collected in Phase 16 STEP 4.
-
-### Phase 17 ablation re-verification — verdict: DROP
-
-The Phase 16 50-game A/B (Wilson [19.9 %, 44.8 %], 200 ms/stone)
-suggested S1/S2 hurts but was small-n. Phase 17 re-ran it at scale
-via the parallel ablation harness:
-
-- **200 games @ 500 ms/stone**: S1/S2-enabled scored **57 / 200
-  (29.0 %)**, Wilson 95 % **[23.2 %, 35.6 %]**.
-
-The Wilson upper bound (35.6 %) is well below 50 %, so the decision
-matrix yields **DROP** outright — Match 2 (100 games @ 1 s) was not
-needed. The signal is stronger and tighter than the Phase 16 probe.
-See `subagents/scans/phase17-s1s2-investigation.md` for the
-why-it-hurts analysis.
-
-### Phase 17 implementation — hybrid removal (contributions zeroed)
-
-Phase 17 took a **hybrid** path rather than ripping the code out:
-
-- **S1/S2 shape weights zeroed** in `hexo.toml` — `open_3`, `rhombus`,
-  `arch`, `bone`, `trapezoid`, `open_2`, `closed_3`, `triangle` are
-  all `0`. `layer2_shapes` therefore contributes the S0 shapes only.
-- **`tempo_score` removed** (it read the `open_3` S1 metric — see
-  § Tempo).
-- **Ordering bucket disabled** — the creates-S1 bucket (encoding
-  value 4) no longer fires; a creates-S1 move falls through to the
-  killer / history buckets. A back-to-back A/B (`bench perf`,
-  bucket-on vs bucket-off builds) confirmed this is the faster
-  configuration: ~9 % higher NPS on `midgame_12` with identical
-  search depth. In the midgame nearly every move makes some 3-run, so
-  the bucket is too unselective to earn its per-move `creates_s1`
-  probe cost.
-- **Detection retained** — `ThreatCounts` keeps all S1/S2 fields, the
-  cross-axis pattern matchers (`anchor_cross_axis`) still run, the
-  `creates_s1` predicate is kept (unused, behind the feature), and
-  the `eval_s1s2` Cargo feature + `Engine::set_eval_s1s2` toggle stay
-  in place.
-
-Rationale: the investigation found the *detection* sound and the
-*weights* mis-tuned (double-counting against Layer 1, magnitudes on
-par with genuine open-fours). That is a tuning problem, not a
-detection bug. Zeroing the weights captures the full strength gain of
-removal while preserving a tunable surface — a dedicated eval-tuning
-phase can re-enable S1/S2 by editing `hexo.toml` weights, with no code
-archaeology. The one residual cost is that the cross-axis matchers
-still run in `threats::compute`; if a later profile shows this
-matters, gate them then.
-
-See `SPEC_ROADMAP.md` Phase 18+ candidates → "Eval tuning".
-
-## Phase 18 — S1/S2 eval-weight tuning sweep
-
-Phase 17 zeroed the S1/S2 weights and kept detection as a tunable
-surface. Phase 18 asks: can *corrected* weights restore positional
-eval without re-introducing the double-counting fault?
-
-**Method.** Coordinate descent + local pairwise A/B. The 8 weights are
-restated as `weight = α × A_shape`, with `A_shape` a Layer 1 anchor
-(see below); the sweep tunes one dimensionless α per shape. Weights
-are applied per cell via the runtime `Engine.set_eval_shape_weights`
-override — no rebuilds. See
-`subagents/scans/phase18-tuning-methodology.md`.
-
-**Baseline.** Each A/B runs candidate vs baseline *in the same binary*
-(the Phase 18 HEAD engine): the candidate seat carries the cell's
-weight vector, the baseline seat carries the shipped weights (all 0).
-The two seats therefore differ in **exactly the 8 S1/S2 weights and
-nothing else** — the cleanest possible isolation of the weight
-variable. This is *not* the `.bestref` worktree engine (`.bestref`
-predates the Phase-17 tempo removal / 8-cell scanner / ordering
-changes); running against `.bestref` would confound the weight change
-with those unrelated deltas. The in-process zero-weight baseline is
-the shipped engine's eval, which is the configuration the verdict is
-about.
-
-### Stage A — Layer 1 anchors
-
-`A_shape` sums `window_k_scores` over the shape's maximal straight
-runs (its Layer 1 window footprint):
-
-| shape | runs | A_shape |
-| --- | --- | --- |
-| open_3 | one open 3-run | 256 |
-| rhombus | five 2-runs | 160 |
-| arch | two 2-runs | 64 |
-| bone | one 3-run + five 2-runs | 416 |
-| trapezoid | one 3-run + five 2-runs | 416 |
-| open_2 | one open 2-run | 32 |
-| closed_3 | one closed 3-run | 64 |
-| triangle | three 2-runs | 96 |
-
-Every α=2.0 weight stays well under the Layer 1 open-four window
-(2048), so no Phase-17-style magnitude inversion is reachable.
-
-(The Stage B sweep ran before a review pass corrected `bone` /
-`trapezoid` from 384 to 416 — it miscounted four 2-runs where there
-are five. Stage B used 384; the ~8 % under-scaling shifts those two
-α-grids slightly but does not change their result — both shapes are
-flat noise across the whole α range, so no rescaling makes a signal
-appear.)
-
-### Stage B — coordinate descent
-
-56 cells (8 shapes × α ∈ {0, .25, .5, .75, 1, 1.5, 2}), 100 games/cell
-at 500 ms/stone vs baseline, colour-balanced. Cell entries are
-`winrate% / Wilson-LB`:
-
-| shape | α0 | α.25 | α.5 | α.75 | α1 | α1.5 | α2 | α* |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| open_3 | 55/.45 | 50/.41 | 42/.33 | 47/.38 | 36/.28 | 44/.35 | 50/.40 | 0 |
-| rhombus | 45/.36 | 46/.37 | 50/.41 | 48/.38 | 52/.42 | 36/.27 | 34/.26 | 0 |
-| arch | 51/.41 | 54/.44 | 48/.38 | 46/.37 | 55/.45 | 37/.28 | 42/.33 | 0 |
-| bone | 56/.47 | 51/.41 | 55/.45 | 39/.30 | 44/.35 | 40/.30 | 40/.31 | 0 |
-| trapezoid | 40/.30 | 50/.41 | 52/.42 | 56/.46 | 30/.21 | 37/.28 | 48/.38 | 0 |
-| open_2 | 60/.51 | 57/.48 | 54/.44 | 59/.49 | 44/.35 | 52/.43 | 55/.45 | 0 |
-| closed_3 | 57/.48 | 46/.37 | 40/.31 | 56/.46 | 60/.50 | 56/.47 | 38/.30 | 1 |
-| triangle | 46/.37 | 47/.38 | 56/.46 | 55/.45 | 55/.45 | 46/.37 | 43/.34 | 0 |
-
-The 8 α=0 cells are baseline-vs-baseline controls (candidate and
-baseline both carry all-zero weights — the *same* engine). Their
-winrates span 40–60 % (mean 51.4 %), empirically calibrating the
-noise of a 100-game cell.
-
-**The signal gate is uncalibrated at n=100.** By the pinned rule
-(highest-winrate α, signal iff Wilson LB > 0.50), `open_2`'s α=0
-control — a zero-weight, same-engine matchup with a true score of
-exactly 0.50 — *itself trips the gate* (60 %, Wilson LB 0.507). When
-a control clears the bar, the bar is inside the noise. `closed_3`'s
-α=1 cell (60 %, Wilson LB 0.502) clears it by 0.002 — well within the
-demonstrated control band — on a non-monotonic α-row. It is not
-evidence of signal; the pinned rule merely carries it to Stage C as
-the mechanical α* (=1).
-
-**Multiple comparisons.** 56 cells, each shape gated on its best of 7,
-at a nominal 95 % bound. The family-wise false-positive rate is far
-above 5 %; under the null, ≈1–2 spurious LB > 0.50 passes are
-expected. Exactly 2 were observed (`open_2@0`, `closed_3@1`) — fully
-consistent with pure noise. 7 of 8 shapes show α*=0 outright.
-
-### Stage C — closed_3 re-test
-
-Stage B's α* vector had only `closed_3` non-zero, so Stage C is a
-200-game re-test of `closed_3` (candidate weight 64 = α*1 × anchor)
-and its ±25 % scalings — **not** a multi-shape combination. 500 ms/
-stone vs baseline:
-
-| candidate | closed_3 weight | W-L-D | winrate | Wilson 95 % |
-| --- | --- | --- | --- | --- |
-| combined-0.75 | 48 | 100-81-19 | 54.8 % | [0.478, 0.615] |
-| combined-1.00 | 64 | 96-80-24 | 54.0 % | [0.471, 0.608] |
-| combined-1.25 | 80 | 96-83-21 | 53.2 % | [0.463, 0.600] |
-
-Strongest by Wilson lower bound = combined-0.75 at 0.478 — **below
-0.50**. `closed_3`'s Stage B pass (60 %, LB 0.502 on 100 games)
-regressed to ~54 % at 200 games: textbook winner's curse. No
-candidate beats the baseline.
-
-### Stage C interaction test — all shapes together
-
-Coordinate descent holds the other 7 shapes at 0, so it cannot see a
-shape that helps only *in combination*. Because Stage B yielded a
-single-shape α* vector, Stage C above never exercised that path. A
-follow-up cell pair turns **all 8 shapes on together** at a uniform
-α (anchored weights, 200 games/cell, 500 ms/stone vs baseline):
-
-| candidate | α (all shapes) | W-L-D | winrate | Wilson 95 % |
-| --- | --- | --- | --- | --- |
-| uniform-0.5 | 0.5 | 92-90-18 | 50.5 % | [0.436, 0.574] |
-| uniform-1.0 | 1.0 | 71-117-12 | 38.5 % | [0.320, 0.454] |
-
-Turning the whole S1/S2 family on is neutral at α=0.5 and **actively
-harmful** at α=1.0 — the same direction as the Phase 17 ablation
-(all-S1/S2-on lost at 29 % with the old weights). No combination of
-shapes beats the baseline either.
-
-### Phase 18 verdict — DROP
-
-No S1/S2 shape weight beats the baseline: not individually (Stage B,
-56 cells), not as `closed_3` re-tested at depth (Stage C), and not as
-the whole family combined (interaction test). At 500 ms/stone the
-swept range bounds the weight effect as **not positive** — neutral at
-best, harmful at full anchored magnitude. (This bounds the effect as
-non-positive; it does not prove it is exactly zero — 200-game cells
-cannot.) Corrected weights do not restore positional eval.
-
-- **`hexo.toml` S1/S2 weights remain `0`.** Phase 18 ships no weight
-  change and no engine-behaviour change — reference node counts are
-  byte-identical pre/post (the runtime override defaults to the
-  compile-time constants).
-- **Recommendation:** a future phase removes the now-confirmed-idle
-  S1/S2 detection code (cross-axis matchers, `ThreatCounts` S1/S2
-  fields, the `eval_s1s2` feature and toggles). Phase 18 itself
-  removes no code. A deeper-time-control confirmation (1 s/stone) is
-  optional but not required — the effect is non-positive across two
-  independent A/B designs.
-- The runtime `Engine.set_eval_shape_weights` override **stays** — it
-  is the sweep harness's tuning surface; a future re-tune reuses it.
-
-Stage D (dedicated time-control validation) is skipped: it runs only
-on the KEEP path.
+The current eval has no S1/S2 layer. Layer 2 detects S0 shapes only.

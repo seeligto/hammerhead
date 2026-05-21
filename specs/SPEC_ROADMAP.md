@@ -23,6 +23,9 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 15 | incremental threats + RefCell trim + creates_s0 axis-run cache | ✅ done |
 | 16 | fast bench tiers + proximity flat structure + Layer 2 ablation infra | ✅ done |
 | 17 | parallel match harness + S1/S2 ablation decision + Layer 1 8-cell window table (scalar + AVX2) | ✅ done |
+| 18 | repo hygiene + S1/S2 eval-weight tuning sweep (verdict DROP) | ✅ done |
+| 19 | clean SDK / `hammerhead` package | ✅ done |
+| 20 | remove idle S1/S2 detection code | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -274,7 +277,7 @@ Four sub-projects, ordered by independence:
 4. **Layer 2 ablation infrastructure**: Cargo feature `eval_s1s2`
    (default ON) + runtime `set_eval_s1s2` toggle + self-play A/B
    harness. **No removal** — data collection only; the keep/drop
-   decision is Phase 17+. See `SPEC_EVAL.md § Layer 2 ablation`.
+   decision is Phase 17+. See `SPEC_EVAL.md § Layer 2 history`.
 
 **Reference node counts are the regression net.** STEPs 1-3 are
 behaviourally transparent; `make bench reference` must produce
@@ -382,6 +385,37 @@ and `board_ascii` (need new PyO3 surface), `set_tt_size` (needs a
 live-resize engine entry point). The `seed` constructor arg from the
 original Phase 19 sketch was dropped — the engine is deterministic.
 
+## Phase 20 — Remove Idle S1/S2 Detection Code
+
+**Goal**: delete the S1/S2 shape detection confirmed idle by the
+Phase 18 DROP verdict. Pure removal — zero search-behaviour change,
+reference node counts byte-identical before/after.
+
+Phase 17 zeroed the S1/S2 eval weights; Phase 18 swept corrected
+weights and re-confirmed DROP. The detection still ran on every
+`threats()` call and produced values multiplied by zero. Phase 20
+deletes it:
+
+- Cross-axis pattern matchers (triangle / arch / rhombus / bone /
+  trapezoid), the eight S1/S2 `ThreatCounts` fields, and the
+  axis-line classification arms that fed `open_3` / `closed_3` /
+  `open_2`.
+- The `layer2_shapes` S1/S2 term, the eight weight constants, the
+  `eval_s1s2` Cargo feature, the `creates_s1` ordering predicate.
+- The `set_eval_s1s2` / `set_eval_shape_weights` runtime overrides
+  (PyO3 + Rust) and the `tune-sweep` / `ablation` bench tooling that
+  drove them.
+
+The cross-axis matchers were the sole beneficiary of the Phase 15
+incremental threats reconcile path; with them gone that path
+collapsed to a single linear-run scan. The dirty-center machinery on
+`Board` (and the now-vestigial `centers` / `prior` parameters of
+`threats::compute`) is left in place — a Phase 21 cleanup.
+
+**Result**: reference node counts byte-identical (32/32 fixtures ×
+depths); ~16–20 % NPS gain from eliminating the per-read detection
+cost. See `SPEC_EVAL.md § Layer 2 history`.
+
 ## Phase 18 candidates (deferred follow-ups)
 
 - **Eval tuning phase** — **resolved by Phase 18, verdict DROP** (no
@@ -395,7 +429,7 @@ original Phase 19 sketch was dropped — the engine is deterministic.
   needed. Scope:
   - re-tune the S1/S2 shape weights (the Phase-16 values
     double-counted against Layer 1 and were sized on par with genuine
-    open-fours — see `SPEC_EVAL.md § Layer 2 ablation`);
+    open-fours — see `SPEC_EVAL.md § Layer 2 history`);
   - a parametric A/B harness for weight sweeps (generalise the
     parallel ablation runner to sweep arbitrary `hexo.toml` deltas);
   - possible radius-theory colony discounting integrated with the
