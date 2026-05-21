@@ -26,7 +26,7 @@ benches/results/*.json
 !benches/results/baseline.json
 benches/results/flamegraph-*.folded.txt
 benches/results/flamegraph-*.svg
-!benches/results/flamegraph-*-4740d65.svg
+!benches/results/flamegraph-*-69e2053.svg
 benches/results/PHASE14_NOTES.md
 target/criterion/
 
