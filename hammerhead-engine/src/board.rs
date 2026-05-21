@@ -475,27 +475,11 @@ impl Board {
         self.eval_s1s2.get()
     }
 
-    /// Set the Layer 2 S1/S2 ablation flag and invalidate the static
-    /// eval cache (the cached score depends on it). Intended for
-    /// self-play A/B setup, not mid-search toggling.
-    pub fn set_eval_s1s2(&self, enabled: bool) {
-        self.eval_s1s2.set(enabled);
-        self.eval_cache.set(None);
-    }
-
     /// Current Layer 2 S1/S2 shape weights (Phase 18 tuning surface).
     #[inline]
     #[must_use]
     pub fn eval_shape_weights(&self) -> ShapeWeights {
         self.eval_shape_weights.get()
-    }
-
-    /// Override the Layer 2 S1/S2 shape weights and invalidate the
-    /// static eval cache (the cached score depends on them). Intended
-    /// for eval-tuning A/B setup, not mid-search mutation.
-    pub fn set_eval_shape_weights(&self, weights: ShapeWeights) {
-        self.eval_shape_weights.set(weights);
-        self.eval_cache.set(None);
     }
 
     /// Internal radius check. Assumes ply >= 1.

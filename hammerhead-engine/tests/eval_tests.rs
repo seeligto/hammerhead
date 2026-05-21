@@ -3,7 +3,7 @@
 //! Covers the three eval layers, the mate-distance contract, and the
 //! `Board::cached_eval` invalidation discipline.
 
-use hammerhead_engine_core::board::{Board, Player, ShapeWeights};
+use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::config::{
     FORK_COVER2_BONUS, MATE_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR,
 };
@@ -469,56 +469,4 @@ fn perf_cached_eval_30_pieces() {
     }
     let cold = total / 100;
     println!("[perf] cached_eval cold (first call after invalidation) on 31-piece: {cold:?}");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Phase 18 — runtime shape-weight override
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// `ShapeWeights::default()` must reproduce the compile-time weights:
-/// explicitly applying the default leaves eval byte-identical, so an
-/// un-overridden board behaves exactly like a pre-Phase-18 build.
-#[test]
-fn shape_weight_default_is_identity() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (0, 1)]);
-    let before = eval(&b);
-    b.set_eval_shape_weights(ShapeWeights::default());
-    assert_eq!(eval(&b), before);
-}
-
-/// Overriding a shape weight changes the Layer 2 contribution: an X
-/// triangle is worth more once `triangle` carries a positive weight.
-#[test]
-fn shape_weight_override_changes_eval() {
-    let mut b = fresh();
-    // (0,0), (1,0), (0,1) are mutually adjacent — an X triangle.
-    x(&mut b, &[(0, 0), (1, 0), (0, 1)]);
-    let base = eval(&b);
-    b.set_eval_shape_weights(ShapeWeights {
-        triangle: 2000,
-        ..ShapeWeights::default()
-    });
-    assert!(
-        eval(&b) > base,
-        "a positive triangle weight must raise X-positive eval (base {base})",
-    );
-    assert_eq!(b.eval_shape_weights().triangle, 2000);
-}
-
-/// `set_eval_shape_weights` must invalidate the static eval cache, so
-/// `cached_eval` reflects the new weights rather than a stale score.
-#[test]
-fn shape_weight_override_invalidates_cache() {
-    let mut b = fresh();
-    x(&mut b, &[(0, 0), (1, 0), (0, 1)]);
-    let warm = b.cached_eval();
-    b.set_eval_shape_weights(ShapeWeights {
-        triangle: 2000,
-        ..ShapeWeights::default()
-    });
-    assert!(
-        b.cached_eval() > warm,
-        "cached_eval must recompute after a weight override (warm {warm})",
-    );
 }
