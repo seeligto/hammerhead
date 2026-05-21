@@ -804,17 +804,3 @@ def run_all(
         "breakdown": breakdown,
     }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Match / promotion stubs — Phase 11
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def match(bot_a, bot_b, max_plies: int = 200):  # noqa: D401
-    """Stub: full match harness lives in the Phase 11 promotion module."""
-    raise NotImplementedError("Phase 11 — see specs/SPEC_ROADMAP.md § Phase 11")
-
-
-def vs_sealbot(bot, num_games: int):
-    """Stub: SealBot interop is post-baseline."""
-    raise NotImplementedError("Phase 11+ — out of scope")
