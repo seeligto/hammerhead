@@ -17,15 +17,25 @@ Public surface
 
 from __future__ import annotations
 
-import math
 import multiprocessing
-import os
 import subprocess
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 from .config import CONFIG, PromoteConfig
+from .promote_sprt import (  # re-export
+    elo_to_winrate,
+    sprt_llr,
+    sprt_thresholds,
+    wilson_interval,
+    winrate_to_elo,
+)
+from .promote_worktree import (  # re-export
+    max_tt_mb_per_worker,
+    resolve_worker_count,
+    with_tt_bound,
+)
 
 
 Coord = tuple[int, int]
@@ -164,69 +174,6 @@ class SubprocessBot:
                         stream.close()
                     except Exception:  # noqa: BLE001
                         pass
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Statistics
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def wilson_interval(wins: float, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval for a Bernoulli proportion.
-
-    ``wins`` may be fractional — draws are counted as half-wins in the
-    promote harness, so we accept floats.
-    """
-    if n <= 0:
-        return (0.0, 1.0)
-    p = wins / n
-    z2 = z * z
-    denom = 1.0 + z2 / n
-    center = (p + z2 / (2.0 * n)) / denom
-    half = z * math.sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n)) / denom
-    return (max(0.0, center - half), min(1.0, center + half))
-
-
-def elo_to_winrate(elo: float) -> float:
-    """Standard logistic Elo → expected score."""
-    return 1.0 / (1.0 + math.pow(10.0, -elo / 400.0))
-
-
-def winrate_to_elo(winrate: float) -> float:
-    """Inverse: expected score → Elo difference."""
-    if winrate <= 0.0:
-        return float("-inf")
-    if winrate >= 1.0:
-        return float("inf")
-    return -400.0 * math.log10(1.0 / winrate - 1.0)
-
-
-def sprt_llr(
-    wins: int,
-    draws: int,
-    losses: int,
-    *,
-    elo_low: float,
-    elo_high: float,
-) -> float:
-    """Bernoulli SPRT log-likelihood ratio.
-
-    Each game contributes two Bernoulli trials, with score ∈ {0, 0.5, 1}:
-        win  → 2 successes out of 2
-        draw → 1 success  out of 2
-        loss → 0 successes out of 2
-    The trial-level success probability is ``elo_to_winrate(elo)``.
-    """
-    p0 = elo_to_winrate(elo_low)
-    p1 = elo_to_winrate(elo_high)
-    # Clamp to avoid log(0) when the elo is far enough out to saturate.
-    eps = 1e-12
-    p0 = min(max(p0, eps), 1.0 - eps)
-    p1 = min(max(p1, eps), 1.0 - eps)
-    successes = 2 * wins + draws
-    trials = 2 * (wins + draws + losses)
-    failures = trials - successes
-    return successes * math.log(p1 / p0) + failures * math.log((1.0 - p1) / (1.0 - p0))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -409,13 +356,6 @@ def _summarize(
     )
 
 
-def sprt_thresholds(cfg: MatchConfig) -> tuple[float, float]:
-    """Wald acceptance bounds ``(log_low, log_high)`` for the given config."""
-    log_high = math.log((1.0 - cfg.sprt_beta) / cfg.sprt_alpha)
-    log_low = math.log(cfg.sprt_beta / (1.0 - cfg.sprt_alpha))
-    return log_low, log_high
-
-
 def run_match(
     current_cmd: list[str],
     best_cmd: list[str],
@@ -579,36 +519,6 @@ def _play_one_game_in_worker(gc: GameConfig) -> ParallelGameResult:
             wall_seconds=time.monotonic() - start,
             notes=f"{type(exc).__name__}: {exc}",
         )
-
-
-def max_tt_mb_per_worker() -> int:
-    """Per-engine TT cap in MB: ``MAX_TT_MB_PER_WORKER`` env var, else the
-    ``[bench.vs]`` config default. Bounds resident memory under a wide
-    process pool (2 engines/game × N workers) — see SPEC_BENCHMARKS
-    § Parallel match harness."""
-    env = os.environ.get("MAX_TT_MB_PER_WORKER")
-    if env:
-        try:
-            return max(1, int(env))
-        except ValueError:
-            pass
-    return CONFIG.bench.vs.max_tt_mb_per_worker
-
-
-def with_tt_bound(cmd: list[str], max_mb: int) -> list[str]:
-    """Append ``--tt-size-mb max_mb`` to a ``hammerhead bot`` command
-    unless the caller already pinned the TT size."""
-    if "--tt-size-mb" in cmd:
-        return list(cmd)
-    return [*cmd, "--tt-size-mb", str(max_mb)]
-
-
-def resolve_worker_count(n_workers: int, n_games: int) -> int:
-    """Resolve ``n_workers`` (0 = auto: ``cpu_count() - 2``), capped at
-    ``n_games`` — more workers than games is wasted process startup."""
-    if n_workers <= 0:
-        n_workers = max(1, (os.cpu_count() or 2) - 2)
-    return max(1, min(n_workers, n_games))
 
 
 def _tally(results: list[ParallelGameResult]) -> tuple[int, int, int]:
