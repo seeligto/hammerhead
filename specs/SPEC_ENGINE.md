@@ -194,15 +194,23 @@ Memory cost at default `ZOBRIST_WINDOW = 127`: two `u8` count fields
 per `Board`. Negligible vs the 64 MB TT, and there is exactly one live
 `Board` (search uses make/undo, never clone).
 
-> **Phase 16 node-count note.** The flat `inner_candidates` iterates
-> in a different order than the old `FxHashSet`. `moves::generate`
-> feeds that order into `order_moves`, whose stable sort breaks
-> priority ties — and the `MOVE_GEN_CAP` truncation drops tied moves —
-> by generation order. So the proximity rework shifts which
-> equally-rated move is searched first, which changes alpha-beta node
-> counts. This is **not** a strength change (verified by `make vs`);
-> the Phase 16 reference baseline was refreshed to the post-rework
-> counts.
+> **Phase 16 node-count note (superseded by Phase 25.5 R-05).** The
+> flat `inner_candidates` iterates in a different order than the old
+> `FxHashSet`. `moves::generate` feeds that order into `order_moves`.
+> Originally the priority key was a `u32` that left ties between
+> equally-rated moves, and the stable sort + `MOVE_GEN_CAP` truncation
+> broke those ties by generation order — so the proximity rework
+> shifted which equally-rated move was searched first, changing
+> alpha-beta node counts. This was not a strength change (verified
+> by `make vs`); the Phase 16 reference baseline was refreshed once.
+>
+> **Phase 25.5 R-05** makes the priority key a total order by packing
+> the move's `(q, r)` into the low 32 bits of a `u64` key (see
+> "Ordering — encoding" below), and replaces the full stable sort
+> with `select_nth_unstable_by` + sort-prefix. Tie order is now
+> determined by Coord pack, not generation order, so node counts
+> drift again — also documented as not a strength change. The
+> baseline was refreshed a second time at R-05.
 
 ## Move Generation (`moves.rs`)
 
@@ -813,15 +821,34 @@ Phase 20 removed the `creates_s1` predicate with the rest of S1/S2
 detection; a run-extending move falls through to the killer / history
 buckets.
 
-Encoding: `u32 priority = (bucket << 24) | (history_score & 0x00FF_FFFF)`.
+Encoding (Phase 25.5 R-05): the priority key is a `u64` total order
+over candidate moves:
+
+```
+priority = (bucket << 56)
+         | ((history_score & 0x00FF_FFFF) << 32)
+         | qr_pack(m)
+
+qr_pack(m) = ((m.q as u16) as u64) << 16 | ((m.r as u16) as u64)
+```
+
 Buckets 1–6 occupy bucket values 10..5 respectively; bucket 7 (killer)
 has bucket value 3; bucket 8 (history) has bucket value 1; bucket 9
 (static) has bucket value 0. Encoding values 4 (the removed creates-S1
-bucket) and 2 are unused gaps. Higher `u32` = sorted earlier.
+bucket) and 2 are unused gaps. Higher `u64` = sorted earlier.
+
+The low 32 bits pack `(q, r)` as `i16`-bitcast-to-`u16` halves, making
+the key total: any two distinct legal `Coord`s have distinct keys.
+This eliminates priority ties at the sort site and lets the truncation
+use `select_nth_unstable_by` (O(n) partition) followed by a sort of
+the kept prefix, instead of a full stable sort of all candidates. Tie
+order is no longer "generation order" — it is fully determined by the
+Coord pack, deterministic but unrelated to move generation.
 
 History values are clamped to `HISTORY_CUTOFF_MAX = 0x00FF_FFFF` (24 bits).
 
-After sort, truncate to `MOVE_GEN_CAP` (default 24).
+After partial sort + truncation, only the top `MOVE_GEN_CAP` (default
+24) moves survive into the move loop.
 
 ### State
 
