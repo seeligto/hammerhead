@@ -89,6 +89,94 @@ engine self-time slice shrank.
 
 ---
 
+# Hotspots — Phase 26.5 (ordering quality investigation + tuning sweep)
+
+## Phase 26.5 status (2026-05-22)
+
+Phase 26.5 was a measurement-heavy diagnostic phase. Goal: explain why
+Phase 26 R-01 was NPS-positive (+21.8%) but Elo-flat at 200g, then ship
+any ordering / LMR / aspiration / history parameter the diagnosis
+surfaced. The phase added a feature-gated `ordering_stats` counter
+surface, ran 7 parallel investigators against a fixed fixture set,
+attempted 3 tuning A/Bs, and ended with **no `.bestref` change**.
+
+**`.bestref` NOT promoted** — stays at 932c5d8. Net behavior delta vs
+Phase 26 entry HEAD (`2cd2ba6`) is **zero in production builds**: only
+behavior-affecting addition is the `ordering_stats` feature flag, which
+is off by default and zero-cost when off.
+
+### Diagnosis (from Phase 1 investigation cohort)
+
+Seven parallel investigators against midgame_12, midgame_30,
+single_origin (and endgame_60 for I-BUCKETS):
+
+| Hypothesis | Investigator | Verdict |
+|------------|--------------|---------|
+| H1 — Killer stage cuts before win/block | I-CUTOFF, I-KILLER | **Supported.** b3 cuts dominate b9 cuts 1.4×–29.3× across fixtures; midgame_30 extreme b3=14684 vs b9=20. |
+| H2 — LMR mis-tuned post-Phase-17 | I-LMR | **Partial.** Re-search rate fixture-split: 3 fixtures <5% (over-conservative), midgame_30 20.75%. Weighted mean 10.92% — below 15-30% sweet spot. |
+| H3 — History decays too fast | I-HISTORY | **Weak.** b1 cut precision 0.37-1.05%, killer 45-56%. History does little, but bucket-1 is the leftover pool — signal ceiling capped by population. |
+| H4 — Aspiration untuned since Phase 8 | I-ASP | **Supported.** 65% first-attempt fail rate at depth ≥4; fail-high 40% > fail-low 25%; 22.7% promote to full window. (Correction: untouched since Phase 8, not Phase 22.) |
+| H5 — Bucket consolidation needed | I-BUCKETS | **Cosmetic only.** Empty bucket slots {0, 2, 4} confirmed inert across all fixtures. No behavior delta from renumbering. |
+
+I-VERIFY audited citations across the cohort and ranked candidates by
+expected Elo × confidence × scope-fit. Top 5: T-04 (asp window),
+T-03 (lmr reduction), T-07 (killer slots), T-01 (Stage 1.5 forced
+tactical), T-05 (asp widen). Dropped at audit: T-02, T-06, T-08.
+
+### Phase 2 A/B results
+
+All three attempted candidates landed CI-straddles-zero. Per dispatcher
+rule "inconclusive → revert (don't ship inconclusive tuning)":
+
+| ID | Change | bench-quick Δ | Match (n, Elo, CI 95%) | Verdict |
+|----|--------|---------------|------------------------|---------|
+| T-04 | `asp_window_initial` 50 → 100 | −2.0% (448k vs 457k) | 100g: −20.9, [−88.7, +46.9] | reverted |
+| T-07 | `killer_slots` 2 → 1 | **+5.5%** (482k vs 457k) | 200g: +6.9, [−41.1, +55.0] | reverted |
+| T-03 | `lmr_reduction` 1 → 2 | −6.1% (429k vs 457k) | 100g: +13.9, [−53.8, +81.6] | reverted |
+
+T-07 specifically reproduces the Phase 26 R-01 pattern: NPS-positive,
+Elo-flat. T-04 and T-03 both have measurably worse NPS without strength
+signal.
+
+### Meta-finding: match harness resolution floor
+
+At 500 ms × 100g, 95% CI width is ~±67 Elo. At 200g, ~±48 Elo. None of
+the three candidates' true Elo delta clearly exceeds ±25 Elo, so all
+three sit below the harness's resolution. The remaining ranked
+candidates (T-05 conditional on T-04 that didn't ship; T-01 magnitude
+bounded ≤1% Elo by I-KILLER's displacement arithmetic) have expected
+gains under the same floor; further A/Bs would consume match time
+without recovering signal at this control. **Phase 26.5 stopped at 3
+attempts of the 8-attempt cap.**
+
+The bench-quick NPS measurements at the three accepted candidates
+provide an internal check: T-07 (+5.5% NPS) and T-04 (−2.0% NPS) and
+T-03 (−6.1% NPS) are all real engine-side changes. The match harness
+cannot distinguish those magnitudes from noise.
+
+### Phase 27 hand-off
+
+- **LineContribution cache (eval band 36.87%)** — still the primary
+  Phase 27 lever, unchanged by 26.5.
+- **Ordering surface tune was attempted and parked.** The diagnostic
+  findings remain valid for any future Tier-3 work; if a strength
+  signal materializes from Phase 27 LineContribution (which alters NPS
+  and depth reach), the ordering candidates may resurface from a
+  different operating point. The harness needs ≥400g per A/B to
+  resolve sub-25-Elo deltas; bookmark this as a constraint when
+  planning future tuning phases.
+- **`ordering_stats` feature instrumentation kept** — it remains
+  available for future diagnostic passes at zero cost when off.
+
+**Commits:**
+- `418afcb` — instrumentation (kept).
+- `678f131` (T-04) reverted by `9dc0527`.
+- `086ac5c` (T-07) reverted by `5035a80`.
+- `f1b916e` (T-03) reverted by `79f96b0`.
+- Net production code delta vs entry: instrumentation only.
+
+---
+
 # Hotspots — Phase 25.5 (Tier 1 sweep — new host)
 
 ## Phase 25.5 status (2026-05-22)
