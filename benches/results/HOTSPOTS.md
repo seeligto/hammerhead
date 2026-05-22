@@ -1,3 +1,82 @@
+# Hotspots — Phase 26 (Tier 2 sweep)
+
+## Phase 26 status (2026-05-22)
+
+Phase 26 ran R-09 (per-player threat dirty flags) and R-01 (staged TT/killer
+movegen) from the SealBot review Tier 2 candidates. R-09 deferred at the
+investigation stage on a weakened-premise signal; R-01 landed as a single
+commit (prereqs R-01a / R-01b collapsed into existing helpers).
+
+**Headline (R-01, commit `91f8114`):**
+- bench-quick midgame_12 @ 500ms (3× cold mean): 373.3k → **454.7k NPS (+21.8%)**.
+- bench-quick ID depth at 500ms: 4 → **5** (one extra ID iteration in the same budget).
+- macro midgame_12 @ 1000ms: 354,851 → **440,320 NPS (+24.1%)**.
+- macro midgame_30 @ 1000ms: 253,465 → **286,720 NPS (+13.1%)**.
+- depth_at_time @ 1000ms: midgame_12 = 5 (unchanged), midgame_30 = 6 (unchanged).
+- 200-game promote-match vs `.bestref` (932c5d8): **95-105-0 (47.5%)**, Elo
+  **−17.4 [95% CI: −65.4, +30.7]**, SPRT llr=−0.329 (bounds ±2.944) →
+  INCONCLUSIVE. SPRT did not REJECT, but the lower CI bound is
+  below zero, so the Phase 3 promote criterion (`CI ≥ 0`) is NOT met.
+- **`.bestref` NOT promoted** — stays at 932c5d8. R-01 commits remain on
+  master as the Phase 26 outcome; future Phase 27 work runs on the faster
+  baseline and will get a fresh promote opportunity if strength improves.
+
+R-01 is therefore a **NPS-positive, Elo-flat refactor.** The bench-quick
++1 ID depth gain at 500ms does not translate to strength at 200 games —
+the staging reordering (killers before bucket-5/6/7 tactical moves)
+appears to cost about as much accuracy as the deeper search gains back.
+
+**R-09 deferred — investigation outcome:**
+
+Empirical signal on midgame_12 @ 500ms (single search_root, 73,728 nodes,
+counter instrumentation reverted before commit): **88.8% of reconcile
+episodes touch BOTH sides** before the next dirty-flag mark; only 11.2%
+single-sided. Projected NPS ceiling for per-player dirty flags: ~0.5-1%.
+A single stone-place invalidates BOTH sides because opponent stones flip
+own runs' open/closed classification (`threats.rs:167-169`). Eval reads
+both sides unconditionally (`eval.rs:58-59`).
+
+R-09 not implemented; the investigation result alone is the Phase 26
+deliverable for the item.
+
+**Phase 27 priority decision** (per dispatcher's tree, R-09 noise band +
+R-01c NPS > +3%):
+
+- **LineContribution cache (eval band 34.3%)** — primary Phase 27 lever.
+- **Threats classification cache** — DROPPED from candidate list. R-09's
+  signal showed both-side consumption dominates, so per-side caching has
+  no headroom on a 9.1% band.
+- **Search-internal proximity skip (board 23.8%)** — hold for Phase 28.
+
+**Reference node counts** (depth-fixed; from `bench reference` at HEAD
+`91f8114` vs `baseline.json` at 132d7ac, captures R-01 alone):
+
+| Fixture       | Depth | Baseline | R-01    | Delta   |
+|---------------|------:|---------:|--------:|--------:|
+| midgame_12    |     1 |      341 |     341 |      0  |
+| midgame_12    |     2 |    1,186 |     559 | **−52.9%** |
+| midgame_12    |     3 |    7,424 |   6,634 |  −10.6% |
+| midgame_12    |     4 |   29,403 |  24,986 |  −15.0% |
+| midgame_30    |     1 |      140 |     140 |      0  |
+| midgame_30    |     2 |      622 |     622 |      0  |
+| midgame_30    |     3 |    2,375 |   2,395 |   +0.8% |
+| midgame_30    |     4 |    4,091 |   3,962 |   −3.2% |
+
+7/8 rows identical or improved. The single +0.8% blip at midgame_30 d3
+is within killer-reorder subtree variance — acceptable per prompt.
+
+**Bench artefact:** `benches/results/20260522-173433-91f8114.json`
+(NOT promoted to `baseline.json` because `.bestref` did not advance).
+
+**Flamegraph:** (captured at Phase 26 HEAD; see `bench breakdown` against
+the latest folded.txt). Per-band breakdown shift: search_other and
+ordering bands are the moved cohort — fused AxisProbe is now called on
+2-3 staged moves per node from search.rs instead of all 24 from
+`order_moves_with_buckets` whenever a Stage-1/2 cutoff fires (~89-95% of
+nodes per I-R01-main empirical signal).
+
+---
+
 # Hotspots — Phase 25.5 (Tier 1 sweep — new host)
 
 ## Phase 25.5 status (2026-05-22)
