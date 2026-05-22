@@ -135,8 +135,20 @@ const POW3_8: [u16; 8] = [1, 3, 9, 27, 81, 243, 729, 2187];
 /// table, which already has the extension factor folded in — so the
 /// scan is a single lookup with no boundary `is_set` probes and no
 /// runtime multiply.
+///
+/// Phase-27: consults the per-`(axis, line_id)` `LineContrib` cache on
+/// `Board`. On a hit the cached signed contribution is used directly; on
+/// a miss `scan_line_8cell` recomputes and stores into the cache. Eval
+/// scores per line are bounded well below `i32::MAX`, so the cache's
+/// `i32::MIN` dirty sentinel can never collide with a legitimate
+/// contribution (asserted in debug by `LineContrib::set`).
 fn layer1_window_scan_8cell(board: &Board) -> i32 {
     let bitmaps = board.axes();
+    // Single `borrow_mut` held for the whole scan: nothing else borrows
+    // `line_contrib` during Layer-1, and a single borrow avoids the
+    // per-line borrow-check bookkeeping a mixed read/write path would
+    // incur. Drops at end of function.
+    let mut cache = board.line_contrib().borrow_mut();
     let mut total: i32 = 0;
 
     for axis in Axis::all() {
@@ -150,7 +162,14 @@ fn layer1_window_scan_8cell(board: &Board) -> i32 {
             }
         }
         for &line_id in &line_ids {
-            total += scan_line_8cell(bitmaps, axis, line_id);
+            let v = if let Some(v) = cache.get(axis, line_id) {
+                v
+            } else {
+                let v = scan_line_8cell(bitmaps, axis, line_id);
+                cache.set(axis, line_id, v);
+                v
+            };
+            total += v;
         }
     }
     total

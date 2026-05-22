@@ -245,6 +245,40 @@ fn cached_eval_restored_after_undo() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12b: Phase 27 LineContrib cache — eval invariants across mutations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Phase 27 C-03: a fresh `eval()` and a cached re-`eval()` must agree.
+/// First call populates the `LineContrib` cache; second call must hit
+/// every slot. Repeated for several distinct positions.
+#[test]
+fn layer1_cache_hit_matches_first_call() {
+    let mut b = fresh();
+    assert_eq!(eval(&b), eval(&b), "empty board cache hit diverges");
+
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(0, 1), (-1, 1)]);
+    let first = eval(&b);
+    let second = eval(&b);
+    assert_eq!(first, second, "midgame cache hit diverges from first call");
+}
+
+/// Phase 27 C-03: a `place` + `undo` cycle through the production
+/// machinery must invalidate the touched lines so the post-undo eval
+/// matches the pre-place eval.
+#[test]
+fn layer1_cache_round_trips_place_undo() {
+    let mut b = Board::new();
+    b.place(Coord::new(0, 0)).unwrap();
+    let before = eval(&b);
+    b.place(Coord::new(1, 0)).unwrap();
+    let _mid = eval(&b);
+    b.undo().unwrap();
+    let after = eval(&b);
+    assert_eq!(before, after, "LineContrib stale after place/undo cycle");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13: mate-distance
 // ─────────────────────────────────────────────────────────────────────────────
 

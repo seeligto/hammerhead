@@ -403,6 +403,15 @@ impl Board {
         &self.axes
     }
 
+    /// Phase-27 per-`(axis, line_id)` Layer-1 contribution cache. Consumed
+    /// by `eval::layer1_window_scan_8cell` to skip the per-line ternary
+    /// window scan on a cache hit. Behind a `RefCell` so the eval hot-path
+    /// can populate misses lazily through `&Board`.
+    #[inline]
+    pub(crate) fn line_contrib(&self) -> &RefCell<LineContrib> {
+        &self.line_contrib
+    }
+
     /// Player who just won, if any. `Some(p)` iff the most recent
     /// non-undone `place` produced a 6-in-row for `p`.
     #[inline]
