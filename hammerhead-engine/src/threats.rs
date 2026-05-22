@@ -59,7 +59,7 @@ pub struct ThreatInstance {
     pub defense_cells: SmallVec<[Coord; 4]>,
 }
 
-/// Per-player threat snapshot. Cheap to clone (counts + inline SmallVec).
+/// Per-player threat snapshot. Cheap to clone (counts + inline `SmallVec`).
 /// Search consumers see only `counts` + `s0_instances`.
 #[derive(Clone, Debug, Default)]
 pub struct ThreatSet {
