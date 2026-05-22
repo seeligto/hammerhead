@@ -203,7 +203,7 @@ impl Board {
         // `axes.set` must happen before `add_proximity` so the occupancy
         // probe inside the proximity loop sees the new stone (replaces the
         // old `pieces.insert(c, player)` that preceded `add_proximity`).
-        self.axes.set(c, player);
+        self.apply_set(c, player);
 
         add_proximity(
             &mut self.proximity.outer,
@@ -249,7 +249,7 @@ impl Board {
             .pop()
             .expect("invariant: history_players parallel to history");
 
-        self.axes.clear(c, player);
+        self.apply_clear(c, player);
         self.mark_threats_dirty();
         if self.winner == Some(player) {
             self.winner = None;
@@ -499,6 +499,24 @@ impl Board {
         self.clear_threats_dirty();
     }
 
+    /// Mutate `self.axes` for a stone placement and invalidate the 3
+    /// `LineContribution` cache lines through `c` in lockstep. The only
+    /// permitted writer to `self.axes` from `place` / `place_for_test`;
+    /// keeps the two structures consistent without per-site bookkeeping.
+    #[inline]
+    fn apply_set(&mut self, c: Coord, player: Player) {
+        self.axes.set(c, player);
+        self.line_contrib.borrow_mut().invalidate_coord(c);
+    }
+
+    /// Symmetric inverse of [`Self::apply_set`] for `undo`. Same
+    /// `LineContribution`-invalidation contract.
+    #[inline]
+    fn apply_clear(&mut self, c: Coord, player: Player) {
+        self.axes.clear(c, player);
+        self.line_contrib.borrow_mut().invalidate_coord(c);
+    }
+
     /// Mark the threat caches as stale so the next [`Self::threats`] read
     /// triggers a recompute.
     #[inline]
@@ -540,7 +558,7 @@ impl Board {
         self.inner_candidates.remove(c);
         // Mirror `place`: axes.set before add_proximity so the occupancy
         // probe inside the proximity loop sees the new stone.
-        self.axes.set(c, player);
+        self.apply_set(c, player);
 
         add_proximity(
             &mut self.proximity.outer,

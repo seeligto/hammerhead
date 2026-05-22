@@ -21,22 +21,13 @@
 //! Consumed in Phase 27 C-03 (eval Layer-1 rewrite). Scaffold-only until
 //! then.
 
-use crate::axis_bitmap::Axis;
-use crate::config::ZOBRIST_WINDOW;
+use crate::axis_bitmap::{Axis, LINE_ID_OFFSET, LINE_ID_RANGE};
+use crate::coords::Coord;
 
 /// Number of axes. Mirrors `Axis::all().len()` (which is structurally
 /// `[Axis; 3]`); kept as a named const so the indexing arithmetic does
 /// not embed a bare `3`.
 pub(crate) const NUM_AXES: usize = Axis::all().len();
-
-/// Length of the per-axis line table. Matches `axis_bitmap.rs`'s private
-/// `LINE_ID_RANGE` (same formula, same derivation from `ZOBRIST_WINDOW`).
-/// Any `line_id` accepted by `AxisBitmaps::set` is in-range here.
-pub(crate) const LINE_ID_RANGE: usize = (4 * ZOBRIST_WINDOW + 1) as usize;
-
-/// Offset added to a signed `line_id` to map it into `[0, LINE_ID_RANGE)`.
-/// Matches `axis_bitmap.rs`'s private `LINE_ID_OFFSET`.
-pub(crate) const LINE_ID_OFFSET: i16 = -2 * ZOBRIST_WINDOW;
 
 /// Dirty / unpopulated sentinel. Callers must not store this as a real
 /// contribution — guarded by a `debug_assert_ne!` in [`LineContrib::set`].
@@ -47,7 +38,6 @@ const SENTINEL: i32 = i32::MIN;
 /// Allocated once at `Board::new`; reset (not reallocated) on
 /// `Board::reset`. Lazy-populated: untouched entries stay sentinel and
 /// pay zero on init.
-#[allow(dead_code)] // consumed in Phase 27 C-03
 pub(crate) struct LineContrib {
     /// Length = `NUM_AXES * LINE_ID_RANGE`. Index = `axis as usize *
     /// LINE_ID_RANGE + line_id_idx`. `SENTINEL` ⟹ dirty / unpopulated.
@@ -66,17 +56,25 @@ impl LineContrib {
 
     /// Wipe every slot back to the sentinel. Keeps the allocation alive.
     #[cold]
-    #[allow(dead_code)] // consumed in Phase 27 C-03
     pub(crate) fn reset(&mut self) {
         self.slots.fill(SENTINEL);
     }
 
     /// Mark one slot dirty.
     #[inline]
-    #[allow(dead_code)] // consumed in Phase 27 C-02
     pub(crate) fn invalidate(&mut self, axis: Axis, line_id: i16) {
         let idx = slot_index(axis, line_id);
         self.slots[idx] = SENTINEL;
+    }
+
+    /// Mark the 3 lines (Q, R, S) through `c` as dirty. Called from
+    /// `Board::place` / `Board::undo` / `Board::place_for_test` on every
+    /// mutation so the cache stays consistent with `AxisBitmaps`.
+    #[inline]
+    pub(crate) fn invalidate_coord(&mut self, c: Coord) {
+        for axis in Axis::all() {
+            self.invalidate(axis, axis.line_id(c));
+        }
     }
 
     /// Read the cached contribution.
@@ -162,6 +160,25 @@ mod tests {
         assert_eq!(c.get(Axis::R, -3), Some(7));
         c.invalidate(Axis::R, -3);
         assert_eq!(c.get(Axis::R, -3), None);
+    }
+
+    #[test]
+    fn invalidate_coord_marks_three_axes() {
+        use crate::coords::ORIGIN;
+        let mut c = LineContrib::new();
+        // Pre-populate the 3 lines through ORIGIN with non-sentinel values.
+        for axis in Axis::all() {
+            c.set(axis, axis.line_id(ORIGIN), 42);
+        }
+        for axis in Axis::all() {
+            assert_eq!(c.get(axis, axis.line_id(ORIGIN)), Some(42));
+        }
+        // Invalidate at ORIGIN.
+        c.invalidate_coord(ORIGIN);
+        // All 3 must be None now.
+        for axis in Axis::all() {
+            assert_eq!(c.get(axis, axis.line_id(ORIGIN)), None);
+        }
     }
 
     #[test]

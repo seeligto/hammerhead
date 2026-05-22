@@ -296,8 +296,8 @@ impl LineBitmap {
 /// individually, but we keep a single uniform range across all axes for
 /// simplicity (per-axis sizing saves only ~50 KB out of ~150 KB total).
 /// Default `ZOBRIST_WINDOW = 127` → `LINE_ID_RANGE = 509`.
-const LINE_ID_RANGE: usize = (4 * ZOBRIST_WINDOW + 1) as usize;
-const LINE_ID_OFFSET: i16 = -2 * ZOBRIST_WINDOW;
+pub(crate) const LINE_ID_RANGE: usize = (4 * ZOBRIST_WINDOW + 1) as usize;
+pub(crate) const LINE_ID_OFFSET: i16 = -2 * ZOBRIST_WINDOW;
 
 /// Per-axis per-player line bitmaps. The only mutators are `set` / `clear`;
 /// readers borrow through `Board::axes()`. Storage is a flat array indexed
