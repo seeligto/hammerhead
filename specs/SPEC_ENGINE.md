@@ -681,7 +681,10 @@ pub fn search_root(
 
 ### Algorithm flow
 
-1. Bump TT generation; decay ordering history.
+1. Bump TT generation; **reset killer slots**; decay ordering history.
+   Killers are per-ply hints tied to a specific search-tree shape, so
+   they must not bleed across `best_move()` calls. History is decayed
+   (not wiped) — it is the design's per-game move-quality memory.
 2. Compute `deadline = now + cfg.time_ms` (if `Some`).
 3. For `depth = 1..=max_depth`:
    a. **Aspiration**: if `depth >= 4` and `prev_score` known, search the
@@ -692,7 +695,11 @@ pub fn search_root(
       the full-window pass always returns in-window.
    b. Run `pvs_node(depth, alpha, beta)` at the root.
    c. If deadline elapsed during the iteration, discard the partial
-      result and return the last completed iteration's result.
+      result **and restore killer state from the start of the aborted
+      iteration**, then return the last completed iteration's result.
+      The snapshot is taken once per ID depth (outside the aspiration
+      loop), so failed aspiration attempts within a depth deliberately
+      share killer state with the next attempt at that depth.
    d. Save `(depth, score, best_move)` as the current result.
 4. Return the current result.
 
