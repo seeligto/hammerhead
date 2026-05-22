@@ -72,7 +72,10 @@ aspiration_start_depth = 4
 time_stone1_pct = 0.6
 
 # Aspiration window: initial half-width and per-failure widen factor.
-asp_window_initial      = 50
+# Phase 26.5 T-04: initial 50 → 100 (I-ASP found 65% first-attempt fail
+# rate at depths ≥4, fail-high 40% > fail-low 25%; ±100 fits the
+# observed swings within 1σ on three of four fixtures).
+asp_window_initial      = 100
 asp_window_widen_factor = 2
 
 # Late move reductions. Disabled for TT / killer / S0-create / S0-block
