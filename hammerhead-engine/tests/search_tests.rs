@@ -106,6 +106,40 @@ fn forced_block_of_opp_closed_five() {
     );
 }
 
+// Same forced-block position as above, but exercises the *two-stone*
+// turn: search → commit stone-1 → search again → commit stone-2, then
+// assert that (5,0) was played on at least one of the two stones.
+// This covers the tactical-execution gap the score-envelope check above
+// leaves open (a non-blocking score-correct result would slip through).
+#[test]
+fn forced_block_of_opp_closed_five_two_stone_sequence() {
+    let mut b = Board::new();
+    b.place_for_test(Coord::new(-1, 0), Player::X);
+    o_row(&mut b, 0, 5);
+    b.force_parity_for_test(Player::X, 0);
+
+    let (mut tt, mut ord, mut scratch) = fresh();
+    let cfg = SearchConfig {
+        max_depth: 4,
+        time_ms: None,
+        ..Default::default()
+    };
+
+    let r1 = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
+    b.place(r1.best_move).expect("stone-1 must be legal");
+
+    let r2 = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
+    b.place(r2.best_move).expect("stone-2 must be legal");
+
+    let block = Coord::new(5, 0);
+    assert!(
+        r1.best_move == block || r2.best_move == block,
+        "X must play (5,0) on stone 1 or stone 2; got stone1={:?} stone2={:?}",
+        r1.best_move,
+        r2.best_move
+    );
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // 3. Mate-in-2 — X has open-4, plays 2-stone sequence to mate
 // ────────────────────────────────────────────────────────────────────────
