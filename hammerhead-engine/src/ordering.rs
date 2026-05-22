@@ -215,16 +215,51 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     if ctx.tt_move == Some(m) {
         return 10;
     }
-    if would_make_six(ctx.board, m, ctx.side) {
+    // Phase 25.5 R-02: fused 3-axis probe. Classifies buckets 9
+    // (own ≥6), 8 (opp ≥6), and 6 (own creates_s0) from a single
+    // axis-loop, halving `line()` slot loads and tripling-down on
+    // `run_*` calls vs the prior three independent passes
+    // (would_make_six(side) → would_make_six(opp) → creates_s0(side)).
+    // Behaviour-identical to those helpers — see SPEC_ENGINE.md
+    // "Fused 3-axis probe in `bucket_value`". The standalone
+    // `would_make_six` / `creates_s0` helpers below are retained for
+    // qsearch's `is_threat_move` frontier.
+    let opp = ctx.side.opponent();
+    let mut own_six = false;
+    let mut opp_six = false;
+    let mut own_s0 = false;
+    for axis in Axis::all() {
+        let p = axis_probe(ctx.board, m, axis, ctx.side);
+        let own_total = 1u8 + p.own_back + p.own_fwd;
+        let opp_total = 1u8 + p.opp_back + p.opp_fwd;
+        if own_total >= 6 {
+            own_six = true;
+        }
+        if opp_total >= 6 {
+            opp_six = true;
+        }
+        if !own_s0 && (4..=5).contains(&own_total) {
+            let id = axis.line_id(m);
+            let pos = axis.pos(m);
+            let left = coord_on_axis(axis, id, pos - i16::from(p.own_back) - 1);
+            let right = coord_on_axis(axis, id, pos + i16::from(p.own_fwd) + 1);
+            let left_open = ctx.board.piece_at(left) != Some(opp);
+            let right_open = ctx.board.piece_at(right) != Some(opp);
+            if left_open || right_open {
+                own_s0 = true;
+            }
+        }
+    }
+    if own_six {
         return 9;
     }
-    if would_make_six(ctx.board, m, ctx.side.opponent()) {
+    if opp_six {
         return 8;
     }
     if !ctx.stone1_s0_defense.is_empty() && ctx.stone1_s0_defense.contains(&m) {
         return 7;
     }
-    if creates_s0(ctx.board, m, ctx.side) {
+    if own_s0 {
         return 6;
     }
     if blocks_opp_s0(ctx.board, m, ctx.side) {
@@ -240,6 +275,43 @@ pub(crate) fn bucket_value(ctx: &OrderingContext, m: Coord) -> u8 {
     // encoding value 0 would mean "history below the high-byte fence",
     // never emitted in v1.
     1
+}
+
+/// Fused per-axis run-length probe through the empty cell `m`. Captures
+/// both colours' forward/backward runs in one axis-bitmap visit so
+/// `bucket_value` can derive buckets 9 (own ≥6), 8 (opp ≥6), and 6
+/// (own `creates_s0`) from a single 3-axis loop. None-line slots return
+/// `(0, 0)`; the resulting `total = 1` fails every threshold so the
+/// behaviour matches the standalone `would_make_six` / `creates_s0`
+/// helpers exactly (see `SPEC_ENGINE.md` "Fused 3-axis probe").
+#[derive(Clone, Copy, Default)]
+struct AxisProbe {
+    own_back: u8,
+    own_fwd: u8,
+    opp_back: u8,
+    opp_fwd: u8,
+}
+
+#[inline]
+fn axis_probe(board: &Board, m: Coord, axis: Axis, side: Player) -> AxisProbe {
+    let opp = side.opponent();
+    let id = axis.line_id(m);
+    let pos = axis.pos(m);
+    let bitmaps = board.axes();
+    let (own_back, own_fwd) = match bitmaps.line(axis, side, id) {
+        Some(l) => (l.run_backward(pos), l.run_forward(pos)),
+        None => (0, 0),
+    };
+    let (opp_back, opp_fwd) = match bitmaps.line(axis, opp, id) {
+        Some(l) => (l.run_backward(pos), l.run_forward(pos)),
+        None => (0, 0),
+    };
+    AxisProbe {
+        own_back,
+        own_fwd,
+        opp_back,
+        opp_fwd,
+    }
 }
 
 /// Virtual-place predicate: would placing `side` at the empty cell `m`
