@@ -272,24 +272,13 @@ fn killer_dedup_preserves_first_slot() {
     let c = mv(1, 1);
     let d = mv(2, 2);
     k.push(c);
-    k.push(c); // dedup against slot 0, no change
-    assert_eq!(k.slots()[0], Some(c));
-    for s in &k.slots()[1..] {
-        assert_eq!(*s, None);
-    }
+    k.push(c); // dedup, no change
+    assert_eq!(k.slots(), &[Some(c), None]);
     k.push(d);
-    assert_eq!(k.slots()[0], Some(d));
-    if let Some(slot1) = k.slots().get(1).copied() {
-        // 2-slot path: c bubbled to slot 1; pushing c again dedups in place.
-        assert_eq!(slot1, Some(c));
-        k.push(c);
-        assert_eq!(k.slots()[0], Some(d));
-        assert_eq!(k.slots().get(1).copied(), Some(Some(c)));
-    } else {
-        // 1-slot path: pushing d evicted c; pushing c re-takes slot 0.
-        k.push(c);
-        assert_eq!(k.slots()[0], Some(c));
-    }
+    assert_eq!(k.slots(), &[Some(d), Some(c)]);
+    // Pushing c again should dedup against slot 1 (not bubble).
+    k.push(c);
+    assert_eq!(k.slots(), &[Some(d), Some(c)]);
 }
 
 // ────────────────────────────────────────────────────────────────────────
