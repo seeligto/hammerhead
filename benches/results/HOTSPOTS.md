@@ -1,3 +1,140 @@
+# Hotspots — Phase 27 (LineContribution cache)
+
+## Phase 27 status (2026-05-22)
+
+Phase 27 landed the LineContribution cache: per-`(axis, line_id)` memoization
+of the Layer-1 window-scan contribution, with invalidation on every
+`Board::place` / `undo` / `place_for_test`. The cache attacks the eval
+band identified as the top algorithmic lever in the Phase 25 retro
+candidate list (36.87% of engine self-time at the Phase 26 91f8114
+flamegraph).
+
+**Headline (commit `05cecb3`):**
+- bench-quick midgame_12 @ 500ms (3× cold mean): 451k → **537k NPS (+19.1%)**
+  vs Phase 26.5 entry baseline (`357153f`, fresh build).
+- bench-quick mean cumulative vs `.bestref` (`932c5d8`, Phase 25.5):
+  354k → **557k NPS (+57.1%)** at 1000ms macro.
+- Reference node-count parity: BYTE-IDENTICAL across all 32 (fixture, depth)
+  cells vs Phase 26.5 baseline. Cache is a pure refactor of Layer-1; eval
+  output unchanged.
+- depth_at_time @ 1000ms: midgame_30 6 → **7** (one extra ID iteration).
+- `eval::layer1_window_scan` micro: **−86% to −93% wall-time** across all
+  fixtures (cache-hit path is a single load + compare vs the full
+  window-scan recompute).
+
+**Flamegraph breakdown (% engine self-time):**
+
+| Module        | Phase 26 (`91f8114`) | Phase 27 (`05cecb3`) | Δ          |
+|---------------|---------------------:|---------------------:|-----------:|
+| eval          | 36.87%               | **26.55%**           | **−10.32** |
+| board         | 25.24%               | 31.51%               | +6.27 (renorm) |
+| search_other  | 23.74%               | 24.58%               | +0.84      |
+| threats       |  9.98%               | 12.43%               | +2.45 (renorm) |
+| ordering      |  4.18%               |  4.93%               | +0.75      |
+| tt / moves    |  0.00%               |  0.00%               | —          |
+
+The 10.32-pp drop in eval band is the entire Layer-1 cacheable fraction
+materializing (I-HOTPATH projected 26.79% of engine; observed conversion
+matches the projection minus L1/TLB pollution). Other bands renormalize
+upward as the cache shrinks total time. **board (31.51%)** is now the
+single largest band — the Phase 28 hand-off lever is the
+search-internal proximity skip on `board::*` hot calls.
+
+**Cache design (committed):**
+- Storage: flat `Box<[i32]>` of `3 * LINE_ID_RANGE = 1527` entries
+  (~6 KB; fits L1). Index = `axis as usize * LINE_ID_RANGE + line_id`.
+  Single signed `i32` per slot (`WINDOW_SCORE_8` already folds X/O into
+  one signed scalar — no per-player dimension).
+- Dirty marker: sentinel `i32::MIN`. Hot-path read = one bounds-checked
+  load + compare; no parallel dirty bitmap.
+- Lifetime: owned by `Board` behind `RefCell<LineContrib>`, mirroring
+  the `threats_x` / `threats_o` pattern.
+- Init/reset: `Board::new` sentinel-fills; `Board::reset` re-fills via
+  `slice::fill`, no realloc.
+- Invalidation hook: `Board::apply_set` / `Board::apply_clear` helpers
+  factor `axes.set/clear + invalidate_coord(c)` together. All three
+  mutation sites (`place`, `undo`, `place_for_test`) funnel through
+  these helpers. ≤3 cache entries invalidated per mutation (Q, R, S
+  lines through the coord).
+- Eval consumer: `layer1_window_scan_8cell` takes a single
+  `borrow_mut()` for the whole scan, calls `cache.get` per
+  `(axis, line_id)` in the X∪O populated union (SmallVec dedup
+  preserved), recomputes via `scan_line_8cell` on sentinel + writes
+  back. `scan_line_8cell` body untouched.
+
+**Commits (4 atomic, all on master):**
+
+| SHA       | Subject                                                          | Behavior change |
+|-----------|------------------------------------------------------------------|-----------------|
+| `228a3d3` | `specs: document LineContribution cache (Phase 27)`              | none (spec)     |
+| `daa8fe1` | `eval: add LineContribution cache scaffold (Phase 27)`           | none (unconsumed) |
+| `1436735` | `board: invalidate LineContribution on place/undo (Phase 27)`    | none (hook only, no reader) |
+| `05cecb3` | `eval: consume LineContribution cache in Layer-1 (Phase 27)`     | NPS gain, byte-identical eval |
+
+**Verification protocol (per dispatcher gate):**
+- Per-step A/B: bench-quick 3× cold + reference node-count parity at
+  32 cells. All four commits passed byte-identical parity.
+- C-01 A/B initial verdict was a FALSE-POSITIVE REVERT caused by a
+  stale `.so` from a pre-session build — the recorded Phase 0
+  "baseline" was tainted. Corrected baseline at `357153f` matches
+  C-01 / C-02 / C-03 byte-identical. **Lesson: always `make build`
+  immediately before recording any benchmark baseline.**
+- Cache-coherence audit (review of C-03): only 4 axes write sites in
+  the engine (`Board::new`, `Board::reset`, `apply_set`, `apply_clear`).
+  All paired with `line_contrib` invalidation. No bypass paths.
+- C-03 100g sanity match vs `.bestref` (`932c5d8`):
+  **42-58-0, Elo −56.1 [−124.6, +12.5]**, CI straddles zero.
+  Phase 26.5 meta-finding holds: 100g cannot resolve sub-25 Elo. The
+  point estimate reflects 19 commits of Phase 26 + 26.5 work, not
+  Phase 27 itself (which is byte-identical at fixed depth — see
+  parity above). 400g promote-match is the strength gate.
+
+**400g promote-match vs `.bestref` (`932c5d8`):**
+- **215-184-1 W-L-D, score 53.87%, Elo +27.0, CI95 [−7.1, +61.1]**.
+- Verdict: **REJECT** (raw test, gates on CI lower > 0; −7.1 < 0).
+- `.bestref` NOT promoted — stays at 932c5d8.
+
+The point estimate moves from Phase 26 R-01's −17.4 Elo (200g) and
+Phase 27's own 100g sanity result of −56.1 to **+27.0 at 400g**, with
+the upper CI band reaching +61. The 19-commit gap (Phase 25.5 →
+Phase 27) is no longer Elo-negative on aggregate, but the lower CI
+band still touches negative territory and the dispatcher's strict
+`CI lower > 0` gate is not met. Sample-size analysis: 400g at 500 ms
+gives CI width ~±34 Elo per Phase 26.5 meta-finding; the observed
+width (+34) confirms harness behavior. A 600-800g rerun could
+plausibly clear the bar, but the marginal cost-benefit at this Elo
+magnitude is poor — defer to a follow-up phase if the next algorithmic
+lever lifts the point estimate further.
+
+**Cumulative Phase 26+26.5+27 vs `.bestref`:** NPS up ~+57% on
+midgame_12 macro, Elo +27 CI [−7, +61]. The Phase 26.5 meta-finding
+predicted that further NPS gains alone might not crack the promotion
+threshold at affordable sample sizes; Phase 27 confirms this — a
++19% NPS gain (Phase 27 isolated) on top of +21.8% (R-01) on top
+of Tier-1 (Phase 25.5) lands with marginal-positive Elo signal.
+
+**Phase 28 hand-off:**
+- **board (31.51%)** is the new top band. Search-internal proximity
+  skip is the natural lever — bench shows `board::place` -4% to -26%
+  on isolated micro, but real-search board calls dominate the
+  proximity-update work. Investigation should start with
+  `proximity.rs` and `Board::is_legal_internal` / `place` hot paths.
+- **threats (12.43%)** sits at #3. R-09 was DROPPED in Phase 26 retro
+  (both-side consumption dominates per-side cacheability). Phase 28+
+  could revisit if a different per-line invalidation pattern emerges.
+- **eval (26.55%)** post-cache is dominated by `scan_line_8cell`
+  recompute on the ≤3 invalidated lines per move + Layer-2 shape
+  fold + Layer-3 fork detection. The cache fundamentally cannot
+  attack these; they are per-move work. Further eval gain requires
+  a different lever (SIMD widening, per-window precomputation, etc.).
+
+**Match harness reminder (from Phase 26.5):** 500ms × 200g CI width is
+~±48-67 Elo. Per-step A/Bs should remain at 100g sanity-only.
+Promote-matches require ≥400g to resolve sub-25 Elo deltas. Phase 28
+should plan around this constraint.
+
+---
+
 # Hotspots — Phase 26 (Tier 2 sweep)
 
 ## Phase 26 status (2026-05-22)
