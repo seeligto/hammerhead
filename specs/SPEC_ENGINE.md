@@ -727,15 +727,45 @@ per-node `maximize` flag is one branch in cold code. Per node:
 3. Probe TT. If a hit at sufficient depth with a compatible bound:
    return its score.
 4. If `depth == 0`: return `quiescence_*` (see below).
-5. Generate candidates via `moves::generate(board, DEFAULT_MOVE_RADIUS)`;
-   order via `ordering::order_moves(...)`.
-6. Iterate ordered moves:
-   - **First move (i == 0)**: full window `[alpha, beta]`.
-   - **Subsequent (i > 0)**: null-window probe `[alpha, alpha + 1]` at
+5. **Staged move iteration (Phase 26 R-01).** The move sequence is built
+   on demand in three stages. A `tried: SmallVec<[Coord; 3]>` records the
+   moves dispatched by stages 1 / 2 so that stage 3 can dedup. A single
+   `move_idx` counter increments across all three stages — the PVS
+   "first move" (`is_first = move_idx == 0`) and LMR's
+   `move_idx >= lmr_min_move_index` predicates apply globally, so the
+   stage-1 TT move always gets the PV-line full window when present.
+   a. **Stage 1 — TT move.** If `tt_move = Some(m)` from the TT probe
+      and `board.is_legal(m)` (defensive against stale entries from hash
+      collisions / proximity contraction after undo), dispatch the move.
+      Its bucket is read from `ordering::bucket_value(ctx, m)` — for a TT
+      move this short-circuits to 10. Alloc-free: `moves::generate` and
+      the ordering pass are NOT executed yet.
+   b. **Stage 2 — Killer moves.** Walk `ord.killers[ply].slots()` in slot
+      order (slot 0 = newest). For each `Some(m)` not in `tried` and
+      satisfying `board.is_legal(m)`, dispatch the move using
+      `ordering::bucket_value(ctx, m)` — typically 3 (killer fallback),
+      but a killer that ALSO matches a higher-priority shape (win,
+      block-win, S0-create…) gets the higher bucket so LMR / check
+      extension behave identically to today's ordering-pass result.
+      Alloc-free.
+   c. **Stage 3 — Full generate + order.** If no β-cutoff yet, run
+      `moves::generate(board, DEFAULT_MOVE_RADIUS)` and
+      `ordering::order_moves_with_buckets(...)` exactly as before.
+      Iterate the ordered list with `if tried.contains(&m) { continue; }`
+      to skip stage-1/2 entries.
+
+   When stage 1 or stage 2 produces a β-cutoff, the function returns
+   without ever calling `moves::generate` — the TT-cutoff fast path
+   eliminates the candidate-buffer fill + ordering work on the
+   ~89-95% of nodes where the TT or a killer cuts.
+
+6. Iterate the staged sequence:
+   - **First move (move_idx == 0)**: full window `[alpha, beta]`.
+   - **Subsequent (move_idx > 0)**: null-window probe `[alpha, alpha + 1]` at
      possibly-reduced depth. On `probe > alpha` re-search at full depth
      (and full window if `probe < beta`). On fail-high we also fall back
      to the full window.
-   - **LMR**: if `depth >= lmr_min_depth`, `i >= lmr_min_move_index`,
+   - **LMR**: if `depth >= lmr_min_depth`, `move_idx >= lmr_min_move_index`,
      and the move's ordering bucket is not in
      `{TT, win, block-win, stone1-defense, S0-create, S0-block, killer}`,
      search at `depth - 1 - lmr_reduction`. The PVS dance is therefore
@@ -815,6 +845,14 @@ Stable bucket sort over candidate moves. Buckets, highest priority first
   7. Killer move at this ply (2 slots, OR over both)   — was 8
   8. History heuristic                                 — was 9
   9. Static delta-eval / proximity tie-break           — was 10
+
+The bucket values above feed both the ordering pass and Phase 26 R-01's
+**staged move iteration** (search.rs / SPEC § "Recursive nodes" step 5):
+the staged path calls `bucket_value(...)` per dispatched move so LMR
+exclusion and the S0-create check extension fire exactly as they would
+have if the move had reached the ordered list. The TT bucket (10) and
+killer bucket (3) are early-return paths in `bucket_value` that skip the
+3-axis fused probe, so stage-1 / stage-2 bucket lookup is cheap.
 
 Phase 17 disabled the old bucket 7, "Creates S1 threat" (the S1/S2
 ablation A/B was net-negative — see `SPEC_EVAL.md § Layer 2 history`).
