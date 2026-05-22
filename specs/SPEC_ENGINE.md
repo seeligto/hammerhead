@@ -859,8 +859,11 @@ global `FxHashMap<(Coord, Player), u32>` history. The search driver calls:
 - `record_cutoff(ply, m, p, depth)` on a β-cutoff: pushes `m` into the
   killer slot for `ply` (dedup), and increments
   `history[(m, p)] += depth² ` (saturating to `HISTORY_CUTOFF_MAX`).
-- `decay_history()` once per root iteration: every entry is multiplied
-  by `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN` (default ½, integer-floor).
+- `decay_history()` once per `search_root` call, at search entry before
+  the iterative-deepening loop begins: every entry is multiplied by
+  `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN` (default ½, integer-floor).
+  History therefore decays per `best_move()` invocation (i.e. per stone),
+  not between ID iterations within a single call.
 
 ### Approximations (v1)
 
