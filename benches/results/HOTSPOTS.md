@@ -68,12 +68,24 @@ is within killer-reorder subtree variance — acceptable per prompt.
 **Bench artefact:** `benches/results/20260522-173433-91f8114.json`
 (NOT promoted to `baseline.json` because `.bestref` did not advance).
 
-**Flamegraph:** (captured at Phase 26 HEAD; see `bench breakdown` against
-the latest folded.txt). Per-band breakdown shift: search_other and
-ordering bands are the moved cohort — fused AxisProbe is now called on
-2-3 staged moves per node from search.rs instead of all 24 from
-`order_moves_with_buckets` whenever a Stage-1/2 cutoff fires (~89-95% of
-nodes per I-R01-main empirical signal).
+**Breakdown shift (% of engine self-time):**
+
+| Band         | Post-Tier-1 (932c5d8) | Post-Phase-26 (91f8114) | Δ (pp) |
+|--------------|----------------------:|------------------------:|-------:|
+| eval         |               34.29%  |                 36.87%  |  +2.6  |
+| board        |               23.82%  |                 25.24%  |  +1.4  |
+| search_other |               27.23%  |                **23.74%**  | **−3.5**  |
+| threats      |                9.09%  |                  9.98%  |  +0.9  |
+| ordering     |                5.56%  |                **4.18%**  | **−1.4**  |
+| tt / moves   |                   0%  |                     0%  |    0   |
+
+`ordering` and `search_other` together dropped ~5pp — the staged TT-cutoff
+fast path skips `order_moves_with_buckets` on ~89-95% of nodes and avoids
+the candidate-buffer fill + sort on the cutoff path. Renormalisation
+pushes `eval`, `board`, and `threats` fractions up because the total
+engine self-time slice shrank.
+
+**Flamegraph:** `flamegraph-2026-05-22T20-11-06-91f8114.svg`.
 
 ---
 
