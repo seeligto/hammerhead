@@ -396,120 +396,131 @@ fn pvs_node(
         return quiescence_node(board, scratch, cfg, alpha, beta, ply, 0, deadline, node_count);
     }
 
-    // ── Move generation + ordering (into per-ply scratch slot) ──────────────
+    // ── R-01 staged move iteration ──────────────────────────────────────────
+    // Stage 1 (TT move) → Stage 2 (killer slots) → Stage 3 (generate + order).
+    // β-cutoff in stage 1 or 2 returns without ever calling `moves::generate`.
     let ply_idx = SearchScratch::ply_index(ply);
-    {
-        let slot = &mut scratch.moves[ply_idx];
-        moves::generate(board, DEFAULT_MOVE_RADIUS, slot);
-        if slot.is_empty() {
-            return Ok(board.cached_eval());
-        }
-    }
+    let killers_idx = (ply as usize).min(MAX_PLY - 1);
+    let killers_snap = ord.killers[killers_idx];
 
-    {
-        let killers_idx = (ply as usize).min(MAX_PLY - 1);
-        let killers_snap = ord.killers[killers_idx];
-        let ctx = OrderingContext {
-            board,
-            side,
-            tt_move,
-            killers: &killers_snap,
-            history: &ord.history,
-            stone1_s0_defense: stone1_defense,
-        };
-        // Split-borrow: each scratch field is a distinct `Box<[Vec<_>; N]>`,
-        // so simultaneous mut-borrows of one slot from each field are
-        // disjoint and the borrow checker accepts them.
-        let moves_slot = &mut scratch.moves[ply_idx];
-        let scored_slot = &mut scratch.scored[ply_idx];
-        let buckets_slot = &mut scratch.buckets[ply_idx];
-        order_moves_with_buckets(moves_slot, &ctx, scored_slot, buckets_slot);
-    }
-
-    let move_count = scratch.moves[ply_idx].len();
     let mut best_score = if maximize { -INF } else { INF };
-    let mut best_move = scratch.moves[ply_idx].first().copied().unwrap_or(ORIGIN);
+    let mut best_move = ORIGIN;
+    let mut move_idx: usize = 0;
+    let mut tried: SmallVec<[Coord; 3]> = SmallVec::new();
+    let mut beta_cut = false;
 
-    // ── Move loop ───────────────────────────────────────────────────────────
-    // Iterate by index. Each iteration re-reads `scratch.moves[ply_idx][i]`
-    // and `scratch.buckets[ply_idx][i]` so no live borrow into the slot
-    // crosses the recursive `pvs_node`/`pvs_dance` calls (which need
-    // `&mut scratch` themselves at ply+1).
-    for i in 0..move_count {
-        let m = scratch.moves[ply_idx][i];
-        let bucket = scratch.buckets[ply_idx][i];
-
-        // Check extension: own move creates a fresh S0 against the
-        // opponent and we still have budget.
-        let extends_check = bucket == BUCKET_S0_CREATE && extensions_left > 0;
-        let ext_amt: i8 = i8::from(extends_check);
-        let new_extensions = if extends_check {
-            extensions_left.saturating_sub(1)
-        } else {
-            extensions_left
-        };
-        let new_depth = (depth - 1 + ext_amt).max(0);
-
-        // LMR.
-        let lmr_excluded = is_lmr_excluded(bucket) || extends_check;
-        let lmr_reduction =
-            if !lmr_excluded && depth >= cfg.lmr_min_depth && (i as u8) >= cfg.lmr_min_move_index {
-                cfg.lmr_reduction
-            } else {
-                0
+    // Stage 1: TT move.
+    if let Some(m) = tt_move {
+        if board.is_legal(m) {
+            let bucket = {
+                let ctx = OrderingContext {
+                    board,
+                    side,
+                    tt_move,
+                    killers: &killers_snap,
+                    history: &ord.history,
+                    stone1_s0_defense: stone1_defense,
+                };
+                ordering::bucket_value(&ctx, m)
             };
-        let probe_depth = (new_depth - lmr_reduction).max(0);
+            beta_cut = try_one_move(
+                board, tt, ord, scratch, cfg, depth,
+                &mut alpha, &mut beta, ply, extensions_left, deadline,
+                node_count, side, maximize,
+                m, bucket, move_idx,
+                &mut best_score, &mut best_move,
+            )?;
+            tried.push(m);
+            move_idx += 1;
+        }
+    }
 
-        board
-            .place(m)
-            .expect("ordered move must be legal at search depth");
-        let stone1_buf = collect_stone1_defense(board, m);
-
-        let score_result = pvs_dance(
-            board,
-            tt,
-            ord,
-            scratch,
-            cfg,
-            new_depth,
-            probe_depth,
-            lmr_reduction,
-            alpha,
-            beta,
-            maximize,
-            ply,
-            new_extensions,
-            deadline,
-            &stone1_buf,
-            node_count,
-            i == 0,
-        );
-        board
-            .undo()
-            .expect("undo own placement must succeed inside search");
-        let score = score_result?;
-
-        if maximize {
-            if score > best_score {
-                best_score = score;
-                best_move = m;
+    // Stage 2: killer moves (slot 0 first = most recent).
+    if !beta_cut {
+        for slot in killers_snap.slots().iter().copied().flatten() {
+            if tried.contains(&slot) || !board.is_legal(slot) {
+                continue;
             }
-            if score > alpha {
-                alpha = score;
-            }
-        } else {
-            if score < best_score {
-                best_score = score;
-                best_move = m;
-            }
-            if score < beta {
-                beta = score;
+            let bucket = {
+                let ctx = OrderingContext {
+                    board,
+                    side,
+                    tt_move,
+                    killers: &killers_snap,
+                    history: &ord.history,
+                    stone1_s0_defense: stone1_defense,
+                };
+                ordering::bucket_value(&ctx, slot)
+            };
+            beta_cut = try_one_move(
+                board, tt, ord, scratch, cfg, depth,
+                &mut alpha, &mut beta, ply, extensions_left, deadline,
+                node_count, side, maximize,
+                slot, bucket, move_idx,
+                &mut best_score, &mut best_move,
+            )?;
+            tried.push(slot);
+            move_idx += 1;
+            if beta_cut {
+                break;
             }
         }
-        if alpha >= beta {
-            let cutoff_depth = depth.max(0);
-            ord.record_cutoff(ply, m, side, cutoff_depth);
-            break;
+    }
+
+    // Stage 3: full generate + order, skip entries already tried in stages 1-2.
+    if !beta_cut {
+        {
+            let slot = &mut scratch.moves[ply_idx];
+            moves::generate(board, DEFAULT_MOVE_RADIUS, slot);
+            if slot.is_empty() {
+                if tried.is_empty() {
+                    return Ok(board.cached_eval());
+                }
+                // Stages 1-2 ran moves and Stage 3 has nothing to add: fall
+                // through to TT store with the staged best_score / best_move.
+            } else {
+                let ctx = OrderingContext {
+                    board,
+                    side,
+                    tt_move,
+                    killers: &killers_snap,
+                    history: &ord.history,
+                    stone1_s0_defense: stone1_defense,
+                };
+                // Split-borrow: each scratch field is a distinct
+                // `Box<[Vec<_>; N]>`, so simultaneous mut-borrows of one slot
+                // from each field are disjoint.
+                let moves_slot = &mut scratch.moves[ply_idx];
+                let scored_slot = &mut scratch.scored[ply_idx];
+                let buckets_slot = &mut scratch.buckets[ply_idx];
+                order_moves_with_buckets(moves_slot, &ctx, scored_slot, buckets_slot);
+            }
+        }
+        let move_count = scratch.moves[ply_idx].len();
+        // best_move fallback when no Stage-1/2 move fired: seed from the
+        // highest-bucket ordered candidate (matches today's pre-staging init).
+        if best_move == ORIGIN && move_count > 0 {
+            best_move = scratch.moves[ply_idx][0];
+        }
+        // Iterate by index; re-read each slot per iteration so no borrow
+        // lives across the recursive `pvs_node` / `pvs_dance` calls.
+        for i in 0..move_count {
+            let m = scratch.moves[ply_idx][i];
+            if tried.contains(&m) {
+                continue;
+            }
+            let bucket = scratch.buckets[ply_idx][i];
+            let cut = try_one_move(
+                board, tt, ord, scratch, cfg, depth,
+                &mut alpha, &mut beta, ply, extensions_left, deadline,
+                node_count, side, maximize,
+                m, bucket, move_idx,
+                &mut best_score, &mut best_move,
+            )?;
+            move_idx += 1;
+            if cut {
+                break;
+            }
         }
     }
 
@@ -650,6 +661,111 @@ fn pvs_dance(
     } else {
         Ok(after_lmr)
     }
+}
+
+/// Execute one move at `pvs_node`. Returns `Ok(true)` on a β-cutoff so the
+/// caller can short-circuit the remaining stages / loop iterations.
+/// Factored out of `pvs_node` so the three staged dispatch paths (TT,
+/// killer, ordered fallback) share identical per-move accounting.
+#[allow(clippy::too_many_arguments)]
+fn try_one_move(
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    ord: &mut OrderingState,
+    scratch: &mut SearchScratch,
+    cfg: &SearchConfig,
+    depth: i8,
+    alpha: &mut i32,
+    beta: &mut i32,
+    ply: u8,
+    extensions_left: u8,
+    deadline: Option<Instant>,
+    node_count: &mut u64,
+    side: Player,
+    maximize: bool,
+    m: Coord,
+    bucket: u8,
+    move_idx: usize,
+    best_score: &mut i32,
+    best_move: &mut Coord,
+) -> Result<bool, SearchError> {
+    // Check extension: own move creates a fresh S0 against the opponent
+    // and we still have budget.
+    let extends_check = bucket == BUCKET_S0_CREATE && extensions_left > 0;
+    let ext_amt: i8 = i8::from(extends_check);
+    let new_extensions = if extends_check {
+        extensions_left.saturating_sub(1)
+    } else {
+        extensions_left
+    };
+    let new_depth = (depth - 1 + ext_amt).max(0);
+
+    // LMR. The `move_idx` here is the global staged index so the
+    // `>= lmr_min_move_index` check fires in the same place it would
+    // have under the pre-staging single-loop iteration.
+    let lmr_excluded = is_lmr_excluded(bucket) || extends_check;
+    let lmr_reduction = if !lmr_excluded
+        && depth >= cfg.lmr_min_depth
+        && (move_idx as u8) >= cfg.lmr_min_move_index
+    {
+        cfg.lmr_reduction
+    } else {
+        0
+    };
+    let probe_depth = (new_depth - lmr_reduction).max(0);
+
+    board
+        .place(m)
+        .expect("staged move must be legal at search depth");
+    let stone1_buf = collect_stone1_defense(board, m);
+
+    let score_result = pvs_dance(
+        board,
+        tt,
+        ord,
+        scratch,
+        cfg,
+        new_depth,
+        probe_depth,
+        lmr_reduction,
+        *alpha,
+        *beta,
+        maximize,
+        ply,
+        new_extensions,
+        deadline,
+        &stone1_buf,
+        node_count,
+        move_idx == 0,
+    );
+    board
+        .undo()
+        .expect("undo own placement must succeed inside search");
+    let score = score_result?;
+
+    if maximize {
+        if score > *best_score {
+            *best_score = score;
+            *best_move = m;
+        }
+        if score > *alpha {
+            *alpha = score;
+        }
+    } else {
+        if score < *best_score {
+            *best_score = score;
+            *best_move = m;
+        }
+        if score < *beta {
+            *beta = score;
+        }
+    }
+    if *alpha >= *beta {
+        let cutoff_depth = depth.max(0);
+        ord.record_cutoff(ply, m, side, cutoff_depth);
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
