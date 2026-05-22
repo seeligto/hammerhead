@@ -93,7 +93,7 @@ move_gen_inner_radius = 2     # default radius for normal search nodes
 [engine.ordering]
 # Move-ordering tuning. See SPEC_ENGINE.md "Ordering".
 move_gen_cap        = 24            # cap returned/searched moves per node
-killer_slots        = 2             # killer-move slots per ply
+killer_slots        = 1             # killer-move slots per ply (Phase 26.5 T-07: 2 → 1; I-KILLER found slot-1 precision 24.6% vs slot-0 65.8%)
 max_ply             = 128           # killer table size: search-tree depth cap
 history_cutoff_max  = 0x00FFFFFF    # 24-bit saturation for history scores
 history_decay_num   = 1             # per-root-search decay numerator
