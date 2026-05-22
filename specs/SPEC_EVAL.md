@@ -255,7 +255,9 @@ Implementation: for each enemy colony cluster, check if own pieces within C/D ri
 ## ThreatSet contract
 
 `ThreatSet` exposes per-player S0 threat instances as
-`Vec<ThreatInstance>`, each holding:
+`SmallVec<[ThreatInstance; 8]>` (inline cap-8; spills to heap only
+when a position exceeds 8 concurrent S0 threats, bounded above by
+`MAX_S0_INSTANCES`), each holding:
 - `kind: ThreatKind` (OpenFive, ClosedFive, OpenFour, ClosedFour)
 - `pieces: SmallVec<[Coord; 5]>` — the stones participating
 - `defense_cells: SmallVec<[Coord; 4]>` — cells whose occupation by
