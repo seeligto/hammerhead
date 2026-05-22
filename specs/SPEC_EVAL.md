@@ -231,6 +231,65 @@ scheme; it never outperformed the full scan once Layer 1 became the
 8-cell table and the S1/S2 shapes were removed — see § Layer 2
 history.)
 
+### LineContribution Cache
+
+**Purpose.** Layer-1 (`layer1_window_scan_8cell`) iterates every
+populated line per axis and calls `scan_line_8cell` to fold the
+`WINDOW_SCORE_8` table over each window of 8 cells along that line.
+The same `(axis, line_id)` typically yields the same contribution
+across many leaf evals because a placed stone only mutates ≤3 lines.
+The `LineContribution` cache memoises per-`(axis, line_id)` Layer-1
+contribution on the `Board` and is invalidated by the same axis-
+bitmap mutation path that maintains occupancy.
+
+**Structure.** Flat `Box<[i32]>` of length `3 * LINE_ID_RANGE`
+(= `3 * 509` = 1527 entries, ~6 KB — fits L1). One `i32` per
+`(axis, line_id)`. No per-player split: `WINDOW_SCORE_8` (codegen'd
+in `build.rs`) already folds X-positive minus O-positive into a
+single signed scalar via the ternary `k_scores` table. Stored value
+is X-positive globally, consistent with the rest of eval.
+
+**Key.** Linear `slot = (axis as usize) * LINE_ID_RANGE + line_id`.
+`Axis::line_id(c)` (const fn, `axis_bitmap.rs`) returns `usize` in
+`[0, LINE_ID_RANGE)`. Zero-cost.
+
+**Dirty marker.** Sentinel `i32::MIN`. Read path = single bounds-
+checked load + compare. Avoids a parallel dirty bitmap (saves
+memory + branch).
+
+**Lifetime / ownership.** Field on `Board` behind
+`RefCell<Box<[i32]>>`, mirroring the existing `threats_x:
+RefCell<ThreatSet>` pattern (`board.rs:97`). Per-`Board`, not per-
+`Engine` or global; every `Engine` instance gets its own. No
+thread-locals.
+
+**Init.** `Board::new` allocates the array and fills with sentinel
+`i32::MIN` (lazy populate on first read per slot).
+
+**Reset.** `Board::reset` wipes back to sentinel via
+`fill(i32::MIN)`.
+
+**Invalidation.** Each `Board::place` / `Board::undo` /
+`Board::place_for_test` marks the ≤3 slots touched by the placed /
+removed stone dirty (= sentinel). The set of touched lines is
+exactly `(Q_line_id = c.r, R_line_id = c.q, S_line_id = c.q + c.r)`
+— the hardcoded `Axis::all() == [Q, R, S]` loop inside
+`AxisBitmaps::set` / `AxisBitmaps::clear` guarantees this invariant.
+Factored into a private helper to prevent drift across the three
+mutation sites.
+
+**Lazy populate (read path).** The Layer-1 outer iteration in
+`layer1_window_scan_8cell` is unchanged. Per `(axis, line_id)`, the
+cache slot is read; if `== i32::MIN` (dirty), `scan_line_8cell` is
+called and the result stored; otherwise the cached value is
+returned. `scan_line_8cell` itself is untouched and remains the
+recompute path.
+
+**No hidden invalidation paths.** `Board` exposes no `pub` axis
+field and no `axes_mut()` accessor. All axis-bitmap mutation flows
+through `place` / `undo` / `place_for_test`, guaranteeing the
+invalidation hook covers every mutation.
+
 ## Tuning
 
 Eval weights start as listed above. Tune via:

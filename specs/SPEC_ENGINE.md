@@ -40,6 +40,9 @@ pub struct Board {
     zobrist: ZobristTable,
     axes: AxisBitmaps,
     winner: Option<Player>,
+    line_contrib: RefCell<Box<[i32]>>, // Phase 27: per-(axis,line_id) Layer-1
+                                       // contribution cache, sentinel-marked
+                                       // dirty (i32::MIN)
 }
 
 #[repr(u8)]
@@ -494,6 +497,39 @@ Invariants:
   `RefCell::borrow` and a direct return.
 - Initial state after `Board::new` / `Board::reset`: both caches hold
   `ThreatSet::default()` (empty), dirty flag `false`.
+
+### LineContribution Cache on Board (Phase 27)
+
+`Board` also gains:
+```
+line_contrib: RefCell<Box<[i32]>>,  // len = 3 * LINE_ID_RANGE = 1527
+```
+
+Memoises per-`(axis, line_id)` Layer-1 contribution (the value
+returned by `eval::scan_line_8cell`).
+
+- **Key**: linear `slot = (axis as usize) * LINE_ID_RANGE + line_id`.
+  `axis_bitmap::Axis::line_id(c)` resolves the line for a coord.
+- **Value**: single signed `i32`, X-positive. `WINDOW_SCORE_8`
+  already folds X and O contributions into one signed scalar — no
+  per-player split.
+- **Dirty marker**: sentinel `i32::MIN`. No parallel dirty bitmap.
+- **Init / reset**: `Board::new` allocates filled with sentinel.
+  `Board::reset` wipes via `fill(i32::MIN)`.
+- **Invalidation hook**: every `Board::place` / `Board::undo` /
+  `Board::place_for_test` marks the ≤3 slots touched by the placed
+  stone dirty. The set is exactly `(Q_line_id = c.r, R_line_id =
+  c.q, S_line_id = c.q + c.r)` — hardcoded by the `Axis::all() ==
+  [Q, R, S]` loop in `AxisBitmaps::set` / `AxisBitmaps::clear`. The
+  three mutation sites share a private helper to prevent drift.
+- **Recompute path**: lazy. On Layer-1 read, slots equal to
+  `i32::MIN` trigger a call to `scan_line_8cell` and the result is
+  stored. Clean reads return the cached value directly.
+- **Containment**: `Board` exposes no `pub` axis field and no
+  `axes_mut()` accessor — all axis-bitmap mutation funnels through
+  the place/undo path, so the invalidation hook covers every
+  mutation. Per-`Board` ownership; no thread-locals, no global
+  state.
 
 ## Win Detection (`win.rs`)
 

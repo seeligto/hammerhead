@@ -31,6 +31,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 23 | SRP splits — `search`/`engine`, `board` proximity helpers, `cli.py`, `promote.py` | ✅ done |
 | 24 | performance investigation — read-only HOTSPOTS refresh | ✅ done |
 | 25 | optimization quick wins + measurement cleanup | ✅ done |
+| 27 | per-line `LineContribution` cache (Layer-1 delta-update memo) | 🚧 in progress |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -588,12 +589,16 @@ pre/post (trivially, since no engine code changed).
 
 Carried forward — items still open after Phase 25.
 
-- **Per-line `LineContribution` cache** (Phase 24 candidate #2): Layer
-  1 (~31 % of engine) re-scans every populated line on every leaf
-  eval. Cache per-`(axis,line_id)` Layer-1 contribution on `Board`,
-  invalidate the ≤3 lines a placed stone touches. High payoff
-  (~+8–15 %), high difficulty (cache-invalidation lifecycle) —
-  warrants a dedicated phase.
+- **Per-line `LineContribution` cache** (Phase 24 candidate #2):
+  **🚧 promoted to Phase 27 (in progress).** Layer 1 (~31 % of
+  engine, ~27 % cacheable per HOTSPOTS Phase 26.5 / I-HOTPATH) re-
+  scans every populated line on every leaf eval. Cache
+  per-`(axis, line_id)` Layer-1 contribution on `Board` (`Box<[i32]>`
+  of `3 * LINE_ID_RANGE`, sentinel-marked dirty via `i32::MIN`),
+  invalidate the ≤3 lines a placed stone touches. Expected NPS gain
+  +10–15 % real (Amdahl unconstrained +24–28 %). See
+  `specs/SPEC_EVAL.md § LineContribution Cache` and
+  `specs/SPEC_ENGINE.md § LineContribution Cache on Board`.
 - **Search-internal `place` / proximity-skip** (Phase 24 candidate
   #5): the r=8 outer-proximity walk is dead work inside search (every
   searched move is a provably-legal r=2 inner candidate). A

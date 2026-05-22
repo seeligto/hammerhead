@@ -29,6 +29,7 @@ hammerhead-engine/          Rust crate
 │   ├── moves.rs            move gen, legality, candidate cells
 │   ├── win.rs              6-in-row detection
 │   ├── threats.rs          WSC threat classification
+│   ├── line_contrib.rs     per-(axis,line_id) Layer-1 contribution cache (Phase 27)
 │   ├── eval.rs             static eval (3-layer)
 │   ├── zobrist.rs          hash keys, incremental update
 │   ├── tt.rs               transposition table
@@ -71,6 +72,7 @@ One job per file. If file does 2 things, split.
 | `moves` | generate legal candidates, depth-limited radius |
 | `win` | detect 6-in-row after placement (O(1)) |
 | `threats` | classify shapes per WSC tuples |
+| `line_contrib` | per-`(axis, line_id)` Layer-1 contribution cache (Phase 27) — sentinel-marked lazy memoisation, invalidated on `Board::place`/`undo` |
 | `eval` | compute static score from threat counts |
 | `zobrist` | incremental position hash |
 | `tt` | TT lookup/store, depth/bound/flag |
