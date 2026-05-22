@@ -1,12 +1,63 @@
-# Hotspots — Phase 25 (engine unchanged since Phase 24)
+# Hotspots — Phase 25.5 (Tier 1 sweep — new host)
 
-## Phase 25 status
+## Phase 25.5 status (2026-05-22)
+
+Phase 25.5 landed five Tier 1 items (R-03, R-04, R-08, R-05, R-02) from the
+SealBot comparison review on a new host (Ryzen 7 3700x). All five accepted.
+
+**Headline:**
+- bench-quick midgame_12 @ 500ms: 334k → **344.7k NPS (+3.2%)**.
+- macro tt_stats midgame_12 @ 1s: 314k → **355k NPS (+12.9%)**.
+- macro tt_stats midgame_30 @ 1s: 231k → **253k NPS (+9.5%)**.
+- 200-game match vs prior `.bestref`: 171-29-0 (85.5%), Elo +308 [+240, +376].
+- `.bestref` promoted to 932c5d8 (commit `promote: 932c5d8d`).
+
+**Breakdown shift (% of engine self-time, post-Tier-1):**
+
+| Band         | Phase 0 (16e4b82) | Post-Tier-1 (932c5d8) | Δ (pp) |
+|--------------|------------------:|----------------------:|-------:|
+| eval         |          34.13%   |               34.29%  |  +0.2  |
+| board        |          23.38%   |               23.82%  |  +0.4  |
+| search_other |          26.60%   |               27.23%  |  +0.6  |
+| threats      |           8.63%   |                9.09%  |  +0.5  |
+| ordering     |           7.26%   |                **5.56%**  | **−1.7**  |
+| tt / moves   |              0%   |                   0%  |   0    |
+
+Ordering dropped 1.7pp — R-02's fused AxisProbe + R-05's partial-sort win.
+Other bands held within noise. Renormalisation pushes their fractions
+slightly up because the total engine slice shrank.
+
+**Reference node counts: drifted (intentional rebaseline event).**
+R-05 changed the priority tie-break from generation order to Coord pack,
+and R-08-A removed killer cross-call carryover. Both produce ordering
+shape drift → different subtrees explored → different node counts.
+`baseline.json` refreshed to the post-Tier-1 numbers.
+
+**Item-level perf attribution** (cumulative bench-quick mean):
+
+| After | bench-quick NPS | Δ vs Phase 0 | Note |
+|-------|----------------:|-------------:|------|
+| Phase 0 | 334k        |   0%         | post-revert baseline |
+| R-03    | 331k        | −0.9%        | no measurable NPS — alloc cost was hidden; rule enforced |
+| R-04    | 331k        | −0.9%        | no measurable NPS — SmallVec drop-in |
+| R-08    | 332k        | −0.6%        | within noise |
+| R-05    | 343k        | **+2.7%**    | first clear win — partial sort + total-order key |
+| R-02    | 345k        | **+3.2%**    | fused AxisProbe — no Phase 25 regression |
+
+R-05 + R-02 together account for the entire NPS gain; R-03/R-04 are quality
+wins (design rule, code clarity) with no measurable perf impact at this
+hardware/budget.
+
+**Flamegraph:** `flamegraph-2026-05-22T17-38-37-432ddba.svg`.
+
+---
+
+## Phase 25 (superseded — kept for historical reference)
 
 Phase 25 shipped **measurement-infrastructure cleanup only** — its three
 optimization candidates were all attempted and all reverted (below), so
-the **engine source is byte-identical to Phase 24** (`44493f6`) and the
-hotspot ranking, NPS, and depth-at-time are unchanged. The Phase 24
-ranking below still stands verbatim.
+the **engine source was byte-identical to Phase 24** (`44493f6`) until
+Phase 25.5. Phase 25.5 then landed code changes; see above.
 
 **Optimization stream — all three reverted** (under-delivered;
 A/B-confirmed by independent subagents; carried to Phase 26 candidates):

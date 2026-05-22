@@ -1,1411 +1,1411 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-05-21T21:28:00Z",
-  "git_sha": "3ed1b0c",
-  "rustc_version": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "timestamp": "2026-05-22T14:56:40Z",
+  "git_sha": "932c5d8",
+  "rustc_version": "rustc 1.95.0 (59807616e 2026-04-14) (Arch Linux rust 1:1.95.0-1)",
   "host": {
-    "cpu": "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics",
+    "cpu": "AMD Ryzen 7 3700X 8-Core Processor",
     "cores": 16
   },
   "micro": [
     {
       "group": "axis_bitmap::populated_range",
       "name": "empty",
-      "median_ns": 1.7852191368509271,
-      "mad_ns": 0.01607940076485553,
+      "median_ns": 2.8962552013149514,
+      "mad_ns": 0.11961790370592768,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "endgame_60",
-      "median_ns": 124.35281118514906,
-      "mad_ns": 0.3485385701770572,
+      "median_ns": 187.88738715015648,
+      "mad_ns": 1.387240446529221,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "fork_two_open_4",
-      "median_ns": 60.097345904599095,
-      "mad_ns": 0.23283056875448327,
+      "median_ns": 88.28746603644635,
+      "mad_ns": 1.186474894121637,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "midgame_12",
-      "median_ns": 53.31484470485586,
-      "mad_ns": 0.2120897152710808,
+      "median_ns": 78.90015962772495,
+      "mad_ns": 0.9376742307968032,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "midgame_30",
-      "median_ns": 91.015809445435,
-      "mad_ns": 0.27935913327200373,
+      "median_ns": 134.26219720576296,
+      "mad_ns": 1.7663539717931886,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "open_3_x_axis",
-      "median_ns": 31.197373103004367,
-      "mad_ns": 0.23848314078289037,
+      "median_ns": 45.894968840638754,
+      "mad_ns": 0.5758625451400277,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "open_4_x_axis",
-      "median_ns": 42.05793015510362,
-      "mad_ns": 0.30861142520234186,
+      "median_ns": 62.422379165060086,
+      "mad_ns": 0.6983325454380787,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "rhombus",
-      "median_ns": 37.74649161668548,
-      "mad_ns": 0.1811165113651911,
+      "median_ns": 55.86157051668334,
+      "mad_ns": 0.5604564670667787,
       "samples": 100
     },
     {
       "group": "axis_bitmap::populated_range",
       "name": "single_origin",
-      "median_ns": 9.690404782652536,
-      "mad_ns": 0.13950374333635662,
+      "median_ns": 14.489842159971822,
+      "mad_ns": 0.16244093951609004,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "empty",
-      "median_ns": 0.3947550798644971,
-      "mad_ns": 0.0008603430379840808,
+      "median_ns": 0.4770428584210421,
+      "mad_ns": 0.006072044699219611,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "endgame_60",
-      "median_ns": 139.27922340846186,
-      "mad_ns": 1.3286582847950053,
+      "median_ns": 271.5620727122098,
+      "mad_ns": 4.214919144979918,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "fork_two_open_4",
-      "median_ns": 117.55566782620916,
-      "mad_ns": 0.4458494918453417,
+      "median_ns": 246.7722191399151,
+      "mad_ns": 4.6568309411657145,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "midgame_12",
-      "median_ns": 128.71580325572216,
-      "mad_ns": 0.45925940735007104,
+      "median_ns": 231.97005458999175,
+      "mad_ns": 3.5408571528227233,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "midgame_30",
-      "median_ns": 132.8300396454287,
-      "mad_ns": 1.0470375794339473,
+      "median_ns": 251.9568867569605,
+      "mad_ns": 4.691241989562929,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "open_3_x_axis",
-      "median_ns": 69.91187651065356,
-      "mad_ns": 0.3529547427629993,
+      "median_ns": 132.8272903405782,
+      "mad_ns": 2.5124881528316525,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "open_4_x_axis",
-      "median_ns": 114.6666758688176,
-      "mad_ns": 3.6366444979656145,
+      "median_ns": 215.97770281604497,
+      "mad_ns": 3.2090021520279035,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "rhombus",
-      "median_ns": 115.15889638474434,
-      "mad_ns": 0.6473533288940296,
+      "median_ns": 213.62794557921677,
+      "mad_ns": 4.024741371316986,
       "samples": 100
     },
     {
       "group": "axis_bitmap::run_through",
       "name": "single_origin",
-      "median_ns": 12.765887642753391,
-      "mad_ns": 0.07440266759659042,
+      "median_ns": 24.25769005718562,
+      "mad_ns": 0.2625986903743102,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "empty",
-      "median_ns": 1581.0064465408805,
-      "mad_ns": 877.7272745587353,
+      "median_ns": 2934.9,
+      "mad_ns": 1306.858781398161,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "endgame_60",
-      "median_ns": 1038.0303571428572,
-      "mad_ns": 514.0432378843977,
+      "median_ns": 2053.8946428571426,
+      "mad_ns": 971.8813477456574,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "fork_two_open_4",
-      "median_ns": 1209.259236453202,
-      "mad_ns": 679.3410019048036,
+      "median_ns": 2042.8842701014833,
+      "mad_ns": 1204.7638763889431,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "midgame_12",
-      "median_ns": 1181.3100313479624,
-      "mad_ns": 643.5075686381529,
+      "median_ns": 2305.352153110048,
+      "mad_ns": 1116.021878061145,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "midgame_30",
-      "median_ns": 1122.1842105263158,
-      "mad_ns": 583.6885551637725,
+      "median_ns": 2107.127192982456,
+      "mad_ns": 1193.6057582532949,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "open_3_x_axis",
-      "median_ns": 1170.6931336963098,
-      "mad_ns": 612.6989691405678,
+      "median_ns": 2340.1037670038368,
+      "mad_ns": 1213.270519000683,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "open_4_x_axis",
-      "median_ns": 1131.953488372093,
-      "mad_ns": 598.1669975855413,
+      "median_ns": 2151.4435096153848,
+      "mad_ns": 1051.734558649629,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "rhombus",
-      "median_ns": 1149.140873015873,
-      "mad_ns": 608.5843478383988,
+      "median_ns": 2091.186440677966,
+      "mad_ns": 986.545927074618,
       "samples": 100
     },
     {
       "group": "axis_bitmap::set_clear",
       "name": "single_origin",
-      "median_ns": 1471.2875243664716,
-      "mad_ns": 857.7644283973681,
+      "median_ns": 2533.770760233918,
+      "mad_ns": 1374.0368867352013,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "empty",
-      "median_ns": 1267.460344827586,
-      "mad_ns": 893.4300813798245,
+      "median_ns": 2409.0929487179483,
+      "mad_ns": 1442.4679566090874,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "endgame_60",
-      "median_ns": 840.3133414932681,
-      "mad_ns": 503.0269353779324,
+      "median_ns": 1663.2135076252723,
+      "mad_ns": 1195.050714991469,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "fork_two_open_4",
-      "median_ns": 937.1350574712644,
-      "mad_ns": 610.9572953602365,
+      "median_ns": 1957.5333333333333,
+      "mad_ns": 1171.4452824284954,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "midgame_12",
-      "median_ns": 2526.9831027667983,
-      "mad_ns": 2150.165172971516,
+      "median_ns": 1993.1243386243384,
+      "mad_ns": 1309.669533949919,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "midgame_30",
-      "median_ns": 2432.758903133903,
-      "mad_ns": 1491.4437884029148,
+      "median_ns": 2298.1277777777777,
+      "mad_ns": 1104.9980111030843,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "open_3_x_axis",
-      "median_ns": 938.1282051282052,
-      "mad_ns": 628.8948324246284,
+      "median_ns": 1845.9129798308395,
+      "mad_ns": 1268.5782852884795,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "open_4_x_axis",
-      "median_ns": 868.992924528302,
-      "mad_ns": 541.5905452995806,
+      "median_ns": 1950.861607142857,
+      "mad_ns": 1216.645512983558,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "rhombus",
-      "median_ns": 893.1341194968553,
-      "mad_ns": 579.0752005631755,
+      "median_ns": 1779.037356321839,
+      "mad_ns": 1293.9369968556125,
       "samples": 100
     },
     {
       "group": "board::place",
       "name": "single_origin",
-      "median_ns": 4467.614525691699,
-      "mad_ns": 3196.482636457562,
+      "median_ns": 2527.1570512820513,
+      "mad_ns": 1539.6103032546885,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "empty",
-      "median_ns": 6560.846923076922,
-      "mad_ns": 4906.67247052874,
+      "median_ns": 2279.821832579186,
+      "mad_ns": 1115.214970642153,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "endgame_60",
-      "median_ns": 1086.0597527472528,
-      "mad_ns": 472.8972053063195,
+      "median_ns": 2212.135807050093,
+      "mad_ns": 1213.2994434952195,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "fork_two_open_4",
-      "median_ns": 2926.133152173913,
-      "mad_ns": 1905.320496000687,
+      "median_ns": 2515.525044722719,
+      "mad_ns": 1300.942858421818,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "midgame_12",
-      "median_ns": 1228.7888364779874,
-      "mad_ns": 615.8342980290198,
+      "median_ns": 2973.064814814815,
+      "mad_ns": 1425.031046439772,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "midgame_30",
-      "median_ns": 1148.174984875983,
-      "mad_ns": 533.4765131060311,
+      "median_ns": 2334.9123376623374,
+      "mad_ns": 1235.8298307473815,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "open_3_x_axis",
-      "median_ns": 1198.489799121155,
-      "mad_ns": 563.131943679434,
+      "median_ns": 2116.4348710990503,
+      "mad_ns": 1297.8733855995931,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "open_4_x_axis",
-      "median_ns": 1171.372473045822,
-      "mad_ns": 562.9908343321241,
+      "median_ns": 1646.832142857143,
+      "mad_ns": 747.1350383661362,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "rhombus",
-      "median_ns": 1175.3107287449393,
-      "mad_ns": 553.0998266177622,
+      "median_ns": 2168.193131868132,
+      "mad_ns": 1364.1620866410103,
       "samples": 100
     },
     {
       "group": "board::place_undo_roundtrip",
       "name": "single_origin",
-      "median_ns": 4641.577625102544,
-      "mad_ns": 3417.886458188603,
+      "median_ns": 2245.956447963801,
+      "mad_ns": 1248.9647526503868,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "endgame_60",
-      "median_ns": 416.95833333333337,
-      "mad_ns": 245.23784904372383,
+      "median_ns": 1307.8349324804549,
+      "mad_ns": 619.3902031600177,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "fork_two_open_4",
-      "median_ns": 460.33913172762414,
-      "mad_ns": 273.5000346673087,
+      "median_ns": 1169.776191658391,
+      "mad_ns": 405.6881562695836,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "midgame_12",
-      "median_ns": 842.1034615384615,
-      "mad_ns": 522.149324852374,
+      "median_ns": 990.845588235294,
+      "mad_ns": 789.8169018347245,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "midgame_30",
-      "median_ns": 955.3086363636364,
-      "mad_ns": 552.1133279660419,
+      "median_ns": 948.3123563218392,
+      "mad_ns": 630.6540093397357,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "open_3_x_axis",
-      "median_ns": 456.8161527841694,
-      "mad_ns": 259.66012459487735,
+      "median_ns": 916.4363354037268,
+      "mad_ns": 658.4964841426838,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "open_4_x_axis",
-      "median_ns": 963.9583052560648,
-      "mad_ns": 463.2820075122148,
+      "median_ns": 1082.253205128205,
+      "mad_ns": 700.4553713080212,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "rhombus",
-      "median_ns": 443.85253283302063,
-      "mad_ns": 246.9201364868354,
+      "median_ns": 994.5762711864406,
+      "mad_ns": 681.4687620361263,
       "samples": 100
     },
     {
       "group": "board::undo",
       "name": "single_origin",
-      "median_ns": 1389.5787037037037,
-      "mad_ns": 725.0750711460096,
+      "median_ns": 1660.467372881356,
+      "mad_ns": 1104.7211174065103,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "empty",
-      "median_ns": 143.70283018867923,
-      "mad_ns": 98.22715756312304,
+      "median_ns": 245.9396853146853,
+      "mad_ns": 163.18189955049465,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "endgame_60",
-      "median_ns": 4333.615900383142,
-      "mad_ns": 1442.6151825637485,
+      "median_ns": 5721.701235203294,
+      "mad_ns": 1208.5580258562102,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "fork_two_open_4",
-      "median_ns": 2790.3933785860654,
-      "mad_ns": 810.1779858487217,
+      "median_ns": 3543.2754342431763,
+      "mad_ns": 673.7943158239655,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "midgame_12",
-      "median_ns": 2079.467823450135,
-      "mad_ns": 405.3674317120288,
+      "median_ns": 2366.3011191772534,
+      "mad_ns": 462.4827412211084,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "midgame_30",
-      "median_ns": 3784.945098039216,
-      "mad_ns": 1101.3966807419154,
+      "median_ns": 5296.832001682085,
+      "mad_ns": 466.61256935694576,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "open_3_x_axis",
-      "median_ns": 1447.0681818181818,
-      "mad_ns": 751.6093307274132,
+      "median_ns": 2013.6557692307692,
+      "mad_ns": 950.8467494511629,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "open_4_x_axis",
-      "median_ns": 1919.6993006993007,
-      "mad_ns": 957.832789610016,
+      "median_ns": 2746.8223502304145,
+      "mad_ns": 668.7298912212206,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "rhombus",
-      "median_ns": 1850.0362560118388,
-      "mad_ns": 957.2599754942602,
+      "median_ns": 2477.322916666667,
+      "mad_ns": 783.6842230998298,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_cold",
       "name": "single_origin",
-      "median_ns": 667.0614583333333,
-      "mad_ns": 492.2448125109077,
+      "median_ns": 775.5311447811448,
+      "mad_ns": 495.97979157006785,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "empty",
-      "median_ns": 0.3942201942625044,
-      "mad_ns": 0.00019918241140775815,
+      "median_ns": 0.483055939746619,
+      "mad_ns": 0.007775815701827533,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "endgame_60",
-      "median_ns": 0.3941848424711442,
-      "mad_ns": 0.00013980974990090216,
+      "median_ns": 0.4834821265957263,
+      "mad_ns": 0.010901642590877995,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "fork_two_open_4",
-      "median_ns": 0.3947388696729558,
-      "mad_ns": 0.0005536457974757994,
+      "median_ns": 0.4803567093395573,
+      "mad_ns": 0.00785127232990019,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "midgame_12",
-      "median_ns": 0.3941764247705688,
-      "mad_ns": 0.00012284063174848248,
+      "median_ns": 0.4801637532012846,
+      "mad_ns": 0.008782114849448146,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "midgame_30",
-      "median_ns": 0.3942028526347997,
-      "mad_ns": 0.00018469868073032675,
+      "median_ns": 0.4778942495585201,
+      "mad_ns": 0.00678777133304683,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "open_3_x_axis",
-      "median_ns": 0.3944011159423106,
-      "mad_ns": 0.0004460393432008253,
+      "median_ns": 0.47958147036210913,
+      "mad_ns": 0.006065417681976588,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "open_4_x_axis",
-      "median_ns": 0.3946170304699661,
-      "mad_ns": 0.000766877358404679,
+      "median_ns": 0.4800811892761358,
+      "mad_ns": 0.005357532678357739,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "rhombus",
-      "median_ns": 0.3942187027955748,
-      "mad_ns": 0.0001909236388512101,
+      "median_ns": 0.4783166415973407,
+      "mad_ns": 0.007617606498048214,
       "samples": 100
     },
     {
       "group": "eval::cached_eval_warm",
       "name": "single_origin",
-      "median_ns": 0.3946441399973164,
-      "mad_ns": 0.0007861901405390789,
+      "median_ns": 0.4823027704292491,
+      "mad_ns": 0.007827335324914145,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "empty",
-      "median_ns": 6.730806140858928,
-      "mad_ns": 0.028214201916485986,
+      "median_ns": 12.647851672874513,
+      "mad_ns": 0.1363407028507532,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "endgame_60",
-      "median_ns": 1332.1536284165522,
-      "mad_ns": 5.91646986287225,
+      "median_ns": 2034.9491014036469,
+      "mad_ns": 29.776850517742957,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "fork_two_open_4",
-      "median_ns": 703.207798383262,
-      "mad_ns": 4.019183149044697,
+      "median_ns": 1067.4583415042948,
+      "mad_ns": 15.70410964146667,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "midgame_12",
-      "median_ns": 441.42306840927824,
-      "mad_ns": 1.1423347259222525,
+      "median_ns": 655.5279642988532,
+      "mad_ns": 6.383873994111332,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "midgame_30",
-      "median_ns": 825.5786282823437,
-      "mad_ns": 3.980228702249779,
+      "median_ns": 1295.553564162038,
+      "mad_ns": 13.914129730416274,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "open_3_x_axis",
-      "median_ns": 371.1438843406996,
-      "mad_ns": 3.111193834207653,
+      "median_ns": 504.80434695635336,
+      "mad_ns": 5.940382890482915,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "open_4_x_axis",
-      "median_ns": 558.7443787983134,
-      "mad_ns": 1.364949709905951,
+      "median_ns": 742.8765437302893,
+      "mad_ns": 9.908802631018272,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "rhombus",
-      "median_ns": 501.0273094861453,
-      "mad_ns": 0.5393237869550987,
+      "median_ns": 685.6574237297564,
+      "mad_ns": 9.698363480208412,
       "samples": 100
     },
     {
       "group": "eval::layer1_window_scan",
       "name": "single_origin",
-      "median_ns": 102.81729319760208,
-      "mad_ns": 0.725229992847089,
+      "median_ns": 134.5353606356968,
+      "mad_ns": 1.462161711248448,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "empty",
-      "median_ns": 0.9645245661512404,
-      "mad_ns": 0.006734901218402384,
+      "median_ns": 1.359708445810579,
+      "mad_ns": 0.028407757037983424,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "endgame_60",
-      "median_ns": 0.9703789867766218,
-      "mad_ns": 0.01286647801867252,
+      "median_ns": 1.356718862129327,
+      "mad_ns": 0.034394939883364214,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "fork_two_open_4",
-      "median_ns": 0.9766543092118544,
-      "mad_ns": 0.00990401294868764,
+      "median_ns": 1.3500639531819545,
+      "mad_ns": 0.01842454874665036,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "midgame_12",
-      "median_ns": 0.9770759639751248,
-      "mad_ns": 0.010721565722691532,
+      "median_ns": 1.349357753022323,
+      "mad_ns": 0.01580087595776424,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "midgame_30",
-      "median_ns": 0.966502785518684,
-      "mad_ns": 0.0084767691396475,
+      "median_ns": 1.373210067015152,
+      "mad_ns": 0.08084880191619934,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "open_3_x_axis",
-      "median_ns": 0.966790997696742,
-      "mad_ns": 0.010388825429972978,
+      "median_ns": 1.3752413075709928,
+      "mad_ns": 0.08289787469317418,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "open_4_x_axis",
-      "median_ns": 0.9763675197830718,
-      "mad_ns": 0.007965255238619216,
+      "median_ns": 1.3684754971289614,
+      "mad_ns": 0.037599920185728906,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "rhombus",
-      "median_ns": 0.9711827229784512,
-      "mad_ns": 0.013924335879504233,
+      "median_ns": 1.3606919668537998,
+      "mad_ns": 0.029670558649758847,
       "samples": 100
     },
     {
       "group": "eval::layer2_shapes",
       "name": "single_origin",
-      "median_ns": 0.9658760892338428,
-      "mad_ns": 0.007750241672838401,
+      "median_ns": 1.3795805848714005,
+      "mad_ns": 0.07452773617863001,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "empty",
-      "median_ns": 4.336908634923882,
-      "mad_ns": 0.0020635498773464048,
+      "median_ns": 4.881414291654558,
+      "mad_ns": 0.01709548606234245,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "endgame_60",
-      "median_ns": 49.42538478362864,
-      "mad_ns": 0.5253320933692024,
+      "median_ns": 79.22546710094613,
+      "mad_ns": 0.9822835620565412,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "fork_two_open_4",
-      "median_ns": 9.45917808018408,
-      "mad_ns": 0.03043451910480624,
+      "median_ns": 13.771468630951308,
+      "mad_ns": 0.20897817329625332,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "midgame_12",
-      "median_ns": 4.33681802615639,
-      "mad_ns": 0.0022364557546609306,
+      "median_ns": 4.869188925106382,
+      "mad_ns": 0.01826275275029187,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "midgame_30",
-      "median_ns": 5.9146544646063,
-      "mad_ns": 0.004112904152827842,
+      "median_ns": 7.693315934465501,
+      "mad_ns": 0.03655115968396468,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "open_3_x_axis",
-      "median_ns": 4.336300558101959,
-      "mad_ns": 0.0018217770057059064,
+      "median_ns": 4.8782283189478015,
+      "mad_ns": 0.014238834116155888,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "open_4_x_axis",
-      "median_ns": 4.336334860058674,
-      "mad_ns": 0.001823656073747256,
+      "median_ns": 4.874649959646215,
+      "mad_ns": 0.021550971844819248,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "rhombus",
-      "median_ns": 4.337284026690349,
-      "mad_ns": 0.00299711211874041,
+      "median_ns": 4.870617161218285,
+      "mad_ns": 0.017315325598814282,
       "samples": 100
     },
     {
       "group": "eval::layer3_fork_bonus",
       "name": "single_origin",
-      "median_ns": 4.337854753845868,
-      "mad_ns": 0.0042267771844604245,
+      "median_ns": 4.86931864565193,
+      "mad_ns": 0.01537190187185933,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "empty",
-      "median_ns": 8.396572387701722,
-      "mad_ns": 0.1987000294870947,
+      "median_ns": 1.1781086112343622,
+      "mad_ns": 0.009628530539970336,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "endgame_60",
-      "median_ns": 17.919065339201712,
-      "mad_ns": 0.28083546289162015,
+      "median_ns": 5.16649929737696,
+      "mad_ns": 0.026632234034958378,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "fork_two_open_4",
-      "median_ns": 18.10453254433179,
-      "mad_ns": 0.15128081351160808,
+      "median_ns": 6.957823856685155,
+      "mad_ns": 0.12996699996858546,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "midgame_12",
-      "median_ns": 20.050076287111363,
-      "mad_ns": 0.5127584537755777,
+      "median_ns": 4.386100226993189,
+      "mad_ns": 0.029459532988471294,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "midgame_30",
-      "median_ns": 23.92231951397636,
-      "mad_ns": 0.2281226612203161,
+      "median_ns": 5.003613775194214,
+      "mad_ns": 0.04701439182990228,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "open_3_x_axis",
-      "median_ns": 26.38884448766318,
-      "mad_ns": 0.3045759336104909,
+      "median_ns": 6.869278487567052,
+      "mad_ns": 0.12264046802618488,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "open_4_x_axis",
-      "median_ns": 18.35776886321495,
-      "mad_ns": 0.22635456636844445,
+      "median_ns": 5.731988526505699,
+      "mad_ns": 0.3662031549580791,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "rhombus",
-      "median_ns": 17.420663581080277,
-      "mad_ns": 0.17702267269712255,
+      "median_ns": 5.022253484997616,
+      "mad_ns": 0.05333310068559588,
       "samples": 100
     },
     {
       "group": "moves::generate(r=2)",
       "name": "single_origin",
-      "median_ns": 10.927251333774862,
-      "mad_ns": 0.3857099111264793,
+      "median_ns": 3.4293618218771424,
+      "mad_ns": 0.02405137959047642,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "empty",
-      "median_ns": 8.3221403430699,
-      "mad_ns": 0.10031732550764792,
+      "median_ns": 1.176617526166316,
+      "mad_ns": 0.009220416589314582,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "endgame_60",
-      "median_ns": 6877.600359848485,
-      "mad_ns": 27.45992389485715,
+      "median_ns": 11019.145030712709,
+      "mad_ns": 211.879031418865,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "fork_two_open_4",
-      "median_ns": 2427.875749178982,
-      "mad_ns": 4.687567000476408,
+      "median_ns": 3667.457579058559,
+      "mad_ns": 60.628925590288006,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "midgame_12",
-      "median_ns": 1750.1578115682769,
-      "mad_ns": 2.5690173768066997,
+      "median_ns": 2627.624211045365,
+      "mad_ns": 37.86677353605539,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "midgame_30",
-      "median_ns": 3828.519948135504,
-      "mad_ns": 8.72193257950291,
+      "median_ns": 5820.210171568628,
+      "mad_ns": 104.37144360808551,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "open_3_x_axis",
-      "median_ns": 962.600900527205,
-      "mad_ns": 3.1023626293923168,
+      "median_ns": 1453.3851078561397,
+      "mad_ns": 15.445304283483296,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "open_4_x_axis",
-      "median_ns": 1370.8701010550644,
-      "mad_ns": 4.287550371565419,
+      "median_ns": 2091.394325564972,
+      "mad_ns": 30.390006094041237,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "rhombus",
-      "median_ns": 1400.585130423554,
-      "mad_ns": 5.480692518382177,
+      "median_ns": 2122.8535431431046,
+      "mad_ns": 35.01356236437037,
       "samples": 100
     },
     {
       "group": "moves::generate(r=4)",
       "name": "single_origin",
-      "median_ns": 304.6499530801501,
-      "mad_ns": 1.6450334965411872,
+      "median_ns": 393.1248343641036,
+      "mad_ns": 2.619474312539933,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "empty",
-      "median_ns": 8.346104173905418,
-      "mad_ns": 0.11405672516933572,
+      "median_ns": 1.1892476955628366,
+      "mad_ns": 0.024020837119295407,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "endgame_60",
-      "median_ns": 26894.431266087515,
-      "mad_ns": 42.98200195469218,
+      "median_ns": 49481.9864010989,
+      "mad_ns": 248.3129662601958,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "fork_two_open_4",
-      "median_ns": 7670.593573676215,
-      "mad_ns": 24.882561644038,
+      "median_ns": 11829.256811303185,
+      "mad_ns": 103.37328853989509,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "midgame_12",
-      "median_ns": 5816.045420296821,
-      "mad_ns": 48.944277605655365,
+      "median_ns": 8568.732142857143,
+      "mad_ns": 75.73721868664447,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "midgame_30",
-      "median_ns": 14114.441578947368,
-      "mad_ns": 43.31451355338169,
+      "median_ns": 21430.215089605736,
+      "mad_ns": 259.51580501991583,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "open_3_x_axis",
-      "median_ns": 2786.3513214806317,
-      "mad_ns": 6.02754843641355,
+      "median_ns": 4349.945758859261,
+      "mad_ns": 30.390959365989843,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "open_4_x_axis",
-      "median_ns": 4093.8193068095625,
-      "mad_ns": 10.089537074006968,
+      "median_ns": 6548.56766204687,
+      "mad_ns": 173.500955395575,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "rhombus",
-      "median_ns": 4151.545563185424,
-      "mad_ns": 9.308892830514974,
+      "median_ns": 6473.308518518518,
+      "mad_ns": 60.01688696012843,
       "samples": 100
     },
     {
       "group": "moves::generate(r=8)",
       "name": "single_origin",
-      "median_ns": 887.2427150541289,
-      "mad_ns": 4.943862290176281,
+      "median_ns": 1390.8416705625682,
+      "mad_ns": 25.66369984241471,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "empty",
-      "median_ns": 12.864690142248984,
-      "mad_ns": 0.19881102113178065,
+      "median_ns": 14.677773544394022,
+      "mad_ns": 0.07683201750311658,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "endgame_60",
-      "median_ns": 3154.3475761282434,
-      "mad_ns": 25.722550905057883,
+      "median_ns": 4470.553753980224,
+      "mad_ns": 17.120724872124455,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "fork_two_open_4",
-      "median_ns": 2823.454094472225,
-      "mad_ns": 25.57903988562772,
+      "median_ns": 3826.0837886127215,
+      "mad_ns": 28.71535522378262,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "midgame_12",
-      "median_ns": 1501.7509633979253,
-      "mad_ns": 16.435818157797762,
+      "median_ns": 1859.7265420560748,
+      "mad_ns": 41.51665547194688,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "midgame_30",
-      "median_ns": 2262.1817483918594,
-      "mad_ns": 19.87157789886927,
+      "median_ns": 2992.440141414141,
+      "mad_ns": 16.5004553958288,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "open_3_x_axis",
-      "median_ns": 2109.415379646035,
-      "mad_ns": 25.051696734947363,
+      "median_ns": 2483.3176303643877,
+      "mad_ns": 12.347496053475346,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "open_4_x_axis",
-      "median_ns": 2335.324325988849,
-      "mad_ns": 23.736270401957505,
+      "median_ns": 2771.9973299375615,
+      "mad_ns": 13.934034142212564,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "rhombus",
-      "median_ns": 2242.755807208148,
-      "mad_ns": 23.42580055657942,
+      "median_ns": 2608.229730091337,
+      "mad_ns": 46.51599210724864,
       "samples": 100
     },
     {
       "group": "ordering::bucket_value",
       "name": "single_origin",
-      "median_ns": 763.3517331405397,
-      "mad_ns": 9.797159796942788,
+      "median_ns": 912.1306373767086,
+      "mad_ns": 4.80158917564446,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "empty",
-      "median_ns": 32.153611392373264,
-      "mad_ns": 0.11150198141959726,
+      "median_ns": 44.86547598774574,
+      "mad_ns": 1.6205062770850411,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "endgame_60",
-      "median_ns": 4001.433917744816,
-      "mad_ns": 20.472806054449393,
+      "median_ns": 5160.374414884125,
+      "mad_ns": 18.15625714384281,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "fork_two_open_4",
-      "median_ns": 3569.9763268189035,
-      "mad_ns": 26.281879292620314,
+      "median_ns": 4605.59724949614,
+      "mad_ns": 41.32489770153189,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "midgame_12",
-      "median_ns": 2036.8592685185183,
-      "mad_ns": 13.818332442651649,
+      "median_ns": 2534.8798639340557,
+      "mad_ns": 23.947139484210084,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "midgame_30",
-      "median_ns": 3017.329674708397,
-      "mad_ns": 24.071075151856093,
+      "median_ns": 3721.68214638656,
+      "mad_ns": 21.20671042768784,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "open_3_x_axis",
-      "median_ns": 2782.2553801369277,
-      "mad_ns": 31.06696509539832,
+      "median_ns": 3427.5328759881527,
+      "mad_ns": 16.31367980029483,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "open_4_x_axis",
-      "median_ns": 3131.279218134622,
-      "mad_ns": 54.19805963119882,
+      "median_ns": 3730.2299402985072,
+      "mad_ns": 29.48414405432976,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "rhombus",
-      "median_ns": 2731.153567200047,
-      "mad_ns": 21.94803189090882,
+      "median_ns": 3497.3513778465303,
+      "mad_ns": 12.41531494729849,
       "samples": 100
     },
     {
       "group": "ordering::order_moves",
       "name": "single_origin",
-      "median_ns": 1053.357409039406,
-      "mad_ns": 10.450904088339476,
+      "median_ns": 1422.1052144535577,
+      "mad_ns": 8.44768651189709,
       "samples": 100
     },
     {
       "group": "search::search_root(depth=2)",
       "name": "midgame_12",
-      "median_ns": 3325504.532352941,
-      "mad_ns": 12279.043664552411,
+      "median_ns": 3890983.007575758,
+      "mad_ns": 20218.39274218858,
       "samples": 10
     },
     {
       "group": "search::search_root(depth=4)",
       "name": "midgame_12",
-      "median_ns": 32385377.5,
-      "mad_ns": 32799.55921769142,
+      "median_ns": 76469812.96875,
+      "mad_ns": 91558.76224326176,
       "samples": 10
     },
     {
       "group": "search::search_root(depth=6)",
       "name": "midgame_12",
-      "median_ns": 895469685.5,
-      "mad_ns": 74427059.82765555,
+      "median_ns": 845377669.0,
+      "mad_ns": 2507781.531777978,
       "samples": 10
     },
     {
       "group": "threats::compute_full",
       "name": "empty",
-      "median_ns": 15.629616066021123,
-      "mad_ns": 0.04537693462215878,
+      "median_ns": 53.16751995508491,
+      "mad_ns": 0.23465572263643744,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "endgame_60",
-      "median_ns": 3017.2856880733943,
-      "mad_ns": 2.9495971625753357,
+      "median_ns": 4430.449299415213,
+      "mad_ns": 9.266619192734549,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "fork_two_open_4",
-      "median_ns": 921.9572486392112,
-      "mad_ns": 1.3094282480322983,
+      "median_ns": 1270.7754039565975,
+      "mad_ns": 8.319966931995841,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "midgame_12",
-      "median_ns": 697.81661320894,
-      "mad_ns": 2.1658076237830612,
+      "median_ns": 1022.0498793946604,
+      "mad_ns": 2.642700134238909,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "midgame_30",
-      "median_ns": 1630.6420346099085,
-      "mad_ns": 2.444152229032601,
+      "median_ns": 2384.9577750562694,
+      "mad_ns": 8.170298091394002,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "open_3_x_axis",
-      "median_ns": 227.10095035936533,
-      "mad_ns": 1.0976701395431063,
+      "median_ns": 368.8447436639916,
+      "mad_ns": 1.5583950914692075,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "open_4_x_axis",
-      "median_ns": 431.73885895841966,
-      "mad_ns": 0.5010840505970088,
+      "median_ns": 647.4458238300626,
+      "mad_ns": 1.2956890537500347,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "rhombus",
-      "median_ns": 373.2542188275386,
-      "mad_ns": 1.2269004361104243,
+      "median_ns": 594.9237373382687,
+      "mad_ns": 2.36649284248002,
       "samples": 100
     },
     {
       "group": "threats::compute_full",
       "name": "single_origin",
-      "median_ns": 51.82911882747409,
-      "mad_ns": 0.20216406230770345,
+      "median_ns": 114.12491518849278,
+      "mad_ns": 0.35532464104989436,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "empty",
-      "median_ns": 0.3942503746346402,
-      "mad_ns": 0.00021517084881403063,
+      "median_ns": 0.4587794337331974,
+      "mad_ns": 0.0010501286351527592,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "endgame_60",
-      "median_ns": 1.1946930587008366,
-      "mad_ns": 0.018051171411838107,
+      "median_ns": 1.7319921743814717,
+      "mad_ns": 0.04458175547499151,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "fork_two_open_4",
-      "median_ns": 1.2259288408959068,
-      "mad_ns": 0.0655155387138695,
+      "median_ns": 1.2930752016532263,
+      "mad_ns": 0.04139372529182108,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "midgame_12",
-      "median_ns": 0.39425019901212777,
-      "mad_ns": 0.00019272715701248357,
+      "median_ns": 0.45837056359291733,
+      "mad_ns": 0.0004153907920485132,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "midgame_30",
-      "median_ns": 0.7885008956512873,
-      "mad_ns": 0.00042379390132562975,
+      "median_ns": 0.9256224590784544,
+      "mad_ns": 0.0004510470856582055,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "open_3_x_axis",
-      "median_ns": 0.39419586093187553,
-      "mad_ns": 0.00013451114002307815,
+      "median_ns": 0.45992405707968576,
+      "mad_ns": 0.0007807441522535166,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "open_4_x_axis",
-      "median_ns": 0.7884814866235434,
-      "mad_ns": 0.0004356752945088413,
+      "median_ns": 0.9244347451524636,
+      "mad_ns": 0.007877165860451181,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "rhombus",
-      "median_ns": 0.39421585413179394,
-      "mad_ns": 0.00014623767382293247,
+      "median_ns": 0.46001343731493743,
+      "mad_ns": 0.00017336765425720593,
       "samples": 100
     },
     {
       "group": "threats::defense_cells_read",
       "name": "single_origin",
-      "median_ns": 0.394217431275792,
-      "mad_ns": 0.00015351126668225462,
+      "median_ns": 0.4599145730565927,
+      "mad_ns": 0.0015517493219114698,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/empty",
-      "median_ns": 238.1306394174731,
-      "mad_ns": 0.3612964269017434,
+      "median_ns": 328.2011057128709,
+      "mad_ns": 1.426085190234042,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/endgame_60",
-      "median_ns": 242.097385485673,
-      "mad_ns": 2.5885452773403967,
+      "median_ns": 388.7612643927067,
+      "mad_ns": 4.275499320226033,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/fork_two_open_4",
-      "median_ns": 247.76765002147928,
-      "mad_ns": 0.8987765642500247,
+      "median_ns": 387.6307062248621,
+      "mad_ns": 2.0039398783347853,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/midgame_12",
-      "median_ns": 239.51063697686592,
-      "mad_ns": 0.7827503877031966,
+      "median_ns": 385.38247563352826,
+      "mad_ns": 0.992229650308011,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/midgame_30",
-      "median_ns": 242.43327540522856,
-      "mad_ns": 0.482837691938159,
+      "median_ns": 381.2407942857248,
+      "mad_ns": 0.3635173151824042,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/open_3_x_axis",
-      "median_ns": 241.97988806351788,
-      "mad_ns": 0.2289270413691763,
+      "median_ns": 387.9226353472952,
+      "mad_ns": 1.6490907847926528,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/open_4_x_axis",
-      "median_ns": 241.1979428328628,
-      "mad_ns": 1.637440090120165,
+      "median_ns": 385.2551730142796,
+      "mad_ns": 0.7190177038561134,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/rhombus",
-      "median_ns": 238.00169976300296,
-      "mad_ns": 0.4514572953164878,
+      "median_ns": 385.2473768505347,
+      "mad_ns": 1.8009698744834937,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "hit/single_origin",
-      "median_ns": 240.84460792506576,
-      "mad_ns": 2.2005908602534867,
+      "median_ns": 390.4560711070892,
+      "mad_ns": 1.6725475741238052,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/empty",
-      "median_ns": 237.19305623010092,
-      "mad_ns": 0.586873778285317,
+      "median_ns": 324.02447774225163,
+      "mad_ns": 2.2962843889865594,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/endgame_60",
-      "median_ns": 236.9039171085755,
-      "mad_ns": 1.1215268320730676,
+      "median_ns": 300.16823306377216,
+      "mad_ns": 1.396860847198769,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/fork_two_open_4",
-      "median_ns": 211.3708737065482,
-      "mad_ns": 0.2196436194632615,
+      "median_ns": 299.7405268195752,
+      "mad_ns": 0.598028388232816,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/midgame_12",
-      "median_ns": 210.9963386244096,
-      "mad_ns": 0.4595231415387224,
+      "median_ns": 301.1787967485925,
+      "mad_ns": 0.7022093524697014,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/midgame_30",
-      "median_ns": 242.62242377188028,
-      "mad_ns": 0.6484315781063076,
+      "median_ns": 299.99912601487176,
+      "mad_ns": 0.36109163076801915,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/open_3_x_axis",
-      "median_ns": 240.2586540410776,
-      "mad_ns": 1.0400941891348874,
+      "median_ns": 304.908139989198,
+      "mad_ns": 0.8335821693796411,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/open_4_x_axis",
-      "median_ns": 209.86338368741804,
-      "mad_ns": 0.08864507182277742,
+      "median_ns": 304.9570633996016,
+      "mad_ns": 1.2072427298891126,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/rhombus",
-      "median_ns": 213.988525410867,
-      "mad_ns": 0.21630116223665463,
+      "median_ns": 303.6470168924257,
+      "mad_ns": 0.7376785132692955,
       "samples": 100
     },
     {
       "group": "tt::probe",
       "name": "miss/single_origin",
-      "median_ns": 238.23788567844943,
-      "mad_ns": 0.20625678445502235,
+      "median_ns": 304.8297224623183,
+      "mad_ns": 0.4095493383741634,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/empty",
-      "median_ns": 2739.5206916099773,
-      "mad_ns": 1308.915656047816,
+      "median_ns": 3439.6612787356325,
+      "mad_ns": 1749.0629265712212,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/endgame_60",
-      "median_ns": 2669.2847058823527,
-      "mad_ns": 1166.718474090572,
+      "median_ns": 3615.303921568627,
+      "mad_ns": 1551.084730071034,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/fork_two_open_4",
-      "median_ns": 2651.5751050420167,
-      "mad_ns": 1007.7013245604776,
+      "median_ns": 3722.700255102041,
+      "mad_ns": 1828.004584213098,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/midgame_12",
-      "median_ns": 2534.8363412633307,
-      "mad_ns": 1091.839564120092,
+      "median_ns": 3776.2565913371,
+      "mad_ns": 1392.7095369961337,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/midgame_30",
-      "median_ns": 2777.7422832980974,
-      "mad_ns": 889.6073966889574,
+      "median_ns": 3299.4001623376626,
+      "mad_ns": 1872.30783110048,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/open_3_x_axis",
-      "median_ns": 2411.6478354978353,
-      "mad_ns": 1182.838277851895,
+      "median_ns": 3279.180372807017,
+      "mad_ns": 1844.268769478331,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/open_4_x_axis",
-      "median_ns": 2519.254901960784,
-      "mad_ns": 1120.6346410803678,
+      "median_ns": 3588.272727272727,
+      "mad_ns": 1791.9574541434615,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/rhombus",
-      "median_ns": 2572.7197255574615,
-      "mad_ns": 992.5035713794524,
+      "median_ns": 3627.986359761296,
+      "mad_ns": 1589.6390750761514,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "always_replace/single_origin",
-      "median_ns": 2587.377492877493,
-      "mad_ns": 1114.2048592523115,
+      "median_ns": 3647.2400974025977,
+      "mad_ns": 1486.4088645712457,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/empty",
-      "median_ns": 3263.0597072419105,
-      "mad_ns": 842.114570324766,
+      "median_ns": 4337.750418060201,
+      "mad_ns": 1787.137677386391,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/endgame_60",
-      "median_ns": 3051.6699939503933,
-      "mad_ns": 1150.3196101576173,
+      "median_ns": 4456.367676767677,
+      "mad_ns": 1623.9770365340096,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/fork_two_open_4",
-      "median_ns": 3657.717261904762,
-      "mad_ns": 653.8854217245463,
+      "median_ns": 4284.979273504274,
+      "mad_ns": 1863.5011436230689,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/midgame_12",
-      "median_ns": 3122.404597701149,
-      "mad_ns": 1016.35922066121,
+      "median_ns": 4563.51763322884,
+      "mad_ns": 1506.8306844553042,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/midgame_30",
-      "median_ns": 3387.5055141579733,
-      "mad_ns": 941.69081311924,
+      "median_ns": 4604.4152542372885,
+      "mad_ns": 1448.7596807067207,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/open_3_x_axis",
-      "median_ns": 3271.763673890609,
-      "mad_ns": 1028.7651150755514,
+      "median_ns": 4154.610969387755,
+      "mad_ns": 1741.364146145046,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/open_4_x_axis",
-      "median_ns": 3112.4485088536812,
-      "mad_ns": 879.720109381846,
+      "median_ns": 4291.662852784134,
+      "mad_ns": 1623.378178262025,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/rhombus",
-      "median_ns": 3036.788325471698,
-      "mad_ns": 945.9674053479722,
+      "median_ns": 4198.583711262283,
+      "mad_ns": 1569.9776796630947,
       "samples": 100
     },
     {
       "group": "tt::store",
       "name": "depth_preferred/single_origin",
-      "median_ns": 3081.2814143775568,
-      "mad_ns": 1143.9475775860703,
+      "median_ns": 4473.189010261503,
+      "mad_ns": 1556.3811926652816,
       "samples": 100
     }
   ],
@@ -1415,29 +1415,29 @@
         "fixture": "empty",
         "time_ms": 1000,
         "depth_reached": 7,
-        "nodes": 495616,
-        "nps": 819200.0
+        "nodes": 303104,
+        "nps": 497707.71756978653
       },
       {
         "fixture": "single_origin",
         "time_ms": 1000,
         "depth_reached": 6,
-        "nodes": 499712,
-        "nps": 827337.7483443709
+        "nodes": 266240,
+        "nps": 441525.7048092869
       },
       {
         "fixture": "midgame_12",
         "time_ms": 1000,
         "depth_reached": 5,
-        "nodes": 212992,
-        "nps": 532480.0
+        "nodes": 143360,
+        "nps": 354851.48514851485
       },
       {
         "fixture": "midgame_30",
         "time_ms": 1000,
-        "depth_reached": 7,
-        "nodes": 159744,
-        "nps": 393458.1280788177
+        "depth_reached": 6,
+        "nodes": 102400,
+        "nps": 253465.34653465345
       },
       {
         "fixture": "endgame_60",
@@ -1466,7 +1466,7 @@
       {
         "fixture": "midgame_30",
         "time_ms": 1000,
-        "depth_reached": 7
+        "depth_reached": 6
       },
       {
         "fixture": "endgame_60",
@@ -1477,41 +1477,41 @@
     "threat_latency": [
       {
         "fixture": "empty",
-        "cold_us": 0.06640625,
-        "warm_us": 0.058109375,
+        "cold_us": 0.109765625,
+        "warm_us": 0.096078125,
         "samples": 64
       },
       {
         "fixture": "single_origin",
-        "cold_us": 0.228421875,
-        "warm_us": 0.05478125,
+        "cold_us": 0.4221875,
+        "warm_us": 0.097859375,
         "samples": 64
       },
       {
         "fixture": "midgame_12",
-        "cold_us": 0.861109375,
-        "warm_us": 0.0669375,
+        "cold_us": 1.496640625,
+        "warm_us": 0.110921875,
         "samples": 64
       },
       {
         "fixture": "midgame_30",
-        "cold_us": 1.818578125,
-        "warm_us": 0.0605625,
+        "cold_us": 2.98128125,
+        "warm_us": 0.1089375,
         "samples": 64
       },
       {
         "fixture": "endgame_60",
-        "cold_us": 1.87709375,
-        "warm_us": 0.06009375,
+        "cold_us": 3.093375,
+        "warm_us": 0.109359375,
         "samples": 64
       }
     ],
     "selfplay_throughput": [
       {
         "games": 5,
-        "plies_total": 603,
-        "wall_seconds": 81.32223298899953,
-        "plies_per_sec": 7.414946415472481,
+        "plies_total": 299,
+        "wall_seconds": 40.054674289000104,
+        "plies_per_sec": 7.464796688712857,
         "time_per_stone_ms": 250
       }
     ],
@@ -1533,44 +1533,44 @@
       {
         "fixture": "empty",
         "depth": 3,
-        "nodes": 903,
+        "nodes": 901,
         "ms": 0,
-        "tt_hit_rate": 0.012875536480686695
+        "tt_hit_rate": 0.012903225806451613
       },
       {
         "fixture": "empty",
         "depth": 4,
-        "nodes": 5778,
-        "ms": 5,
-        "tt_hit_rate": 0.34255202628696607
+        "nodes": 6105,
+        "ms": 8,
+        "tt_hit_rate": 0.3026525198938992
       },
       {
         "fixture": "empty",
         "depth": 5,
-        "nodes": 36728,
-        "ms": 36,
-        "tt_hit_rate": 0.18700141927274508
+        "nodes": 41545,
+        "ms": 63,
+        "tt_hit_rate": 0.1639509417433202
       },
       {
         "fixture": "empty",
         "depth": 6,
-        "nodes": 45458,
-        "ms": 44,
-        "tt_hit_rate": 0.19450366293267182
+        "nodes": 62702,
+        "ms": 98,
+        "tt_hit_rate": 0.25196914113077257
       },
       {
         "fixture": "empty",
         "depth": 7,
-        "nodes": 118954,
-        "ms": 120,
-        "tt_hit_rate": 0.1347953998395293
+        "nodes": 151042,
+        "ms": 244,
+        "tt_hit_rate": 0.18905525593717476
       },
       {
         "fixture": "empty",
         "depth": 8,
-        "nodes": 4322505,
-        "ms": 6683,
-        "tt_hit_rate": 0.17399538954326335
+        "nodes": 1575322,
+        "ms": 3359,
+        "tt_hit_rate": 0.14565100651659627
       },
       {
         "fixture": "single_origin",
@@ -1582,107 +1582,107 @@
       {
         "fixture": "single_origin",
         "depth": 2,
-        "nodes": 898,
+        "nodes": 896,
         "ms": 0,
-        "tt_hit_rate": 0.006507592190889371
+        "tt_hit_rate": 0.006521739130434782
       },
       {
         "fixture": "single_origin",
         "depth": 3,
-        "nodes": 2932,
-        "ms": 2,
-        "tt_hit_rate": 0.1392258809936453
+        "nodes": 3462,
+        "ms": 4,
+        "tt_hit_rate": 0.10150753768844221
       },
       {
         "fixture": "single_origin",
         "depth": 4,
-        "nodes": 33580,
-        "ms": 32,
-        "tt_hit_rate": 0.15097836158500028
+        "nodes": 38252,
+        "ms": 58,
+        "tt_hit_rate": 0.13639432815665092
       },
       {
         "fixture": "single_origin",
         "depth": 5,
-        "nodes": 40943,
-        "ms": 40,
-        "tt_hit_rate": 0.17343028825219892
+        "nodes": 63205,
+        "ms": 100,
+        "tt_hit_rate": 0.2476814111987171
       },
       {
         "fixture": "single_origin",
         "depth": 6,
-        "nodes": 125810,
-        "ms": 126,
-        "tt_hit_rate": 0.13546191393130624
+        "nodes": 138069,
+        "ms": 221,
+        "tt_hit_rate": 0.1752418761173625
       },
       {
         "fixture": "single_origin",
         "depth": 7,
-        "nodes": 2526733,
-        "ms": 3687,
-        "tt_hit_rate": 0.14532290475838
+        "nodes": 1938197,
+        "ms": 4732,
+        "tt_hit_rate": 0.13683085381373308
       },
       {
         "fixture": "single_origin",
         "depth": 8,
-        "nodes": 8183136,
-        "ms": 13569,
-        "tt_hit_rate": 0.12028324348266548
+        "nodes": 8948068,
+        "ms": 23625,
+        "tt_hit_rate": 0.1014813085658198
       },
       {
         "fixture": "midgame_12",
         "depth": 1,
-        "nodes": 345,
+        "nodes": 341,
         "ms": 0,
         "tt_hit_rate": 0.009708737864077669
       },
       {
         "fixture": "midgame_12",
         "depth": 2,
-        "nodes": 1702,
+        "nodes": 1186,
         "ms": 3,
-        "tt_hit_rate": 0.0267639902676399
+        "tt_hit_rate": 0.01845018450184502
       },
       {
         "fixture": "midgame_12",
         "depth": 3,
-        "nodes": 8943,
-        "ms": 12,
-        "tt_hit_rate": 0.19222761970853575
+        "nodes": 7424,
+        "ms": 15,
+        "tt_hit_rate": 0.20223841749089017
       },
       {
         "fixture": "midgame_12",
         "depth": 4,
-        "nodes": 17023,
-        "ms": 25,
-        "tt_hit_rate": 0.2669481302774427
+        "nodes": 29403,
+        "ms": 74,
+        "tt_hit_rate": 0.20944436168628036
       },
       {
         "fixture": "midgame_12",
         "depth": 5,
-        "nodes": 46980,
-        "ms": 78,
-        "tt_hit_rate": 0.16064908722109533
+        "nodes": 82863,
+        "ms": 221,
+        "tt_hit_rate": 0.22830802603036876
       },
       {
         "fixture": "midgame_12",
         "depth": 6,
-        "nodes": 388215,
-        "ms": 764,
-        "tt_hit_rate": 0.13695163702606342
+        "nodes": 524012,
+        "ms": 1581,
+        "tt_hit_rate": 0.17159206596577228
       },
       {
         "fixture": "midgame_12",
         "depth": 7,
-        "nodes": 1296516,
-        "ms": 2538,
-        "tt_hit_rate": 0.1530165203676857
+        "nodes": 776865,
+        "ms": 2288,
+        "tt_hit_rate": 0.16349017925098583
       },
       {
         "fixture": "midgame_12",
         "depth": 8,
-        "nodes": 3628491,
-        "ms": 6959,
-        "tt_hit_rate": 0.14372462460087854
+        "nodes": 3441486,
+        "ms": 10474,
+        "tt_hit_rate": 0.1460350209550886
       },
       {
         "fixture": "midgame_30",
@@ -1694,51 +1694,51 @@
       {
         "fixture": "midgame_30",
         "depth": 2,
-        "nodes": 666,
-        "ms": 1,
-        "tt_hit_rate": 0.0457516339869281
+        "nodes": 622,
+        "ms": 2,
+        "tt_hit_rate": 0.05555555555555555
       },
       {
         "fixture": "midgame_30",
         "depth": 3,
-        "nodes": 2222,
-        "ms": 4,
-        "tt_hit_rate": 0.08315098468271334
+        "nodes": 2375,
+        "ms": 7,
+        "tt_hit_rate": 0.0916030534351145
       },
       {
         "fixture": "midgame_30",
         "depth": 4,
-        "nodes": 4220,
-        "ms": 9,
-        "tt_hit_rate": 0.140597539543058
+        "nodes": 4091,
+        "ms": 14,
+        "tt_hit_rate": 0.15072830905636478
       },
       {
         "fixture": "midgame_30",
         "depth": 5,
-        "nodes": 11750,
-        "ms": 25,
-        "tt_hit_rate": 0.16205910390848427
+        "nodes": 10805,
+        "ms": 36,
+        "tt_hit_rate": 0.19091847265221878
       },
       {
         "fixture": "midgame_30",
         "depth": 6,
-        "nodes": 46836,
-        "ms": 119,
-        "tt_hit_rate": 0.11415130049207808
+        "nodes": 62527,
+        "ms": 243,
+        "tt_hit_rate": 0.15891410048622368
       },
       {
         "fixture": "midgame_30",
         "depth": 7,
-        "nodes": 130181,
-        "ms": 333,
-        "tt_hit_rate": 0.15056408679441102
+        "nodes": 154395,
+        "ms": 623,
+        "tt_hit_rate": 0.1669279921770944
       },
       {
         "fixture": "midgame_30",
         "depth": 8,
-        "nodes": 436523,
-        "ms": 1092,
-        "tt_hit_rate": 0.15313542888067105
+        "nodes": 270963,
+        "ms": 1098,
+        "tt_hit_rate": 0.19001226068093935
       }
     ],
     "scaling": [
@@ -1747,296 +1747,296 @@
         "time_ms": 1,
         "depth": 3,
         "nodes": 4096,
-        "nps": 1365333,
-        "ci95_lo": 1365333,
-        "ci95_hi": 1365333
+        "nps": 819200,
+        "ci95_lo": 819200,
+        "ci95_hi": 819200
       },
       {
         "fixture": "empty",
         "time_ms": 10,
         "depth": 4,
-        "nodes": 8192,
-        "nps": 1170285,
-        "ci95_lo": 1170285,
-        "ci95_hi": 1170285
+        "nodes": 6105,
+        "nps": 763125,
+        "ci95_lo": 763125,
+        "ci95_hi": 763125
       },
       {
         "fixture": "empty",
         "time_ms": 50,
         "depth": 4,
-        "nodes": 32768,
-        "nps": 1057032,
-        "ci95_lo": 1024000,
-        "ci95_hi": 1057032
+        "nodes": 20480,
+        "nps": 660645,
+        "ci95_lo": 640000,
+        "ci95_hi": 660645
       },
       {
         "fixture": "empty",
         "time_ms": 100,
-        "depth": 6,
-        "nodes": 61440,
-        "nps": 1007213,
-        "ci95_lo": 960000,
-        "ci95_hi": 1007213
+        "depth": 4,
+        "nodes": 40960,
+        "nps": 660645,
+        "ci95_lo": 660645,
+        "ci95_hi": 671475
       },
       {
         "fixture": "empty",
         "time_ms": 250,
-        "depth": 7,
-        "nodes": 143360,
-        "nps": 949403,
-        "ci95_lo": 936993,
-        "ci95_hi": 955733
+        "depth": 6,
+        "nodes": 94208,
+        "nps": 628053,
+        "ci95_lo": 628053,
+        "ci95_hi": 628053
       },
       {
         "fixture": "empty",
         "time_ms": 500,
         "depth": 7,
-        "nodes": 253952,
-        "nps": 835368,
-        "ci95_lo": 830086,
-        "ci95_hi": 838125
+        "nodes": 172032,
+        "nps": 554941,
+        "ci95_lo": 553157,
+        "ci95_hi": 556737
       },
       {
         "fixture": "empty",
         "time_ms": 1000,
         "depth": 7,
-        "nodes": 491520,
-        "nps": 815124,
-        "ci95_lo": 805546,
-        "ci95_hi": 816478
+        "nodes": 303104,
+        "nps": 501827,
+        "ci95_lo": 500171,
+        "ci95_hi": 502660
       },
       {
         "fixture": "single_origin",
         "time_ms": 1,
         "depth": 3,
-        "nodes": 2932,
-        "nps": 1466000,
-        "ci95_lo": 1466000,
-        "ci95_hi": 1466000
+        "nodes": 3462,
+        "nps": 865500,
+        "ci95_lo": 692400,
+        "ci95_hi": 865500
       },
       {
         "fixture": "single_origin",
         "time_ms": 10,
         "depth": 3,
         "nodes": 8192,
-        "nps": 1170285,
-        "ci95_lo": 1024000,
-        "ci95_hi": 1170285
+        "nps": 682666,
+        "ci95_lo": 682666,
+        "ci95_hi": 682666
       },
       {
         "fixture": "single_origin",
         "time_ms": 50,
         "depth": 3,
-        "nodes": 32768,
-        "nps": 1057032,
-        "ci95_lo": 1057032,
-        "ci95_hi": 1057032
+        "nodes": 20480,
+        "nps": 640000,
+        "ci95_lo": 640000,
+        "ci95_hi": 640000
       },
       {
         "fixture": "single_origin",
         "time_ms": 100,
-        "depth": 5,
-        "nodes": 61440,
-        "nps": 1007213,
-        "ci95_lo": 975238,
-        "ci95_hi": 1007213
+        "depth": 4,
+        "nodes": 40960,
+        "nps": 660645,
+        "ci95_lo": 650158,
+        "ci95_hi": 660645
       },
       {
         "fixture": "single_origin",
         "time_ms": 250,
-        "depth": 6,
-        "nodes": 139264,
-        "nps": 922278,
-        "ci95_lo": 910222,
-        "ci95_hi": 928426
+        "depth": 5,
+        "nodes": 94208,
+        "nps": 619789,
+        "ci95_lo": 619789,
+        "ci95_hi": 619789
       },
       {
         "fixture": "single_origin",
         "time_ms": 500,
         "depth": 6,
-        "nodes": 249856,
-        "nps": 830086,
-        "ci95_lo": 816478,
-        "ci95_hi": 832853
+        "nodes": 163840,
+        "nps": 542516,
+        "ci95_lo": 537180,
+        "ci95_hi": 544318
       },
       {
         "fixture": "single_origin",
         "time_ms": 1000,
         "depth": 6,
-        "nodes": 499712,
-        "nps": 827337,
-        "ci95_lo": 823248,
-        "ci95_hi": 830086
+        "nodes": 266240,
+        "nps": 443733,
+        "ci95_lo": 442995,
+        "ci95_hi": 443733
       },
       {
         "fixture": "midgame_12",
         "time_ms": 1,
         "depth": 2,
-        "nodes": 1702,
-        "nps": 567333,
-        "ci95_lo": 567333,
-        "ci95_hi": 567333
+        "nodes": 1186,
+        "nps": 395333,
+        "ci95_lo": 395333,
+        "ci95_hi": 395333
       },
       {
         "fixture": "midgame_12",
         "time_ms": 10,
         "depth": 2,
         "nodes": 4096,
-        "nps": 682666,
-        "ci95_lo": 682666,
-        "ci95_hi": 682666
+        "nps": 455111,
+        "ci95_lo": 455111,
+        "ci95_hi": 455111
       },
       {
         "fixture": "midgame_12",
         "time_ms": 50,
         "depth": 3,
-        "nodes": 16384,
-        "nps": 682666,
-        "ci95_lo": 655360,
-        "ci95_hi": 682666
+        "nodes": 12288,
+        "nps": 472615,
+        "ci95_lo": 472615,
+        "ci95_hi": 472615
       },
       {
         "fixture": "midgame_12",
         "time_ms": 100,
-        "depth": 4,
-        "nodes": 28672,
-        "nps": 651636,
-        "ci95_lo": 651636,
-        "ci95_hi": 651636
+        "depth": 3,
+        "nodes": 20480,
+        "nps": 401568,
+        "ci95_lo": 401568,
+        "ci95_hi": 401568
       },
       {
         "fixture": "midgame_12",
         "time_ms": 250,
-        "depth": 5,
-        "nodes": 61440,
-        "nps": 590769,
-        "ci95_lo": 579622,
-        "ci95_hi": 596504
+        "depth": 4,
+        "nodes": 40960,
+        "nps": 401568,
+        "ci95_lo": 401568,
+        "ci95_hi": 405544
       },
       {
         "fixture": "midgame_12",
         "time_ms": 500,
-        "depth": 5,
-        "nodes": 110592,
-        "nps": 531692,
-        "ci95_lo": 524132,
-        "ci95_hi": 532480
+        "depth": 4,
+        "nodes": 77824,
+        "nps": 372363,
+        "ci95_lo": 372363,
+        "ci95_hi": 374153
       },
       {
         "fixture": "midgame_12",
         "time_ms": 1000,
         "depth": 5,
-        "nodes": 212992,
-        "nps": 532480,
-        "ci95_lo": 529830,
-        "ci95_hi": 536019
+        "nodes": 143360,
+        "nps": 353103,
+        "ci95_lo": 353103,
+        "ci95_hi": 354851
       },
       {
         "fixture": "midgame_30",
         "time_ms": 1,
         "depth": 2,
-        "nodes": 666,
-        "nps": 666000,
-        "ci95_lo": 666000,
-        "ci95_hi": 666000
+        "nodes": 622,
+        "nps": 311000,
+        "ci95_lo": 311000,
+        "ci95_hi": 311000
       },
       {
         "fixture": "midgame_30",
         "time_ms": 10,
         "depth": 3,
-        "nodes": 2222,
-        "nps": 555500,
-        "ci95_lo": 555500,
-        "ci95_hi": 555500
+        "nodes": 2375,
+        "nps": 339285,
+        "ci95_lo": 339285,
+        "ci95_hi": 339285
       },
       {
         "fixture": "midgame_30",
         "time_ms": 50,
-        "depth": 5,
-        "nodes": 11750,
-        "nps": 470000,
-        "ci95_lo": 470000,
-        "ci95_hi": 470000
+        "depth": 4,
+        "nodes": 8192,
+        "nps": 303407,
+        "ci95_lo": 303407,
+        "ci95_hi": 303407
       },
       {
         "fixture": "midgame_30",
         "time_ms": 100,
         "depth": 5,
-        "nodes": 20480,
-        "nps": 409600,
-        "ci95_lo": 409600,
-        "ci95_hi": 409600
+        "nodes": 12288,
+        "nps": 285767,
+        "ci95_lo": 285767,
+        "ci95_hi": 285767
       },
       {
         "fixture": "midgame_30",
         "time_ms": 250,
         "depth": 5,
-        "nodes": 40960,
-        "nps": 405544,
-        "ci95_lo": 397669,
-        "ci95_hi": 409600
+        "nodes": 28672,
+        "nps": 258306,
+        "ci95_lo": 256000,
+        "ci95_hi": 258306
       },
       {
         "fixture": "midgame_30",
         "time_ms": 500,
-        "depth": 6,
-        "nodes": 81920,
-        "nps": 393846,
-        "ci95_lo": 388246,
-        "ci95_hi": 393846
+        "depth": 5,
+        "nodes": 53248,
+        "nps": 254775,
+        "ci95_lo": 254775,
+        "ci95_hi": 256000
       },
       {
         "fixture": "midgame_30",
         "time_ms": 1000,
-        "depth": 7,
-        "nodes": 159744,
-        "nps": 395405,
-        "ci95_lo": 392491,
-        "ci95_hi": 397373
+        "depth": 6,
+        "nodes": 102400,
+        "nps": 251597,
+        "ci95_lo": 250980,
+        "ci95_hi": 251597
       }
     ],
     "breakdown": [
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "eval",
-        "pct_cycles": 35.84793744404586
+        "pct_cycles": 34.130403379864795
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "threats",
-        "pct_cycles": 9.212975692317553
+        "pct_cycles": 8.632019657851524
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "moves",
         "pct_cycles": 0.0
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "ordering",
-        "pct_cycles": 7.9382275920893335
+        "pct_cycles": 7.258087576157632
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "tt",
         "pct_cycles": 0.0
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "board",
-        "pct_cycles": 26.520586398737063
+        "pct_cycles": 23.375128333424836
       },
       {
-        "fixture": "flamegraph-2026-05-21T23-25-26-3ed1b0c.folded.txt",
+        "fixture": "flamegraph-2026-05-22T15-31-29-6d41c5e.folded.txt",
         "depth": 0,
         "function": "search_other",
-        "pct_cycles": 20.48027287281019
+        "pct_cycles": 26.604361052701208
       }
     ]
   }
