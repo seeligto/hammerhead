@@ -38,6 +38,8 @@ subagents/
 /HANDOFF.md
 /phase*-summary.md
 /phase*-report.md
+perf_review_*/
+review_*/
 
 # Bench-tier local cache (Phase 16) — per-developer quick/perf baselines.
 .hexo/
