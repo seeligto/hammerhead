@@ -210,12 +210,17 @@ Per-stone generation. Search calls this once per ply (not once per turn) —
 the two stones of a HeXO turn each get their own ordering and pruning.
 
 ```rust
-pub fn generate(board: &Board, radius: i16) -> SmallVec<[Coord; MOVE_GEN_CAP_INLINE]>;
+pub fn generate(board: &Board, radius: i16, out: &mut Vec<Coord>);
 ```
 
-`MOVE_GEN_CAP_INLINE = 32` is the SmallVec inline capacity — slightly above
-the typical `MOVE_GEN_CAP` of 30 so the SmallVec stays on-stack for the
-common case.
+`out` is caller-owned; `generate` clears it first and pushes the resulting
+candidates. The Phase 25.5 `SearchScratch` allocator threads per-ply
+`Vec<Coord>` slots through `pvs_node` / `quiescence_node` so the heap
+allocation amortises to one per slot for the whole search. Earlier revisions
+returned an inline-`SmallVec<[Coord; 32]>` on the assumption that
+`MOVE_GEN_CAP = 24` covered the common case, but empirical measurement of
+`Board::inner_candidates()` showed 36–52 cells from the early midgame
+onward — the inline cap spilled to the heap every node beyond the opening.
 
 ### Algorithm
 
@@ -248,7 +253,7 @@ set, and the scratch hashset is small and short-lived.
 Concrete shape:
 
 ```rust
-fn gen_in_outer_band(board: &Board, radius: i16, out: &mut MoveList) {
+fn gen_in_outer_band(board: &Board, radius: i16, out: &mut Vec<Coord>) {
     let mut seen = FxHashSet::default();
     for (piece, _) in board.pieces() {
         for_each_in_range(piece, radius, |d| {
@@ -261,8 +266,9 @@ fn gen_in_outer_band(board: &Board, radius: i16, out: &mut MoveList) {
 }
 ```
 
-The `seen` hashset is recreated per call. Reusing it via a thread-local or
-search-scoped scratch buffer is a future optimisation.
+The `seen` hashset is recreated per call; the candidate `out` buffer is
+the search driver's per-ply slot from `SearchScratch` (Phase 25.5), so
+its allocation survives across nodes.
 
 ### Ordering hook
 
@@ -273,11 +279,13 @@ strong moves.
 
 ### Hot path notes
 
-- No allocation on the inner-radius path beyond the returned `SmallVec`.
-- Outer path: one `FxHashSet` allocation per call, pre-reserved with a
-  rough estimate of `piece_count * 8`.
-- `SmallVec` inlines up to 32 items. Typical inner-radius candidate sets
-  fit comfortably.
+- Zero allocation on either path after first-search warmup; per-ply slots
+  in `SearchScratch` retain capacity.
+- Outer path still builds a fresh `FxHashSet` per call (out of scope for
+  Phase 25.5 — small, short-lived).
+- The `MoveList` alias is now `pub type MoveList = Vec<Coord>;` for back-
+  compat with external callers; internally search uses the boxed per-ply
+  `Vec<Coord>` directly.
 
 ## Axis Bitmaps (`axis_bitmap.rs`)
 
