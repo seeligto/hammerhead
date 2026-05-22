@@ -126,6 +126,16 @@ impl OrderingState {
         }
         self.history.clear();
     }
+
+    /// Zero every killer slot. Called at the start of each `best_move()`
+    /// so killers from a prior turn cannot bleed into the next search.
+    /// Unlike [`Self::clear`], history is preserved — it is decay-smoothed
+    /// across calls by design.
+    pub fn reset_killers(&mut self) {
+        for k in self.killers.iter_mut() {
+            *k = KillerSlot::default();
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────

@@ -207,6 +207,7 @@ pub fn search_root(
     let start = Instant::now();
     let deadline = cfg.time_ms.map(|t| start + Duration::from_millis(t));
     tt.new_generation();
+    ordering.reset_killers(); // R-08-A: per-`best_move()` killer hygiene.
     ordering.decay_history();
 
     let mut result = SearchResult::default();
