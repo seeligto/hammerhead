@@ -7,6 +7,7 @@
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN};
+use crate::line_contrib::LineContrib;
 use crate::proximity::{ProximityCounts, SparseCellSet, add_proximity, remove_proximity};
 use crate::threats::{self, ThreatScratch, ThreatSet};
 use crate::zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};
@@ -108,6 +109,11 @@ pub struct Board {
     /// Lazily-filled static-eval result. `None` after every mutation,
     /// reassigned on the next call to [`Board::cached_eval`].
     eval_cache: Cell<Option<i32>>,
+    /// Phase-27 per-`(axis, line_id)` Layer-1 contribution cache.
+    /// Scaffold only in C-01 — no consumers, no invalidation hooks yet.
+    /// `RefCell` mirrors the `threats_x` / `threats_o` pattern: hot-path
+    /// reads on `&Board` will populate the cache lazily on miss.
+    line_contrib: RefCell<LineContrib>,
 }
 
 impl Default for Board {
@@ -142,6 +148,7 @@ impl Board {
             threat_scratch: RefCell::new(ThreatScratch::default()),
             threats_dirty: Cell::new(false),
             eval_cache: Cell::new(None),
+            line_contrib: RefCell::new(LineContrib::new()),
         }
     }
 
@@ -164,6 +171,7 @@ impl Board {
         self.threats_dirty.set(false);
         self.threat_scratch.borrow_mut().clear_all();
         self.eval_cache.set(None);
+        self.line_contrib.borrow_mut().reset();
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.

@@ -8,6 +8,7 @@ pub mod config;
 pub mod coords;
 pub mod engine;
 pub mod eval;
+pub mod line_contrib;
 pub mod moves;
 pub mod ordering;
 pub mod proximity;
