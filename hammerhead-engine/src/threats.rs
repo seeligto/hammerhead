@@ -66,7 +66,9 @@ pub struct ThreatSet {
     /// Shape counts across all detected threats.
     pub counts: ThreatCounts,
     /// S0 threats (mate-in-one-turn). One entry per distinct run.
-    pub s0_instances: Vec<ThreatInstance>,
+    /// Inline cap-8 absorbs typical midgame plus fork density without
+    /// heap alloc; spills (≤ `MAX_S0_INSTANCES`) hit pathological depth only.
+    pub s0_instances: SmallVec<[ThreatInstance; 8]>,
 }
 
 /// Reusable scratch buffers for `compute`. Owned by `Board` and reset
