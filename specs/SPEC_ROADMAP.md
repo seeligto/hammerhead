@@ -614,10 +614,13 @@ Carried forward — items still open after Phase 25.
   candidate #1, Phase 25 STEP 1.1 — attempted, reverted): the ordering
   predicates are ~20 % of engine self-time. Phase 25's bit-parallel
   `u64` run scan + line-lookup cache **regressed −15/−16 % NPS** —
-  the existing unrolled `get()` loop is faster. The hotspot is real
-  but a different lever is needed (e.g. computing the predicate from
-  the `LineContribution` cache once that exists, or fusing the
-  double `would_make_six` own/opponent pass). Still open.
+  the existing unrolled `get()` loop is faster. Phase 25.5 R-02
+  attempts the orthogonal *structural-fusion* lever: collapse the
+  three independent passes (`would_make_six(side)`,
+  `would_make_six(opp)`, `creates_s0(side)`) inside `bucket_value`
+  into a single 3-axis fused probe (`AxisProbe`). Behaviour-identical
+  refactor — reference node counts preserved. Algorithmic rewrite of
+  `run_*` itself remains open (different lever).
 - **`threats::compute` run-scan / dedup cost** (Phase 24 candidate #3,
   Phase 25 STEP 1.2 — attempted, reverted): per-player piece iteration
   was flat — the cost is the `walk_linear_runs` / `run_endpoints`
@@ -676,9 +679,13 @@ After the STEP 5 baseline landed, an independent reviewer flagged:
   fast path in `Board::threats`. The `Option` check is now
   unreachable on the hot path (debug_assert covers the invariant).
 - **`creates_s0;run_backward` axis-run repetition**
-  (Phase 14 HOTSPOTS #4): resolved by the per-`order_moves`
-  `axis_run_cache` in `OrderingContext`, so multiple candidates on
-  the same line share one bitmap snapshot.
+  (Phase 14 HOTSPOTS #4): the original Phase 15 follow-up text
+  claimed an `axis_run_cache` in `OrderingContext`; that cache was
+  reverted and never landed. The actual resolution is Phase 25.5 R-02
+  — the `AxisProbe` helper fuses the three independent axis passes
+  (`would_make_six(side)`, `would_make_six(opp)`, `creates_s0(side)`)
+  inside `bucket_value` into one 3-axis loop, halving `line()` slot
+  loads and tripling-down on `run_*` reuse per move.
 
 ## Phase 14 resolved follow-ups
 

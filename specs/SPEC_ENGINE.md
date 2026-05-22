@@ -878,11 +878,33 @@ loop. v1 uses a cheap virtual-place axis-run probe:
 
 The predicate is O(constant) in the hex neighbourhood of `m`.
 
+### Fused 3-axis probe in `bucket_value` (Phase 25.5 R-02)
+
+Buckets 9 (own win), 8 (block opp win), and 6 (own creates_s0) all
+need run-length information for the empty cell `m` on the same three
+axes. Phase 25.5 R-02 collapses these into a **single 3-axis fused
+probe** instead of three independent passes.
+
+The probe (`ordering::axis_probe`) returns an `AxisProbe { own_back,
+own_fwd, opp_back, opp_fwd }` per axis: at most two
+`AxisBitmaps::line` slot loads (own + opp) and at most four
+`run_*` calls per axis. `bucket_value` walks the three axes once,
+deriving `own_six = (1 + own_back + own_fwd) ≥ 6`,
+`opp_six = (1 + opp_back + opp_fwd) ≥ 6`, and the own-side
+`creates_s0` predicate from the same per-axis own counts.
+
+Semantics are **unchanged** — the predicates are byte-identical to
+the standalone `would_make_six` / `creates_s0` helpers (which are
+retained for qsearch's `is_threat_move` frontier). Reference node
+counts must remain pre-/post-byte-identical at every
+`(fixture, depth)`.
+
 ### Win detection in ordering
 
 `would_make_six` runs the same virtual-place axis-run probe and fires
 on `total ≥ 6`. HeXO treats overlines as wins, so the threshold is `≥`,
-not `==`.
+not `==`. Inside `bucket_value`, the equivalent test reuses the fused
+probe (above); the standalone `would_make_six` remains for qsearch.
 
 ### `stone1_s0_defense`
 
