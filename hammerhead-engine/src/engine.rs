@@ -15,7 +15,7 @@ use crate::board::{Board, BoardError, Player};
 use crate::config::DEFAULT_TT_SIZE_MB;
 use crate::coords::Coord;
 use crate::ordering::OrderingState;
-use crate::search::{SearchConfig, SearchResult, search_root};
+use crate::search::{SearchConfig, SearchResult, SearchScratch, search_root};
 use crate::tt::TranspositionTable;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +31,11 @@ pub struct Engine {
     pub tt: TranspositionTable,
     /// Killer + history state, persisted between calls.
     pub ordering: OrderingState,
+    /// Per-ply scratch buffers for move generation, sort scratch, bucket
+    /// values, and qsearch threat sub-lists. Capacity is retained across
+    /// `best_move` calls so the search hot path is allocation-free after
+    /// warmup.
+    pub scratch: SearchScratch,
     /// Tunable search parameters (defaults sourced from `hexo.toml`).
     pub cfg: SearchConfig,
 }
@@ -49,6 +54,7 @@ impl Engine {
             board: Board::new(),
             tt: TranspositionTable::new(mb),
             ordering: OrderingState::new(),
+            scratch: SearchScratch::new(),
             cfg: SearchConfig::default(),
         }
     }
@@ -97,7 +103,13 @@ impl Engine {
         };
         local.time_ms =
             provided_time.map(|t| split_budget(t, self.board.halfmove(), local.stone1_time_pct));
-        search_root(&mut self.board, &mut self.tt, &mut self.ordering, &local)
+        search_root(
+            &mut self.board,
+            &mut self.tt,
+            &mut self.ordering,
+            &mut self.scratch,
+            &local,
+        )
     }
 
     /// Static eval cached on the board.

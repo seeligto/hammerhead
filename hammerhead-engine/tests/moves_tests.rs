@@ -11,6 +11,15 @@ fn place_ok(b: &mut Board, c: Coord) {
         .unwrap_or_else(|e| panic!("place({c:?}) failed: {e:?}"));
 }
 
+/// Test helper: own a fresh `Vec<Coord>`, hand it to `generate`, return
+/// it owned. Hides the out-param API for tests that want the old return-
+/// by-value ergonomics.
+fn gen_owned(b: &Board, radius: i16) -> Vec<Coord> {
+    let mut out: Vec<Coord> = Vec::new();
+    generate(b, radius, &mut out);
+    out
+}
+
 /// Set of empty cells within `radius` of any placed piece (excluding pieces).
 fn expected_neighbourhood(b: &Board, radius: i16) -> HashSet<Coord> {
     let pieces: HashSet<Coord> = b.pieces().map(|(c, _)| c).collect();
@@ -28,7 +37,7 @@ fn expected_neighbourhood(b: &Board, radius: i16) -> HashSet<Coord> {
 #[test]
 fn empty_board_returns_origin() {
     let b = Board::new();
-    let moves: Vec<Coord> = generate(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
+    let moves: Vec<Coord> = gen_owned(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
     assert_eq!(moves, vec![ORIGIN]);
 }
 
@@ -36,7 +45,7 @@ fn empty_board_returns_origin() {
 fn empty_board_origin_independent_of_radius() {
     let b = Board::new();
     for r in [1i16, 2, 4, 8, 100] {
-        let moves: Vec<Coord> = generate(&b, r).into_iter().collect();
+        let moves: Vec<Coord> = gen_owned(&b, r).into_iter().collect();
         assert_eq!(moves, vec![ORIGIN], "radius {r}");
     }
 }
@@ -45,7 +54,7 @@ fn empty_board_origin_independent_of_radius() {
 fn single_piece_inner_radius() {
     let mut b = Board::new();
     place_ok(&mut b, ORIGIN);
-    let moves: HashSet<Coord> = generate(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
     let r = MOVE_GEN_INNER_RADIUS;
     let expected_count = 3 * r as usize * (r as usize + 1);
     assert_eq!(moves.len(), expected_count);
@@ -62,7 +71,7 @@ fn single_piece_outer_radius() {
     place_ok(&mut b, ORIGIN);
     // Pick a radius strictly larger than INNER to exercise the outer path.
     let r = MOVE_GEN_INNER_RADIUS + 2;
-    let moves: HashSet<Coord> = generate(&b, r).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, r).into_iter().collect();
     let expected_count = 3 * r as usize * (r as usize + 1);
     assert_eq!(moves.len(), expected_count);
     assert!(!moves.contains(&ORIGIN));
@@ -78,7 +87,7 @@ fn outer_excludes_occupied() {
     place_ok(&mut b, ORIGIN);
     let extra = Coord::new(3, 0);
     place_ok(&mut b, extra);
-    let moves: HashSet<Coord> = generate(&b, 4).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, 4).into_iter().collect();
     assert!(!moves.contains(&ORIGIN));
     assert!(!moves.contains(&extra));
 }
@@ -88,7 +97,7 @@ fn outer_dedupes() {
     let mut b = Board::new();
     place_ok(&mut b, ORIGIN);
     place_ok(&mut b, Coord::new(1, 0));
-    let raw = generate(&b, MOVE_GEN_INNER_RADIUS + 1);
+    let raw = gen_owned(&b, MOVE_GEN_INNER_RADIUS + 1);
     let dedup: HashSet<Coord> = raw.iter().copied().collect();
     assert_eq!(raw.len(), dedup.len(), "duplicate move emitted");
 }
@@ -101,7 +110,7 @@ fn outer_matches_independent_neighbourhood() {
     place_ok(&mut b, Coord::new(2, 0));
     place_ok(&mut b, Coord::new(-1, 1));
     let r = MOVE_GEN_INNER_RADIUS + 1;
-    let moves: HashSet<Coord> = generate(&b, r).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, r).into_iter().collect();
     let expected = expected_neighbourhood(&b, r);
     assert_eq!(moves, expected);
 }
@@ -112,7 +121,7 @@ fn inner_path_matches_independent_neighbourhood() {
     place_ok(&mut b, ORIGIN);
     place_ok(&mut b, Coord::new(2, 0));
     place_ok(&mut b, Coord::new(-1, 1));
-    let moves: HashSet<Coord> = generate(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, MOVE_GEN_INNER_RADIUS).into_iter().collect();
     let expected = expected_neighbourhood(&b, MOVE_GEN_INNER_RADIUS);
     assert_eq!(moves, expected);
 }
@@ -121,9 +130,10 @@ fn inner_path_matches_independent_neighbourhood() {
 fn outer_clamps_to_max() {
     let mut b = Board::new();
     place_ok(&mut b, ORIGIN);
-    let at_max: HashSet<Coord> = generate(&b, MAX_PIECE_DISTANCE).into_iter().collect();
-    let above_max: HashSet<Coord> = generate(&b, MAX_PIECE_DISTANCE + 100).into_iter().collect();
-    let way_above: HashSet<Coord> = generate(&b, 1000).into_iter().collect();
+    let at_max: HashSet<Coord> = gen_owned(&b, MAX_PIECE_DISTANCE).into_iter().collect();
+    let above_max: HashSet<Coord> =
+        gen_owned(&b, MAX_PIECE_DISTANCE + 100).into_iter().collect();
+    let way_above: HashSet<Coord> = gen_owned(&b, 1000).into_iter().collect();
     assert_eq!(at_max, above_max);
     assert_eq!(at_max, way_above);
 }
@@ -146,7 +156,7 @@ fn outer_path_many_pieces_dedupes_and_excludes_occupied() {
         placed.insert(neg);
     }
     let r = 4;
-    let raw = generate(&b, r);
+    let raw = gen_owned(&b, r);
     let unique: HashSet<Coord> = raw.iter().copied().collect();
     assert_eq!(raw.len(), unique.len(), "duplicates returned");
     for m in &unique {
@@ -164,7 +174,7 @@ fn radius_below_inner_uses_inner() {
     // regardless of whether the caller passes a smaller radius.
     let mut b = Board::new();
     place_ok(&mut b, ORIGIN);
-    let moves: HashSet<Coord> = generate(&b, 1).into_iter().collect();
+    let moves: HashSet<Coord> = gen_owned(&b, 1).into_iter().collect();
     let r = MOVE_GEN_INNER_RADIUS;
     let expected_count = 3 * r as usize * (r as usize + 1);
     assert_eq!(moves.len(), expected_count);

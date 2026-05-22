@@ -25,10 +25,69 @@ use crate::config::{
     LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_MAX_PLIES, TIME_STONE1_PCT,
 };
 use crate::coords::{Coord, ORIGIN};
-use crate::moves::{self, MOVE_GEN_CAP_INLINE};
+use crate::moves;
 use crate::ordering::{self, OrderingContext, OrderingState, order_moves_with_buckets};
 use crate::tt::{TTFlag, TranspositionTable};
 use smallvec::SmallVec;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-ply scratch buffers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-ply scratch space for move generation and ordering. One slot per
+/// search ply, indexed by `ply.min(MAX_PLY - 1)`. Each slot retains its
+/// `Vec` capacity across calls, so after the first search warmup the
+/// hot path makes zero allocator round-trips.
+///
+/// Boxed `[Vec<_>; MAX_PLY]` to keep the ~12 KB worth of slots off the
+/// stack frame. `MAX_PLY = 128` matches the `OrderingState::killers`
+/// indexing precedent.
+pub struct SearchScratch {
+    /// Per-ply candidate-move buffer used by both `pvs_node` and
+    /// `quiescence_node`. Sharing the same slot is safe: `pvs_node` at
+    /// ply P only calls `quiescence_node` after the `depth <= 0`
+    /// early-return path, where it never touches its own slot.
+    pub moves: Box<[Vec<Coord>; MAX_PLY]>,
+    /// Per-ply sort scratch for `order_moves_with_buckets`.
+    pub scored: Box<[Vec<(u32, u8, Coord)>; MAX_PLY]>,
+    /// Per-ply bucket-value output array (parallel to `moves` after
+    /// ordering).
+    pub buckets: Box<[Vec<u8>; MAX_PLY]>,
+    /// Per-ply qsearch threat sub-list (filtered subset of `moves`).
+    pub threats: Box<[Vec<Coord>; MAX_PLY]>,
+}
+
+impl Default for SearchScratch {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SearchScratch {
+    /// Fresh state: every slot is an empty `Vec` (no allocation until
+    /// first use).
+    #[cold]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            moves: Box::new(std::array::from_fn(|_| Vec::new())),
+            scored: Box::new(std::array::from_fn(|_| Vec::new())),
+            buckets: Box::new(std::array::from_fn(|_| Vec::new())),
+            threats: Box::new(std::array::from_fn(|_| Vec::new())),
+        }
+    }
+
+    /// Saturating ply-to-index. `pvs_node` recursion can in principle
+    /// run past `MAX_PLY` via extensions; we share the last slot in that
+    /// pathological case, matching the killer-table indexing convention
+    /// (`ordering.rs:89`).
+    #[inline]
+    #[must_use]
+    pub fn ply_index(ply: u8) -> usize {
+        (ply as usize).min(MAX_PLY - 1)
+    }
+}
 
 /// Open window bound. Half of `i32::MAX` so `INF + x` never overflows
 /// inside the search.
@@ -142,6 +201,7 @@ pub fn search_root(
     board: &mut Board,
     tt: &mut TranspositionTable,
     ordering: &mut OrderingState,
+    scratch: &mut SearchScratch,
     cfg: &SearchConfig,
 ) -> SearchResult {
     let start = Instant::now();
@@ -152,10 +212,14 @@ pub fn search_root(
     let mut result = SearchResult::default();
     // Prime the fallback so a depth-1 timeout still returns *some* legal
     // move instead of the ORIGIN sentinel — placing ORIGIN on a non-empty
-    // board would raise from the Python boundary.
-    let fallback_moves = moves::generate(board, DEFAULT_MOVE_RADIUS);
-    if let Some(&m) = fallback_moves.first() {
-        result.best_move = m;
+    // board would raise from the Python boundary. We reuse slot 0; the
+    // first `pvs_node` at ply 0 will clear-and-overwrite anyway.
+    {
+        let fallback_slot = &mut scratch.moves[0];
+        moves::generate(board, DEFAULT_MOVE_RADIUS, fallback_slot);
+        if let Some(&m) = fallback_slot.first() {
+            result.best_move = m;
+        }
     }
     let mut prev_score: Option<i32> = None;
     let mut node_count: u64 = 0;
@@ -166,6 +230,7 @@ pub fn search_root(
             board,
             tt,
             ordering,
+            scratch,
             cfg,
             depth,
             prev_score,
@@ -200,6 +265,7 @@ fn iterate_at_depth(
     board: &mut Board,
     tt: &mut TranspositionTable,
     ord: &mut OrderingState,
+    scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     depth: i8,
     prev_score: Option<i32>,
@@ -226,6 +292,7 @@ fn iterate_at_depth(
             board,
             tt,
             ord,
+            scratch,
             cfg,
             depth,
             alpha,
@@ -270,6 +337,7 @@ fn pvs_node(
     board: &mut Board,
     tt: &mut TranspositionTable,
     ord: &mut OrderingState,
+    scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     depth: i8,
     mut alpha: i32,
@@ -307,16 +375,20 @@ fn pvs_node(
     }
 
     if depth <= 0 {
-        return quiescence_node(board, cfg, alpha, beta, ply, 0, deadline, node_count);
+        return quiescence_node(board, scratch, cfg, alpha, beta, ply, 0, deadline, node_count);
     }
 
-    // ── Move generation + ordering ──────────────────────────────────────────
-    let mut moves_list = moves::generate(board, DEFAULT_MOVE_RADIUS);
-    if moves_list.is_empty() {
-        return Ok(board.cached_eval());
+    // ── Move generation + ordering (into per-ply scratch slot) ──────────────
+    let ply_idx = SearchScratch::ply_index(ply);
+    {
+        let slot = &mut scratch.moves[ply_idx];
+        moves::generate(board, DEFAULT_MOVE_RADIUS, slot);
+        if slot.is_empty() {
+            return Ok(board.cached_eval());
+        }
     }
 
-    let buckets: SmallVec<[u8; MOVE_GEN_CAP_INLINE]> = {
+    {
         let killers_idx = (ply as usize).min(MAX_PLY - 1);
         let killers_snap = ord.killers[killers_idx];
         let ctx = OrderingContext {
@@ -327,14 +399,28 @@ fn pvs_node(
             history: &ord.history,
             stone1_s0_defense: stone1_defense,
         };
-        order_moves_with_buckets(&mut moves_list, &ctx)
-    };
+        // Split-borrow: each scratch field is a distinct `Box<[Vec<_>; N]>`,
+        // so simultaneous mut-borrows of one slot from each field are
+        // disjoint and the borrow checker accepts them.
+        let moves_slot = &mut scratch.moves[ply_idx];
+        let scored_slot = &mut scratch.scored[ply_idx];
+        let buckets_slot = &mut scratch.buckets[ply_idx];
+        order_moves_with_buckets(moves_slot, &ctx, scored_slot, buckets_slot);
+    }
 
+    let move_count = scratch.moves[ply_idx].len();
     let mut best_score = if maximize { -INF } else { INF };
-    let mut best_move = moves_list.first().copied().unwrap_or(ORIGIN);
+    let mut best_move = scratch.moves[ply_idx].first().copied().unwrap_or(ORIGIN);
 
     // ── Move loop ───────────────────────────────────────────────────────────
-    for (i, (&m, &bucket)) in moves_list.iter().zip(buckets.iter()).enumerate() {
+    // Iterate by index. Each iteration re-reads `scratch.moves[ply_idx][i]`
+    // and `scratch.buckets[ply_idx][i]` so no live borrow into the slot
+    // crosses the recursive `pvs_node`/`pvs_dance` calls (which need
+    // `&mut scratch` themselves at ply+1).
+    for i in 0..move_count {
+        let m = scratch.moves[ply_idx][i];
+        let bucket = scratch.buckets[ply_idx][i];
+
         // Check extension: own move creates a fresh S0 against the
         // opponent and we still have budget.
         let extends_check = bucket == BUCKET_S0_CREATE && extensions_left > 0;
@@ -365,6 +451,7 @@ fn pvs_node(
             board,
             tt,
             ord,
+            scratch,
             cfg,
             new_depth,
             probe_depth,
@@ -436,6 +523,7 @@ fn pvs_dance(
     board: &mut Board,
     tt: &mut TranspositionTable,
     ord: &mut OrderingState,
+    scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     new_depth: i8,
     probe_depth: i8,
@@ -455,6 +543,7 @@ fn pvs_dance(
             board,
             tt,
             ord,
+            scratch,
             cfg,
             new_depth,
             alpha,
@@ -475,6 +564,7 @@ fn pvs_dance(
         board,
         tt,
         ord,
+        scratch,
         cfg,
         probe_depth,
         probe_a,
@@ -498,6 +588,7 @@ fn pvs_dance(
             board,
             tt,
             ord,
+            scratch,
             cfg,
             new_depth,
             probe_a,
@@ -527,6 +618,7 @@ fn pvs_dance(
             board,
             tt,
             ord,
+            scratch,
             cfg,
             new_depth,
             alpha,
@@ -552,6 +644,7 @@ fn pvs_dance(
 #[allow(clippy::too_many_arguments)]
 fn quiescence_node(
     board: &mut Board,
+    scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     mut alpha: i32,
     mut beta: i32,
@@ -589,25 +682,39 @@ fn quiescence_node(
         return Ok(if maximize { alpha } else { beta });
     }
 
-    // Threat-only filter on the inner-radius candidates.
-    let candidates = moves::generate(board, DEFAULT_MOVE_RADIUS);
-    let mut threats: SmallVec<[Coord; MOVE_GEN_CAP_INLINE]> = SmallVec::new();
-    for m in candidates.iter().copied() {
-        if is_threat_move(board, m, side) {
-            threats.push(m);
+    // Threat-only filter on the inner-radius candidates. Reuses the
+    // per-ply slot: `pvs_node` at ply P returns into qsearch *before*
+    // generating its own moves, so slot P is free to host the candidate
+    // list. Recursive qsearch calls use slot P+1, etc.
+    let ply_idx = SearchScratch::ply_index(ply);
+    {
+        let cands_slot = &mut scratch.moves[ply_idx];
+        moves::generate(board, DEFAULT_MOVE_RADIUS, cands_slot);
+    }
+    {
+        let threats_slot = &mut scratch.threats[ply_idx];
+        threats_slot.clear();
+        let cands_slot = &scratch.moves[ply_idx];
+        for m in cands_slot.iter().copied() {
+            if is_threat_move(board, m, side) {
+                threats_slot.push(m);
+            }
         }
     }
-    if threats.is_empty() {
+    let threat_count = scratch.threats[ply_idx].len();
+    if threat_count == 0 {
         return Ok(if maximize { alpha } else { beta });
     }
 
     let mut best = if maximize { alpha } else { beta };
-    for m in threats {
+    for i in 0..threat_count {
+        let m = scratch.threats[ply_idx][i];
         board
             .place(m)
             .expect("ordered threat must be legal in qsearch");
         let r = quiescence_node(
             board,
+            scratch,
             cfg,
             alpha,
             beta,

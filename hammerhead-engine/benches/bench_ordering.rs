@@ -51,7 +51,8 @@ fn bench_order_moves(c: &mut Criterion) {
 
     for fx in FIXTURES {
         let board = (fx.build)();
-        let template: MoveList = moves::generate(&board, 4);
+        let mut template: MoveList = MoveList::new();
+        moves::generate(&board, 4, &mut template);
         group.bench_function(fx.name, |b| {
             b.iter_batched_ref(
                 || template.clone(),
@@ -73,7 +74,8 @@ fn bench_bucket(c: &mut Criterion) {
     let history: FxHashMap<(Coord, Player), u32> = FxHashMap::default();
     for fx in FIXTURES {
         let board = (fx.build)();
-        let candidates: MoveList = moves::generate(&board, 4);
+        let mut candidates: MoveList = MoveList::new();
+        moves::generate(&board, 4, &mut candidates);
         group.bench_function(fx.name, |b| {
             b.iter(|| {
                 let ctx = make_ctx(&board, &killers, &history);

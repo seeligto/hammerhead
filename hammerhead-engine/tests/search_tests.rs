@@ -14,25 +14,29 @@ use hammerhead_engine_core::config::MATE_SCORE;
 use hammerhead_engine_core::coords::{Coord, ORIGIN, hex_distance};
 use hammerhead_engine_core::ordering::OrderingState;
 use hammerhead_engine_core::engine::Engine;
-use hammerhead_engine_core::search::{SearchConfig, search_root};
+use hammerhead_engine_core::search::{SearchConfig, SearchScratch, search_root};
 use hammerhead_engine_core::tt::TranspositionTable;
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
 
-fn fresh() -> (TranspositionTable, OrderingState) {
-    (TranspositionTable::new(16), OrderingState::new())
+fn fresh() -> (TranspositionTable, OrderingState, SearchScratch) {
+    (
+        TranspositionTable::new(16),
+        OrderingState::new(),
+        SearchScratch::new(),
+    )
 }
 
 fn run(b: &mut Board, depth: i8) -> hammerhead_engine_core::search::SearchResult {
-    let (mut tt, mut ord) = fresh();
+    let (mut tt, mut ord, mut scratch) = fresh();
     let cfg = SearchConfig {
         max_depth: depth,
         time_ms: None,
         ..Default::default()
     };
-    search_root(b, &mut tt, &mut ord, &cfg)
+    search_root(b, &mut tt, &mut ord, &mut scratch, &cfg)
 }
 
 /// Place `count` X stones along the q-axis starting at `(start, 0)`.
@@ -193,14 +197,15 @@ fn tt_replay_reduces_nodes() {
 
     let mut tt = TranspositionTable::new(16);
     let mut ord = OrderingState::new();
+    let mut scratch = SearchScratch::new();
     let cfg = SearchConfig {
         max_depth: 4,
         time_ms: None,
         ..Default::default()
     };
 
-    let r1 = search_root(&mut b, &mut tt, &mut ord, &cfg);
-    let r2 = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    let r1 = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
+    let r2 = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
     // Strict reduction: a broken TT (probes always miss) would satisfy
     // a `<=` bound. Require warm to be noticeably smaller than cold.
     assert!(
@@ -211,7 +216,7 @@ fn tt_replay_reduces_nodes() {
     );
 
     tt.clear();
-    let r3 = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    let r3 = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
     assert!(
         r3.nodes > r2.nodes,
         "cleared TT must re-explore more than the warm pass: warm={}, cleared={}",
@@ -235,13 +240,14 @@ fn aspiration_widening_converges() {
 
     let mut tt = TranspositionTable::new(16);
     let mut ord = OrderingState::new();
+    let mut scratch = SearchScratch::new();
     let cfg = SearchConfig {
         max_depth: 6,
         time_ms: Some(5_000),
         asp_window_initial: 1,
         ..Default::default()
     };
-    let r = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    let r = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
     assert!(
         r.depth_reached >= 4,
         "aspiration must reach at least depth 4, got {}",
@@ -261,6 +267,7 @@ fn time_budget_honored() {
 
     let mut tt = TranspositionTable::new(16);
     let mut ord = OrderingState::new();
+    let mut scratch = SearchScratch::new();
     let cfg = SearchConfig {
         max_depth: 64,
         time_ms: Some(100),
@@ -268,7 +275,7 @@ fn time_budget_honored() {
     };
 
     let start = Instant::now();
-    let r = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    let r = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
     let elapsed = start.elapsed();
     assert!(
         elapsed.as_millis() < 400,
@@ -292,12 +299,13 @@ fn depth_cap_honored() {
 
     let mut tt = TranspositionTable::new(16);
     let mut ord = OrderingState::new();
+    let mut scratch = SearchScratch::new();
     let cfg = SearchConfig {
         max_depth: 2,
         time_ms: None,
         ..Default::default()
     };
-    let r = search_root(&mut b, &mut tt, &mut ord, &cfg);
+    let r = search_root(&mut b, &mut tt, &mut ord, &mut scratch, &cfg);
     assert_eq!(r.depth_reached, 2, "expected depth_reached == 2");
 }
 
@@ -329,11 +337,11 @@ fn quiescence_finds_two_stone_mate() {
         ..cfg_q
     };
 
-    let (mut tt1, mut ord1) = fresh();
-    let r_q = search_root(&mut b, &mut tt1, &mut ord1, &cfg_q);
+    let (mut tt1, mut ord1, mut sc1) = fresh();
+    let r_q = search_root(&mut b, &mut tt1, &mut ord1, &mut sc1, &cfg_q);
 
-    let (mut tt2, mut ord2) = fresh();
-    let r_noq = search_root(&mut b, &mut tt2, &mut ord2, &cfg_no_q);
+    let (mut tt2, mut ord2, mut sc2) = fresh();
+    let r_noq = search_root(&mut b, &mut tt2, &mut ord2, &mut sc2, &cfg_no_q);
 
     assert!(
         r_q.score > r_noq.score,

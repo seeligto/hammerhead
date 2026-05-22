@@ -308,41 +308,54 @@ fn coord_on_axis(axis: Axis, line_id: i16, pos: i16) -> Coord {
 // ────────────────────────────────────────────────────────────────────────
 
 /// Score every entry in `moves`, stable-sort descending by priority, and
-/// truncate to [`MOVE_GEN_CAP`]. Scratch buffer is a `SmallVec` inline up
-/// to `MOVE_GEN_CAP_INLINE` items — no heap allocation in the typical case.
+/// truncate to [`MOVE_GEN_CAP`]. Convenience wrapper around
+/// [`order_moves_with_buckets`] for callers that don't need the per-move
+/// bucket array — not on the search hot path (search threads
+/// `SearchScratch` slots directly), so the two local scratch `Vec`s here
+/// are acceptable.
 pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
-    let _ = order_moves_with_buckets(moves, ctx);
+    let mut scored: Vec<(u32, u8, Coord)> = Vec::new();
+    let mut buckets: Vec<u8> = Vec::new();
+    order_moves_with_buckets(moves, ctx, &mut scored, &mut buckets);
 }
 
-/// Like [`order_moves`] but also returns the per-move bucket values, in
-/// the same order as the (truncated) `moves` list. Search reuses these
+/// Like [`order_moves`] but writes per-move bucket values into `buckets`,
+/// in the same order as the (truncated) `moves` list. Search reuses these
 /// for LMR and check-extension decisions, avoiding a second
 /// [`bucket_value`] pass per node.
+///
+/// `scored` and `buckets` are caller-owned scratch — both are cleared on
+/// entry, so the caller need not pre-clear them. The search driver wires
+/// them to per-ply slots in `SearchScratch` so the underlying allocations
+/// amortise across the entire search.
 pub(crate) fn order_moves_with_buckets(
     moves: &mut MoveList,
     ctx: &OrderingContext<'_>,
-) -> smallvec::SmallVec<[u8; crate::moves::MOVE_GEN_CAP_INLINE]> {
+    scored: &mut Vec<(u32, u8, Coord)>,
+    buckets: &mut Vec<u8>,
+) {
+    scored.clear();
+    buckets.clear();
     if moves.is_empty() {
-        return smallvec::SmallVec::new();
+        return;
     }
 
-    let mut scored: smallvec::SmallVec<[(u32, u8, Coord); crate::moves::MOVE_GEN_CAP_INLINE]> =
-        smallvec::SmallVec::with_capacity(moves.len());
+    scored.reserve(moves.len());
     for &m in moves.iter() {
         let bucket = bucket_value(ctx, m);
         let h = ctx.history.get(&(m, ctx.side)).copied().unwrap_or(0);
         scored.push((priority(bucket, h), bucket, m));
     }
 
-    // `sort_by` is stable in std; preserves insertion order on ties.
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    // Stable sort; preserves insertion order on ties.
+    scored.sort_by_key(|s| std::cmp::Reverse(s.0));
 
     moves.clear();
-    let mut buckets: smallvec::SmallVec<[u8; crate::moves::MOVE_GEN_CAP_INLINE]> =
-        smallvec::SmallVec::new();
+    let take = scored.len().min(MOVE_GEN_CAP);
+    moves.reserve(take);
+    buckets.reserve(take);
     for &(_, bucket, m) in scored.iter().take(MOVE_GEN_CAP) {
         moves.push(m);
         buckets.push(bucket);
     }
-    buckets
 }

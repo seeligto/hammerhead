@@ -136,7 +136,8 @@ fn incremental_handles_place_then_undo_round_trip() {
     let before_x = b.threats(Player::X).clone();
     let before_o = b.threats(Player::O).clone();
 
-    let legal = moves::generate(&b, 8);
+    let mut legal: Vec<hammerhead_engine_core::coords::Coord> = Vec::new();
+    moves::generate(&b, 8, &mut legal);
     assert!(!legal.is_empty());
     let mv = legal[0];
     b.place(mv).unwrap();

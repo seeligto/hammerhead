@@ -33,9 +33,10 @@ fn bench_generate(c: &mut Criterion) {
         for fx in FIXTURES {
             let board = (fx.build)();
             group.bench_function(fx.name, |b| {
+                let mut buf: Vec<hammerhead_engine_core::coords::Coord> = Vec::new();
                 b.iter(|| {
-                    let list = moves::generate(&board, r);
-                    black_box(list.len())
+                    moves::generate(&board, r, &mut buf);
+                    black_box(buf.len())
                 });
             });
         }
