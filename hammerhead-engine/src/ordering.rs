@@ -170,12 +170,25 @@ pub struct OrderingContext<'a> {
 // Bucket scoring
 // ────────────────────────────────────────────────────────────────────────
 
-/// Pack a `(bucket, history)` pair into a sortable `u32`. Bucket bits are
-/// the high 8; history occupies the low 24. Higher value = sorted earlier.
+/// Pack `(bucket, history, m)` into a sortable `u64` total-order key.
+/// Bucket occupies bits 56..64; the 24-bit history field occupies bits
+/// 32..56; the move's `(q, r)` (i16-bitcast-to-u16 halves) occupies the
+/// low 32 bits. Two distinct legal `Coord`s have distinct keys, so the
+/// key is total — `select_nth_unstable_by` over this key produces a
+/// deterministic top-N selection without relying on sort stability.
+/// Higher value = sorted earlier. See `SPEC_ENGINE.md` "Ordering".
 #[inline]
 #[must_use]
-fn priority(bucket: u8, history: u32) -> u32 {
-    (u32::from(bucket) << 24) | (history & HISTORY_CUTOFF_MAX)
+#[allow(clippy::cast_sign_loss)]
+fn priority(bucket: u8, history: u32, m: Coord) -> u64 {
+    let high = (u64::from(bucket) << 56) | (u64::from(history & HISTORY_CUTOFF_MAX) << 32);
+    // Deliberate bitcast i16 → u16 → u64 (zero-extend). The low 32
+    // bits make the key total: any two distinct legal Coords have
+    // distinct (q, r), so they cannot collide here, and the cast
+    // does not affect bucket/history ordering above.
+    let q = u64::from(m.q as u16);
+    let r = u64::from(m.r as u16);
+    high | (q << 16) | r
 }
 
 /// Encoding value for `m` per `SPEC_ENGINE.md` "Ordering". First match
@@ -324,7 +337,7 @@ fn coord_on_axis(axis: Axis, line_id: i16, pos: i16) -> Coord {
 /// `SearchScratch` slots directly), so the two local scratch `Vec`s here
 /// are acceptable.
 pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
-    let mut scored: Vec<(u32, u8, Coord)> = Vec::new();
+    let mut scored: Vec<(u64, u8, Coord)> = Vec::new();
     let mut buckets: Vec<u8> = Vec::new();
     order_moves_with_buckets(moves, ctx, &mut scored, &mut buckets);
 }
@@ -341,7 +354,7 @@ pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
 pub(crate) fn order_moves_with_buckets(
     moves: &mut MoveList,
     ctx: &OrderingContext<'_>,
-    scored: &mut Vec<(u32, u8, Coord)>,
+    scored: &mut Vec<(u64, u8, Coord)>,
     buckets: &mut Vec<u8>,
 ) {
     scored.clear();
@@ -354,17 +367,25 @@ pub(crate) fn order_moves_with_buckets(
     for &m in moves.iter() {
         let bucket = bucket_value(ctx, m);
         let h = ctx.history.get(&(m, ctx.side)).copied().unwrap_or(0);
-        scored.push((priority(bucket, h), bucket, m));
+        scored.push((priority(bucket, h, m), bucket, m));
     }
 
-    // Stable sort; preserves insertion order on ties.
+    // Partial sort: O(n) partition that places the top MOVE_GEN_CAP
+    // entries in indices 0..MOVE_GEN_CAP (unsorted within), then sort
+    // the surviving prefix. The priority key is total (Coord low-32
+    // tie-break), so this selection is deterministic without
+    // requiring sort stability — see `SPEC_ENGINE.md` "Ordering —
+    // encoding".
+    if scored.len() > MOVE_GEN_CAP {
+        scored.select_nth_unstable_by_key(MOVE_GEN_CAP - 1, |s| std::cmp::Reverse(s.0));
+        scored.truncate(MOVE_GEN_CAP);
+    }
     scored.sort_by_key(|s| std::cmp::Reverse(s.0));
 
     moves.clear();
-    let take = scored.len().min(MOVE_GEN_CAP);
-    moves.reserve(take);
-    buckets.reserve(take);
-    for &(_, bucket, m) in scored.iter().take(MOVE_GEN_CAP) {
+    moves.reserve(scored.len());
+    buckets.reserve(scored.len());
+    for &(_, bucket, m) in scored.iter() {
         moves.push(m);
         buckets.push(bucket);
     }

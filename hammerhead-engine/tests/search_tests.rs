@@ -88,19 +88,20 @@ fn forced_block_of_opp_closed_five() {
     b.force_parity_for_test(Player::X, 0);
 
     let r = run(&mut b, 4);
-    assert_eq!(
-        r.best_move,
-        Coord::new(5, 0),
-        "must block the only remaining endpoint, got {:?}",
-        r.best_move
-    );
-    // After blocking, O's 5-run is fully sealed and the position is
-    // close to even. A regression that wrongly scored the block as
-    // catastrophic (e.g. -100_000) would still satisfy a loose
-    // > -MATE/2 bound, so use a tight envelope.
+    // X has two stones per turn. The only way to avoid losing is to
+    // play (5,0) on either stone 1 or stone 2 of this turn; the
+    // engine may legitimately defer the block to stone 2 and use
+    // stone 1 for development (a higher-eval play). What matters for
+    // correctness is the search score — if X fails to block on
+    // *either* stone, O completes a 6-run next turn and the position
+    // is mate-class. Post-R-05 the engine prefers a developing first
+    // stone (e.g. (4,1)) that still leaves (5,0) available for the
+    // forced stone-2 block. Assert the non-losing score envelope
+    // instead of pinning a single root move.
     assert!(
         r.score.abs() < 50_000,
-        "post-block score must be near-neutral, got {}",
+        "post-block score must be near-neutral, got best_move={:?} score={}",
+        r.best_move,
         r.score
     );
 }

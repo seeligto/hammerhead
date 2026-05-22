@@ -49,7 +49,7 @@ pub struct SearchScratch {
     /// early-return path, where it never touches its own slot.
     pub moves: Box<[Vec<Coord>; MAX_PLY]>,
     /// Per-ply sort scratch for `order_moves_with_buckets`.
-    pub scored: Box<[Vec<(u32, u8, Coord)>; MAX_PLY]>,
+    pub scored: Box<[Vec<(u64, u8, Coord)>; MAX_PLY]>,
     /// Per-ply bucket-value output array (parallel to `moves` after
     /// ordering).
     pub buckets: Box<[Vec<u8>; MAX_PLY]>,
