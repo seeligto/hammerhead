@@ -4,7 +4,6 @@
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::config::{HISTORY_CUTOFF_MAX, MOVE_GEN_CAP};
 use hammerhead_engine_core::coords::Coord;
-use hammerhead_engine_core::moves::MoveList;
 use hammerhead_engine_core::ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 
 // ────────────────────────────────────────────────────────────────────────
@@ -27,8 +26,8 @@ fn mv(q: i16, r: i16) -> Coord {
     Coord::new(q, r)
 }
 
-fn list(cells: &[Coord]) -> MoveList {
-    let mut v: MoveList = MoveList::new();
+fn list(cells: &[Coord]) -> Vec<Coord> {
+    let mut v: Vec<Coord> = Vec::new();
     v.extend(cells.iter().copied());
     v
 }
@@ -230,7 +229,7 @@ fn truncates_to_move_gen_cap() {
     let state = OrderingState::new();
     let killer = KillerSlot::default();
     let c = ctx(&b, Player::X, None, &killer, &state.history, &[]);
-    let mut moves: MoveList = MoveList::new();
+    let mut moves: Vec<Coord> = Vec::new();
     // 50 far-apart cells with no tactical content — all bucket-1.
     for i in 0..50i16 {
         moves.push(mv(40 + i, 40));

@@ -26,7 +26,7 @@ pub use coords::{
     for_each_in_range, hex_distance, within_range,
 };
 pub use eval::{eval, is_mate_for};
-pub use moves::{MOVE_GEN_CAP_INLINE, MoveList, generate};
+pub use moves::{MOVE_GEN_CAP_INLINE, generate};
 pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 pub use engine::Engine;
 pub use search::{INF, SearchConfig, SearchResult, SearchScratch, search_root};

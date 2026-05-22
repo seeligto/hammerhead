@@ -21,7 +21,7 @@ use std::hint::black_box;
 use fxhash::FxHashMap;
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::coords::Coord;
-use hammerhead_engine_core::moves::{self, MoveList};
+use hammerhead_engine_core::moves;
 use hammerhead_engine_core::ordering::{
     KillerSlot, OrderingContext, bench_bucket_value, order_moves,
 };
@@ -51,7 +51,7 @@ fn bench_order_moves(c: &mut Criterion) {
 
     for fx in FIXTURES {
         let board = (fx.build)();
-        let mut template: MoveList = MoveList::new();
+        let mut template: Vec<Coord> = Vec::new();
         moves::generate(&board, 4, &mut template);
         group.bench_function(fx.name, |b| {
             b.iter_batched_ref(
@@ -74,7 +74,7 @@ fn bench_bucket(c: &mut Criterion) {
     let history: FxHashMap<(Coord, Player), u32> = FxHashMap::default();
     for fx in FIXTURES {
         let board = (fx.build)();
-        let mut candidates: MoveList = MoveList::new();
+        let mut candidates: Vec<Coord> = Vec::new();
         moves::generate(&board, 4, &mut candidates);
         group.bench_function(fx.name, |b| {
             b.iter(|| {

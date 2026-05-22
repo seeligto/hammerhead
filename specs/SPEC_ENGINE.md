@@ -291,9 +291,10 @@ strong moves.
   in `SearchScratch` retain capacity.
 - Outer path still builds a fresh `FxHashSet` per call (out of scope for
   Phase 25.5 — small, short-lived).
-- The `MoveList` alias is now `pub type MoveList = Vec<Coord>;` for back-
-  compat with external callers; internally search uses the boxed per-ply
-  `Vec<Coord>` directly.
+- The candidate-move buffer is `Vec<Coord>` (the Phase 25.5 R-04
+  `MoveList` alias was removed once no external callers were found).
+  Search uses the boxed per-ply `Vec<Coord>` slots in `SearchScratch`
+  directly; `ordering::order_moves` takes `&mut Vec<Coord>`.
 
 ## Axis Bitmaps (`axis_bitmap.rs`)
 

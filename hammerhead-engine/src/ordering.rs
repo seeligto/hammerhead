@@ -11,7 +11,6 @@ use crate::config::{
     HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY, MOVE_GEN_CAP,
 };
 use crate::coords::Coord;
-use crate::moves::MoveList;
 use fxhash::FxHashMap;
 
 // ────────────────────────────────────────────────────────────────────────
@@ -408,7 +407,7 @@ fn coord_on_axis(axis: Axis, line_id: i16, pos: i16) -> Coord {
 /// bucket array — not on the search hot path (search threads
 /// `SearchScratch` slots directly), so the two local scratch `Vec`s here
 /// are acceptable.
-pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
+pub fn order_moves(moves: &mut Vec<Coord>, ctx: &OrderingContext<'_>) {
     let mut scored: Vec<(u64, u8, Coord)> = Vec::new();
     let mut buckets: Vec<u8> = Vec::new();
     order_moves_with_buckets(moves, ctx, &mut scored, &mut buckets);
@@ -424,7 +423,7 @@ pub fn order_moves(moves: &mut MoveList, ctx: &OrderingContext<'_>) {
 /// them to per-ply slots in `SearchScratch` so the underlying allocations
 /// amortise across the entire search.
 pub(crate) fn order_moves_with_buckets(
-    moves: &mut MoveList,
+    moves: &mut Vec<Coord>,
     ctx: &OrderingContext<'_>,
     scored: &mut Vec<(u64, u8, Coord)>,
     buckets: &mut Vec<u8>,

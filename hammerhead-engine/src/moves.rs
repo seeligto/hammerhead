@@ -31,12 +31,6 @@ use fxhash::FxHashSet;
 /// capacity across nodes.
 pub const MOVE_GEN_CAP_INLINE: usize = 32;
 
-/// Candidate-move buffer alias. `Vec<Coord>` — capacity is retained
-/// across reuse via the caller's `clear()` discipline. Kept public so
-/// external callers that imported the old `SmallVec`-backed alias keep
-/// working with the new heap-backed buffer.
-pub type MoveList = Vec<Coord>;
-
 /// Generate candidate moves on `board` within `radius` of any existing
 /// piece, writing into `out`.
 ///
