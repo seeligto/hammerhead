@@ -25,10 +25,11 @@ crate-type = ["cdylib", "rlib"]
 # `tt_stats` and `mimalloc` stay opt-in: stats are a dev affordance
 # (zero-cost when off), and mimalloc was within noise on this host
 # (Phase 14 STEP 3.2). See specs/SPEC_BENCHMARKS.md.
-default   = ["simd_eval"]
-tt_stats  = []
-mimalloc  = ["dep:mimalloc"]
-simd_eval = []
+default        = ["simd_eval"]
+tt_stats       = []
+ordering_stats = []
+mimalloc       = ["dep:mimalloc"]
+simd_eval      = []
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }

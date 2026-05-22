@@ -13,6 +13,7 @@ pub mod ordering;
 pub mod proximity;
 pub mod pybind;
 pub mod search;
+pub mod search_stats;
 pub mod threats;
 pub mod tt;
 pub mod win;

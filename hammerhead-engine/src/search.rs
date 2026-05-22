@@ -27,6 +27,7 @@ use crate::config::{
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
 use crate::ordering::{self, KillerSlot, OrderingContext, OrderingState, order_moves_with_buckets};
+use crate::search_stats;
 use crate::tt::{TTFlag, TranspositionTable};
 use smallvec::SmallVec;
 
@@ -209,6 +210,7 @@ pub fn search_root(
     tt.new_generation();
     ordering.reset_killers(); // R-08-A: per-`best_move()` killer hygiene.
     ordering.decay_history();
+    search_stats::reset();
 
     let mut result = SearchResult::default();
     // Prime the fallback so a depth-1 timeout still returns *some* legal
@@ -273,6 +275,7 @@ pub fn search_root(
     }
     result.time_ms = elapsed_ms(start);
     result.nodes = node_count;
+    search_stats::dump_stderr();
     result
 }
 
@@ -324,6 +327,7 @@ fn iterate_at_depth(
         let fail_low = score <= alpha;
         let fail_high = score >= beta;
         let at_full_window = alpha == -INF && beta == INF;
+        search_stats::note_asp_iter(fail_low, fail_high, at_full_window);
         if (!fail_low && !fail_high) || at_full_window {
             let best = tt.probe(root_hash).map_or(ORIGIN, |entry| entry.best_move);
             return Ok((score, best));
@@ -423,6 +427,7 @@ fn pvs_node(
                 };
                 ordering::bucket_value(&ctx, m)
             };
+            search_stats::note_stage1_tried();
             beta_cut = try_one_move(
                 board, tt, ord, scratch, cfg, depth,
                 &mut alpha, &mut beta, ply, extensions_left, deadline,
@@ -430,6 +435,9 @@ fn pvs_node(
                 m, bucket, move_idx,
                 &mut best_score, &mut best_move,
             )?;
+            if beta_cut {
+                search_stats::note_cut(1, bucket, depth, None);
+            }
             tried.push(m);
             move_idx += 1;
         }
@@ -437,7 +445,8 @@ fn pvs_node(
 
     // Stage 2: killer moves (slot 0 first = most recent).
     if !beta_cut {
-        for slot in killers_snap.slots().iter().copied().flatten() {
+        for (slot_idx, slot_opt) in killers_snap.slots().iter().enumerate() {
+            let Some(slot) = *slot_opt else { continue };
             if tried.contains(&slot) || !board.is_legal(slot) {
                 continue;
             }
@@ -452,6 +461,7 @@ fn pvs_node(
                 };
                 ordering::bucket_value(&ctx, slot)
             };
+            search_stats::note_stage2_tried(slot_idx);
             beta_cut = try_one_move(
                 board, tt, ord, scratch, cfg, depth,
                 &mut alpha, &mut beta, ply, extensions_left, deadline,
@@ -459,6 +469,9 @@ fn pvs_node(
                 slot, bucket, move_idx,
                 &mut best_score, &mut best_move,
             )?;
+            if beta_cut {
+                search_stats::note_cut(2, bucket, depth, Some(slot_idx));
+            }
             tried.push(slot);
             move_idx += 1;
             if beta_cut {
@@ -510,6 +523,7 @@ fn pvs_node(
                 continue;
             }
             let bucket = scratch.buckets[ply_idx][i];
+            search_stats::note_stage3_tried();
             let cut = try_one_move(
                 board, tt, ord, scratch, cfg, depth,
                 &mut alpha, &mut beta, ply, extensions_left, deadline,
@@ -519,6 +533,7 @@ fn pvs_node(
             )?;
             move_idx += 1;
             if cut {
+                search_stats::note_cut(3, bucket, depth, None);
                 break;
             }
         }
@@ -589,6 +604,9 @@ fn pvs_dance(
     } else {
         (beta.saturating_sub(1).max(-INF), beta)
     };
+    if lmr_reduction > 0 && probe_depth < new_depth {
+        search_stats::note_lmr_fired();
+    }
     let probed = pvs_node(
         board,
         tt,
@@ -613,6 +631,7 @@ fn pvs_dance(
         return Ok(probed);
     }
     let after_lmr = if lmr_reduction > 0 && probe_depth < new_depth {
+        search_stats::note_lmr_research();
         pvs_node(
             board,
             tt,
@@ -643,6 +662,7 @@ fn pvs_dance(
             after_lmr > alpha
         };
     if needs_full {
+        search_stats::note_lmr_research_full();
         pvs_node(
             board,
             tt,
@@ -689,6 +709,7 @@ fn try_one_move(
     best_score: &mut i32,
     best_move: &mut Coord,
 ) -> Result<bool, SearchError> {
+    search_stats::note_bucket_tried(bucket);
     // Check extension: own move creates a fresh S0 against the opponent
     // and we still have budget.
     let extends_check = bucket == BUCKET_S0_CREATE && extensions_left > 0;
