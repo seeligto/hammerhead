@@ -26,7 +26,7 @@ use crate::config::{
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
-use crate::ordering::{self, OrderingContext, OrderingState, order_moves_with_buckets};
+use crate::ordering::{self, KillerSlot, OrderingContext, OrderingState, order_moves_with_buckets};
 use crate::tt::{TTFlag, TranspositionTable};
 use smallvec::SmallVec;
 
@@ -225,8 +225,21 @@ pub fn search_root(
     let mut prev_score: Option<i32> = None;
     let mut node_count: u64 = 0;
 
+    // R-08-B: pre-allocate a single scratch buffer for the per-ID-iteration
+    // killer snapshot. `*buf = *ord.killers` memcpys ~1 KB; sub-microsecond
+    // vs iteration runtimes in the 10s of ms. On `SearchError::Timeout` we
+    // restore so partial-iteration killer writes from the aborted depth do
+    // not contaminate the next `best_move()` call's ordering.
+    let mut killers_snapshot: Box<[KillerSlot; MAX_PLY]> =
+        Box::new([KillerSlot::default(); MAX_PLY]);
+
     let max_depth = cfg.max_depth.max(1);
     for depth in 1..=max_depth {
+        // Record the killer state entering this ID iteration. Snapshot is
+        // taken once per ID depth — outside the aspiration loop inside
+        // `iterate_at_depth` — so failed aspiration attempts within the
+        // same depth deliberately share killer state with the next attempt.
+        *killers_snapshot = *ordering.killers;
         match iterate_at_depth(
             board,
             tt,
@@ -248,7 +261,11 @@ pub fn search_root(
                 };
                 prev_score = Some(score);
             }
-            Err(SearchError::Timeout) => break,
+            Err(SearchError::Timeout) => {
+                // Roll back partial-iteration killer writes.
+                *ordering.killers = *killers_snapshot;
+                break;
+            }
         }
         if deadline_reached(deadline) {
             break;
