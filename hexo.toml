@@ -79,7 +79,7 @@ asp_window_widen_factor = 2
 # moves. R = lmr_reduction at depth >= lmr_min_depth, move index >= lmr_min_move_index.
 lmr_min_depth        = 3
 lmr_min_move_index   = 6
-lmr_reduction        = 2          # Phase 26.5 T-03: 1 → 2 (I-LMR found weighted rs_rate 10.92%, well under 15-30% sweet spot — 3-10× headroom on 3/4 fixtures).
+lmr_reduction        = 1
 
 # Threat-only quiescence cap (plies inside qsearch).
 qsearch_max_plies = 8
