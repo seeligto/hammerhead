@@ -90,6 +90,14 @@ Implementation:
   `WINDOW_SCORE_8[idx]`.
 - Sum across all axes.
 
+Layer-1 contributions to Layer-2-detected shapes are by design:
+Layer 2 detects discrete shapes (k=4, k=5 with open/closed gating),
+Layer 1 provides continuous gradient across all k including k=2 and
+k=3 which Layer 2 ignores. The Layer-1 contribution to a Layer-2-
+classified shape is small relative to the shape weight (≤15 %
+empirically) and provides search gradient on the way to forming the
+shape rather than re-rewarding it.
+
 ## Layer 2: Shape Detection (WSC tuples)
 
 Detect named threat shapes. Score per WSC tuple `(W, S, C)`.
