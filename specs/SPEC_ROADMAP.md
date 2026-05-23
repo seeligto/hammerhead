@@ -585,6 +585,90 @@ existing code; real wins need algorithmic work-reduction. See
 **Reference node counts are the regression net** — 32/32 byte-identical
 pre/post (trivially, since no engine code changed).
 
+## Phase 28B — Eval-Value Tuning Sprint
+
+Match-driven coordinate-descent sweep of the top-5 unswept eval
+scalars (`open_4`, `fork_cover2_bonus`, `window_k_scores[5]`,
+`closed_5`, `open_extension_factor`). Phase 28A audit found that
+the live S0 + window + extension + fork surface had never been
+game-time-tuned since the codebase existed — the "Phase 10 self-
+play tuning" provenance claim in SPEC_EVAL was unsubstantiated
+(no commit trail in git history).
+
+Built on Phase 27 (`e28d54a`). Resurrected the Phase 20-deleted
+sweep infrastructure: 14-scalar `EvalOverrides` runtime override
+surface + `hammerhead bench tune-sweep` driver (`tune.py`).
+Pre-screened all 5 candidates at endpoints, ran Stage 1 (200g)
++ Stage 2 (400g) per surviving candidate. Stopping rule (3
+consecutive Stage 2 CI straddles → auto-terminate) triggered at
+B-2.3; continued past per documented judgment.
+
+**Outcome.** 3 of 5 candidates landed on master as MARGINAL-LANDs
+(Phase 27 shape — positive point estimate, CI straddles zero):
+
+- `open_4`: 60_000 → 135_000 (commit `b35936b`, Stage 2 +12.2 Elo)
+- `window_k_scores[5]`: 4_096 → 2_048 (commit `5283059`, +20.9 Elo)
+- `open_extension_factor`: 4 → 8 (commit `13dc73a`, +6.9 Elo)
+
+2 reverted (Stage 2 point negative or essentially zero):
+- `fork_cover2_bonus`: stays 4_000 (Stage 2 -15.6 Elo)
+- `closed_5`: stays 500_000 (Stage 2 -1.7 Elo, despite strongest
+  pre-screen signal of all 5)
+
+Combined-best probe (HEAD with 3 wins vs HEAD-with-3-wins-undone
+at 400g): **-3.5 Elo CI [-37.5, +30.5]**. The 3 wins do NOT
+compose additively — sum-of-per-axis +40 Elo, joint -3.5 Elo
+(43 Elo delta below additive prediction).
+
+Final promote-match HEAD vs `.bestref` (`932c5d8`) at 400g:
+**+17.4 Elo CI [-16.7, +51.4]**, REJECT (strict gate CI lower > 0
+not cleared). **`.bestref` UNCHANGED.** Outcome B per Phase 28A.5
+plan § G (modal expectation, matches Phase 27 shape).
+
+**Key meta-findings:**
+
+1. Eval surface is noise-resolution-limited. ALL 5 candidates
+   produced Stage 2 CIs straddling zero. Signal exists but
+   amplitude is below the 400g harness floor (±34 Elo CI).
+2. Combined-best shows negative interaction between per-axis
+   wins (Layer-1 vs Layer-2 balance shift).
+3. Pre-screen single-run Elo is noise-dominated at 200g
+   per endpoint — useful only for routing (dead-substrate
+   detection), not cell-quality ranking.
+4. Baseline-vs-baseline self-test noise stdev ~19 Elo at 200g.
+
+**Reference node counts** rebaselined per landing (3 fresh
+`baseline.json` macro.reference blocks — Phase 25.5 rule
+applied per value-tuning rebaseline event). B-0/B-1 commits
+byte-identical (no behaviour change); B-2.x commits intentionally
+drift.
+
+**Sprint wall-clock**: ~6h 22min (vs 16.3h plan worst-case).
+2.6× faster than plan estimate — host throughput exceeded
+budget (games complete ~7 min/200g vs plan's ~20 min assumption).
+
+**Phase 28C handoff items**:
+
+- Combo test at higher N (800g/1600g): Phase 27 + Phase 28B
+  winners vs `.bestref` to see if cumulative bumps clear strict
+  gate.
+- Subset experiments: combined-best showed -43 Elo delta vs
+  sum; find which 28B winners are net-positive when stacked
+  (drop B-2.1 alone, drop B-2.5 alone).
+- Opening diversity validation A/B (per Phase 28A.5 A-5 forward
+  commitment): test HEAD vs HEAD diversity ON vs OFF.
+- Tempo proxy (per Phase 28A I1 § 3): requires detector revival
+  or proxy invention. Strongest PDF evidence (TT p. 11) of any
+  deferred item.
+- Refined stopping rule: "point < +5 Elo" instead of "CI straddles
+  zero" for consecutive-straddle terminator.
+
+Full retrospective: `/tmp/phase_28b/PHASE_28B_RETRO.md` (gitignored
+per Phase 25.5 repo hygiene). Per-candidate audit:
+`/tmp/phase_28b/SPRINT_STATE.md`. Per-stage A/B logs and JSONs:
+`/tmp/phase_28b/B-{0..3}/`. HOTSPOTS detail:
+`benches/results/HOTSPOTS.md § Phase 28B status`.
+
 ## Phase 26 candidates (deferred follow-ups)
 
 Carried forward — items still open after Phase 25.
