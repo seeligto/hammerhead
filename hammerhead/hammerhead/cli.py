@@ -5,13 +5,15 @@ Subcommands:
 * ``play``     — human vs bot REPL
 * ``selfplay`` — bot vs bot, log winners
 * ``bench``    — benchmark suite (micro/quick/perf/nps/depth/
-  threats/selfplay/reference/scaling/breakdown/all/diff)
+  threats/selfplay/reference/scaling/breakdown/all/diff/tune-sweep)
 * ``bot``      — line-based subprocess protocol (Phase 11 harness)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from typing import Optional
 
@@ -19,8 +21,19 @@ from hammerhead_engine import Engine
 
 from .config import CONFIG
 from .game import GameRecord
-from .cli_bench import cmd_bench
+from .cli_bench import cmd_bench, cmd_tune_sweep
 from .cli_match import cmd_match, cmd_promote, _default_workers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Subprocess-bot eval-override env-var contract (Phase 28B-1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# `cmd_bot` honours this env var at startup. JSON-encoded dict whose
+# keys / values match ``Bot.set_eval_overrides``. The tune.py sweep
+# driver sets it per worker so the candidate engine carries a single
+# cell's overrides for the full match; the baseline engine inherits
+# the parent's environment unset (which equals the hexo.toml default).
+_EVAL_OVERRIDES_ENV = "HEXO_EVAL_OVERRIDES"
 
 # re-export for back-compat (e.g. test_benchmark.py: from hammerhead.cli import _bench_diff)
 from .cli_bench import _bench_diff  # noqa: F401
@@ -137,6 +150,30 @@ def cmd_selfplay(args: argparse.Namespace) -> int:
 
 def cmd_bot(args: argparse.Namespace) -> int:
     eng = Engine(tt_size_mb=args.tt_size_mb)
+    # Apply runtime eval overrides if the launcher set them. This is how
+    # tune.py threads per-cell overrides into a subprocess-bot match
+    # without touching promote.py's command-line surface (Phase 28B-1).
+    raw = os.environ.get(_EVAL_OVERRIDES_ENV)
+    if raw:
+        try:
+            overrides = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            sys.stderr.write(
+                f"error: {_EVAL_OVERRIDES_ENV} is not valid JSON: {exc}\n"
+            )
+            return 2
+        if not isinstance(overrides, dict):
+            sys.stderr.write(
+                f"error: {_EVAL_OVERRIDES_ENV} must encode a JSON object\n"
+            )
+            return 2
+        try:
+            eng.set_eval_overrides(overrides)
+        except (ValueError, TypeError) as exc:
+            sys.stderr.write(
+                f"error: set_eval_overrides({overrides!r}) failed: {exc}\n"
+            )
+            return 2
     sys.stdout.write("hammerhead bot ready\n")
     sys.stdout.flush()
     for raw in sys.stdin:
@@ -327,6 +364,17 @@ def _build_parser() -> argparse.ArgumentParser:
     bs = bsub.add_parser("diff", help="compare two run JSONs")
     bs.add_argument("a")
     bs.add_argument("b")
+
+    bs = bsub.add_parser(
+        "tune-sweep",
+        help="Phase 28B-1 coordinate-descent sweep driver "
+        "(one stage of one candidate per invocation)",
+    )
+    # Defer the actual argument wiring to tune.add_tune_sweep_args so
+    # the CLI surface stays defined next to the implementation.
+    from .tune import add_tune_sweep_args
+
+    add_tune_sweep_args(bs)
 
     sp_bench.set_defaults(fn=cmd_bench)
 

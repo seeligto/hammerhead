@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 .PHONY: help build build-tt-stats clean rebuild test lint fmt check vs \
         promote install bench bench-quick bench-perf bench-micro \
-        bench-micro-quick bench-diff bench-baseline flamegraph pgo
+        bench-micro-quick bench-diff bench-baseline flamegraph pgo \
+        tune tune-smoke
 
 ENGINE    := hammerhead-engine
 PY        := hammerhead
@@ -130,3 +131,30 @@ promote: ## [Phase 11] advance .bestref to HEAD if match verdict is PROMOTE
 	@$(VPY) -m hammerhead.cli promote \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
 	    --workers $(N_WORKERS)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 28B-1 — coordinate-descent sweep driver.
+# See specs/SPEC_BENCHMARKS.md + plan § C "Commit B-1.2".
+# STAGE = A|B|C (endpoint pre-screen / Stage-1 screen / Stage-2 validation).
+# PARAM = e.g. open_4 or window_k_scores[5].
+# GRID  = comma-separated integer cell values.
+# GAMES = games per cell (default: 200 for A/B, 400 for C).
+# TIME_MS_TUNE / WORKERS_TUNE / OUT override the sweep driver defaults.
+# ──────────────────────────────────────────────────────────────────────────────
+
+TIME_MS_TUNE  ?= 500
+WORKERS_TUNE  ?= 10
+OUT           ?= benches/results/tune
+
+tune: ## [Phase 28B-1] run one stage of one candidate sweep (STAGE, PARAM, GRID, [GAMES])
+	@$(VPY) -m hammerhead.cli bench tune-sweep \
+	    --stage $(STAGE) --param $(PARAM) --grid $(GRID) \
+	    $(if $(GAMES),--games $(GAMES),) \
+	    --time-ms $(TIME_MS_TUNE) --workers $(WORKERS_TUNE) \
+	    --out $(OUT)
+
+tune-smoke: ## [Phase 28B-1] 5g/cell wiring-verification sweep (STAGE, PARAM, GRID)
+	@$(VPY) -m hammerhead.cli bench tune-sweep --smoke \
+	    --stage $(STAGE) --param $(PARAM) --grid $(GRID) \
+	    --time-ms $(TIME_MS_TUNE) --workers $(WORKERS_TUNE) \
+	    --out $(OUT)

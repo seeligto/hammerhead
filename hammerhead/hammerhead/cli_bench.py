@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import benchmark as bench
 from .config import CONFIG
+from .tune import cmd_tune_sweep  # re-export for cli.py wiring
 
 
 _REPO_ROOT = CONFIG.source_path.parent
@@ -74,6 +75,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return _bench_all(args)
     if sub == "diff":
         return _bench_diff(args)
+    if sub == "tune-sweep":
+        return cmd_tune_sweep(args)
     print(f"error: unknown bench subcommand {sub}", file=sys.stderr)
     return 1
 
