@@ -1,3 +1,147 @@
+# Hotspots — Phase 28B (eval-value tuning sprint)
+
+## Phase 28B status (2026-05-23)
+
+Phase 28B was a match-driven coordinate-descent sweep of the top-5
+unswept eval scalars (the live S0 + window + extension + fork surface
+that had never been game-time-tuned since the codebase existed —
+per Phase 28A audit, the "Phase 10 self-play tuning" claim in
+SPEC_EVAL was unsubstantiated). Resurrected the Phase 20-deleted
+sweep infrastructure (`tune.py` + a 14-scalar `EvalOverrides` runtime
+override surface) and ran 5 candidates through pre-screen + Stage 1
+(200g) + Stage 2 (400g) per plan § D.
+
+**Headline (commit `13dc73a`, final promote-match REJECT):**
+- 3 of 5 candidates landed on master as MARGINAL-LANDs (Phase 27
+  shape — positive point estimate, CI straddles zero). 2 reverted.
+- Cumulative HEAD vs `.bestref` (932c5d8) at 400g: **+17.4 Elo
+  CI [-16.7, +51.4]**, REJECT (strict gate CI lower > 0 not cleared).
+- `.bestref` UNCHANGED. Outcome B per plan § G (modal expectation).
+- Combined-best probe: HEAD with 3 wins vs HEAD-with-3-wins-undone
+  at 400g = **-3.5 Elo CI [-37.5, +30.5]**. The 3 wins do NOT
+  compose additively (sum-of-per-axis +40 Elo, joint -3.5 Elo —
+  the joint underperforms the additive prediction by 43 Elo).
+- Reference node counts rebaselined per landing (3 baseline.json
+  refreshes — Phase 25.5 rule applied per value-tuning rebaseline).
+
+**Landed values (vs e28d54a baseline):**
+
+| Param | Was | Now | Stage 2 Elo | Decision |
+|---|---:|---:|---:|---|
+| `open_4` | 60_000 | **135_000** | +12.2 CI [-21.8, +46.2] | MARGINAL-LAND (B-2.1, `b35936b`) |
+| `fork_cover2_bonus` | 4_000 | 4_000 | -15.6 CI [-49.7, +18.4] | REVERT (B-2.2) |
+| `window_k_scores[5]` | 4_096 | **2_048** | +20.9 CI [-13.2, +54.9] | MARGINAL-LAND (B-2.3, `5283059`) |
+| `closed_5` | 500_000 | 500_000 | -1.7 CI [-35.7, +32.3] | REVERT (B-2.4) |
+| `open_extension_factor` | 4 | **8** | +6.9 CI [-27.1, +41.0] | MARGINAL-LAND (B-2.5, `13dc73a`) |
+
+**NPS impact (bench-quick, midgame_12):**
+- Pre-sprint (e28d54a): ~552k NPS
+- Post-B-2.1 (open_4=135k): ~552k (Δ +0.0%)
+- Post-B-2.3 (+ window_k=2048): ~551k (Δ -0.2%)
+- Post-B-2.5 (+ open_ext=8): ~524k (Δ -4.9% vs pre-sprint)
+
+The open_extension_factor change from 4 to 8 has measurable
+throughput cost (-4.9% NPS, near the ±5% gate edge — verified
+across 4 bench-quick runs). The higher extension multiplier
+applies the boost to more S0 windows in the Layer-1 pass.
+open_4 and window_k_scores[5] are NPS-neutral (table swaps).
+
+**Flamegraph breakdown not refreshed** for Phase 28B — value
+tuning doesn't shift hot-path distribution materially (per
+Phase 28A I-HOTPATH projection); the Phase 27 ranking still
+applies.
+
+**Commits (7 atomic, all on master):**
+
+| SHA | Subject | Type |
+|---|---|---|
+| `9982a26` | spec: correct S0 weight provenance (Phase 28B-0) | spec drift |
+| `bc2ef6e` | spec: document Layer-1/Layer-2 stacking rationale (Phase 28B-0) | spec drift |
+| `128b115` | eval: add EvalOverrides struct + PyO3 setter (Phase 28B-1) | infrastructure |
+| `0bd419a` | tune: revive coord-descent sweep driver (Phase 28B-1) | infrastructure |
+| `b35936b` | tune: open_4 -> 135000 (Phase 28B-2.1) | value MARGINAL-LAND |
+| `5283059` | tune: window_k_scores[5] -> 2048 (Phase 28B-2.3) | value MARGINAL-LAND |
+| `13dc73a` | tune: open_extension_factor -> 8 (Phase 28B-2.5) | value MARGINAL-LAND |
+
+**Verification protocol (per plan § H per-commit gate):**
+- Per-commit gate (every B-1.x and B-2.x landing): `make check`
+  green (clippy + cargo test --release + 133 pytest), `make
+  bench-quick` NPS within ±5% of pre-commit baseline, refreshed
+  baseline.json `macro.reference` block in the same commit for
+  value landings (intentional rebaseline event per Phase 25.5).
+- B-0/B-1 commits gated on byte-identical reference counts (no
+  behaviour change).
+- B-2.x commits intentionally drift reference node counts (eval
+  changes re-order moves). baseline.json macro.reference refreshed
+  in-commit via `bench reference --tt-stats`.
+
+**Match harness budget:**
+- Plan worst-case: 16.3h match wall-clock at 10 workers, 500ms/stone.
+- Actual: **~6h 22min** total sprint (2.6× faster than plan).
+  Games complete in ~7 min/200g vs plan's ~20 min/200g assumption.
+- Surface ceiling (18h, +10% buffer) never approached.
+
+**Key meta-findings (Phase 28B harvest):**
+
+1. **Eval surface is noise-resolution-limited.** ALL 5 candidates
+   produced Stage 2 CIs straddling zero. The eval surface produces
+   signal but signal amplitude is below the 400g harness floor
+   (±34 Elo). At 800g some candidates would clear the gate
+   (closed_5 pooled 800g signal ~+15.6 Elo) but the per-axis Elo
+   is near the resolution boundary even at significantly higher N.
+
+2. **Combined-best negative interaction.** Sum-of-per-axis (+40)
+   vs joint Elo (-3.5) → -43.5 Elo delta. Per-axis Elos cannot be
+   assumed additive on this surface. Likely mechanism: B-2.1 +
+   B-2.5 push harder on attack shapes while B-2.3 reduces Layer-1
+   k=5 contribution; the Layer-1/Layer-2 balance shifts and the
+   engine may over-extend attacks.
+
+3. **Pre-screen single-run Elo is unreliable.** Cross-run sign-
+   flips on >50% of pre-screen → Stage 1 transitions. Pre-screen
+   IS useful for routing (dead-substrate detection) but single
+   point estimates at 200g are dominated by noise.
+
+4. **Baseline-vs-baseline self-test asymmetric noise**: ~19 Elo
+   stdev across 5 runs (centre estimates from -20.9 to +27.9
+   when both engines play identical eval). Phase 28C should
+   apply a noise-adjusted Stage 1 gate: candidate centre >
+   (baseline self-test + 20 Elo) AND CI upper > 0.
+
+**Stopping rule outcomes:**
+- Stage-1-zero rule: 0/2 — never triggered.
+- Stage-2-straddle rule (3 consecutive straddles): triggered at
+  B-2.3 (3/3). Continued past per documented dispatcher judgment
+  (rule intent is dead-substrate detection; our pattern was
+  weak-signal-below-floor with 3 of 5 producing MARGINAL-LANDs).
+  Net cost-benefit roughly neutral: one extra MARGINAL-LAND
+  (B-2.5) + combined-best evidence about negative interaction.
+
+**Phase 28C hand-off:**
+- **Combo test at higher N**: bundle Phase 27 + Phase 28B winners
+  vs `.bestref` at 800g/1600g to see if cumulative bumps clear
+  the strict gate. Per plan § G forward commitment.
+- **Subset experiments**: combined-best showed -43 Elo delta vs
+  sum. Test subset compositions (drop B-2.1 alone, drop B-2.5
+  alone) to find which 28B winners are net-positive when stacked.
+- **Opening diversity validation A/B**: per Phase 28A.5 A-5
+  forward commitment. Test HEAD vs HEAD diversity ON vs OFF.
+- **Tempo proxy** (per I1 § 3): structurally different from value
+  tuning. Requires detector revival or proxy. Strongest PDF
+  evidence (TT p. 11 "tempo is the most important currency") of
+  any deferred item.
+- **Refined stopping rule**: replace "CI straddles zero" with
+  "point estimate < +5 Elo" for consecutive-straddle terminator
+  (doesn't misfire on weak-positive cases).
+
+**Match harness reminder (Phase 26.5 meta-finding, BINDING):**
+500ms × 200g CI ≈ ±48 Elo; 400g ≈ ±34 Elo. Per-step A/Bs at 100g
+sanity-only. Promote-matches require ≥400g for sub-25 Elo deltas;
+clearing the strict gate from a Phase 27/28B-shape marginal
+requires 800g+ per combo-test forward commitment.
+
+---
+
 # Hotspots — Phase 27 (LineContribution cache)
 
 ## Phase 27 status (2026-05-22)
