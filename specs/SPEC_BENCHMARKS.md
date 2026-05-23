@@ -627,6 +627,41 @@ CLI / Makefile:
    make vs N_GAMES=200 TIME_MS=1000 N_WORKERS=14
    make vs N_GAMES=50 TIME_MS=500 TEST=sprt   # SPRT mode unchanged
 
+## Optuna BO sweep driver (Phase 28C-1)
+
+`hammerhead tune-bo` is the Bayesian-optimisation companion to the
+Phase 28B-1 coordinate-descent driver (`hammerhead bench tune-sweep`).
+It wraps Optuna 4.8's `GPSampler` (Matérn-5/2 GP surrogate, ARD per-
+dim length-scales, `deterministic_objective=False` so the noise
+variance is learned from data) around the same Phase 17 parallel
+match harness used by `make vs` and `tune-sweep`. Trial-side
+`EvalOverrides` land in the candidate engine via the
+`HEXO_EVAL_OVERRIDES` env var (same contract as `tune.py`); the
+reference engine is a fixed-SHA worktree binary passed via
+`--reference-binary`, invoked through `env -u HEXO_EVAL_OVERRIDES`
+so it always runs the baseline config. Opening diversity is forced
+off per Phase 28A.5.
+
+The study persists to a SQLite database (`load_if_exists=True` makes
+the sprint trivially resumable), with one atomic per-trial JSON
+sidecar (`<output-dir>/<trial>.json`) carrying the Wilson CI bounds
+and the Wilson-derived `elo_sem` user-attr. The HEAD config is
+enqueued as trial #0 to anchor the GP at a known-good point without
+wasting a random-init slot; trials 1..9 are random warm-up
+(`n_startup_trials=10`), then GP-informed thereafter. Trial budget
+defaults to 60 × 200 games; `--smoke` drops to 2 × 5 games for
+wiring verification.
+
+`hammerhead tune-bo-report --study-name … --storage …` is the read-
+only post-hoc reporter: top-K trials by Elo, `study.best_params`
+(Optuna's running argmax; the closest proxy to a GP-posterior
+argmax exposed in 4.8), and fANOVA parameter importance via
+`optuna.importance.get_param_importances`. Dispatcher-side drift
+correction (rolling baseline-vs-baseline self-test every K trials)
+is handled outside the driver per Phase 28C-1 design §4 (kept out so
+the driver stays a pure consumer of the harness, parallel to
+`tune.py`).
+
 ## Methodology fixes (Phase 25)
 
 Three measurement-infrastructure repairs surfaced by Phase 24.

@@ -422,6 +422,16 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(fn=cmd_tune_bo)
 
     sp = sub.add_parser(
+        "tune-bo-report",
+        help="Phase 28C-1 BO study post-hoc reporter "
+        "(top-K trials, best params, fANOVA importance)",
+    )
+    from .tune_bo_report import add_tune_bo_report_args, cmd_tune_bo_report
+
+    add_tune_bo_report_args(sp)
+    sp.set_defaults(fn=cmd_tune_bo_report)
+
+    sp = sub.add_parser(
         "promote",
         help="run match vs .bestref worktree; advance .bestref on PROMOTE",
     )
