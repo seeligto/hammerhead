@@ -28,7 +28,7 @@ mate_score = 1_000_000
 # See SPEC_EVAL.md § Layer 2 history.
 open_5   = 800_000
 closed_5 = 500_000
-open_4   = 60_000
+open_4   = 135_000
 closed_4 = 20_000
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.

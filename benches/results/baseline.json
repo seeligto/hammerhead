@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-05-22T14:56:40Z",
-  "git_sha": "932c5d8",
+  "timestamp": "2026-05-23T11:05:52Z",
+  "git_sha": "0bd419a38b30ade87fc55fa930a9f919b151d340",
   "rustc_version": "rustc 1.95.0 (59807616e 2026-04-14) (Arch Linux rust 1:1.95.0-1)",
   "host": {
     "cpu": "AMD Ryzen 7 3700X 8-Core Processor",
@@ -1521,7 +1521,7 @@
         "depth": 1,
         "nodes": 3,
         "ms": 0,
-        "tt_hit_rate": 0.3333333333333333
+        "tt_hit_rate": 0.3333
       },
       {
         "fixture": "empty",
@@ -1535,42 +1535,42 @@
         "depth": 3,
         "nodes": 901,
         "ms": 0,
-        "tt_hit_rate": 0.012903225806451613
+        "tt_hit_rate": 0.0129
       },
       {
         "fixture": "empty",
         "depth": 4,
-        "nodes": 6105,
-        "ms": 8,
-        "tt_hit_rate": 0.3026525198938992
+        "nodes": 6436,
+        "ms": 7,
+        "tt_hit_rate": 0.2937
       },
       {
         "fixture": "empty",
         "depth": 5,
-        "nodes": 41545,
-        "ms": 63,
-        "tt_hit_rate": 0.1639509417433202
+        "nodes": 42455,
+        "ms": 56,
+        "tt_hit_rate": 0.1637
       },
       {
         "fixture": "empty",
         "depth": 6,
-        "nodes": 62702,
-        "ms": 98,
-        "tt_hit_rate": 0.25196914113077257
+        "nodes": 64977,
+        "ms": 83,
+        "tt_hit_rate": 0.24230000000000002
       },
       {
         "fixture": "empty",
         "depth": 7,
-        "nodes": 151042,
-        "ms": 244,
-        "tt_hit_rate": 0.18905525593717476
+        "nodes": 143940,
+        "ms": 183,
+        "tt_hit_rate": 0.1787
       },
       {
         "fixture": "empty",
         "depth": 8,
-        "nodes": 1575322,
-        "ms": 3359,
-        "tt_hit_rate": 0.14565100651659627
+        "nodes": 1303435,
+        "ms": 1942,
+        "tt_hit_rate": 0.15710000000000002
       },
       {
         "fixture": "single_origin",
@@ -1584,161 +1584,161 @@
         "depth": 2,
         "nodes": 896,
         "ms": 0,
-        "tt_hit_rate": 0.006521739130434782
+        "tt_hit_rate": 0.006500000000000001
       },
       {
         "fixture": "single_origin",
         "depth": 3,
-        "nodes": 3462,
+        "nodes": 3559,
         "ms": 4,
-        "tt_hit_rate": 0.10150753768844221
+        "tt_hit_rate": 0.09
       },
       {
         "fixture": "single_origin",
         "depth": 4,
-        "nodes": 38252,
-        "ms": 58,
-        "tt_hit_rate": 0.13639432815665092
+        "nodes": 39433,
+        "ms": 53,
+        "tt_hit_rate": 0.1346
       },
       {
         "fixture": "single_origin",
         "depth": 5,
-        "nodes": 63205,
-        "ms": 100,
-        "tt_hit_rate": 0.2476814111987171
+        "nodes": 63707,
+        "ms": 80,
+        "tt_hit_rate": 0.2446
       },
       {
         "fixture": "single_origin",
         "depth": 6,
-        "nodes": 138069,
-        "ms": 221,
-        "tt_hit_rate": 0.1752418761173625
+        "nodes": 127726,
+        "ms": 164,
+        "tt_hit_rate": 0.1807
       },
       {
         "fixture": "single_origin",
         "depth": 7,
-        "nodes": 1938197,
-        "ms": 4732,
-        "tt_hit_rate": 0.13683085381373308
+        "nodes": 929400,
+        "ms": 1384,
+        "tt_hit_rate": 0.1423
       },
       {
         "fixture": "single_origin",
         "depth": 8,
-        "nodes": 8948068,
-        "ms": 23625,
-        "tt_hit_rate": 0.1014813085658198
+        "nodes": 4287339,
+        "ms": 7181,
+        "tt_hit_rate": 0.1894
       },
       {
         "fixture": "midgame_12",
         "depth": 1,
         "nodes": 341,
         "ms": 0,
-        "tt_hit_rate": 0.009708737864077669
+        "tt_hit_rate": 0.0097
       },
       {
         "fixture": "midgame_12",
         "depth": 2,
-        "nodes": 1186,
-        "ms": 3,
-        "tt_hit_rate": 0.01845018450184502
+        "nodes": 559,
+        "ms": 1,
+        "tt_hit_rate": 0.0246
       },
       {
         "fixture": "midgame_12",
         "depth": 3,
-        "nodes": 7424,
-        "ms": 15,
-        "tt_hit_rate": 0.20223841749089017
+        "nodes": 6634,
+        "ms": 9,
+        "tt_hit_rate": 0.2028
       },
       {
         "fixture": "midgame_12",
         "depth": 4,
-        "nodes": 29403,
-        "ms": 74,
-        "tt_hit_rate": 0.20944436168628036
+        "nodes": 24986,
+        "ms": 39,
+        "tt_hit_rate": 0.2904
       },
       {
         "fixture": "midgame_12",
         "depth": 5,
-        "nodes": 82863,
-        "ms": 221,
-        "tt_hit_rate": 0.22830802603036876
+        "nodes": 52971,
+        "ms": 89,
+        "tt_hit_rate": 0.2625
       },
       {
         "fixture": "midgame_12",
         "depth": 6,
-        "nodes": 524012,
-        "ms": 1581,
-        "tt_hit_rate": 0.17159206596577228
+        "nodes": 273135,
+        "ms": 503,
+        "tt_hit_rate": 0.1887
       },
       {
         "fixture": "midgame_12",
         "depth": 7,
-        "nodes": 776865,
-        "ms": 2288,
-        "tt_hit_rate": 0.16349017925098583
+        "nodes": 413054,
+        "ms": 764,
+        "tt_hit_rate": 0.1984
       },
       {
         "fixture": "midgame_12",
         "depth": 8,
-        "nodes": 3441486,
-        "ms": 10474,
-        "tt_hit_rate": 0.1460350209550886
+        "nodes": 2644448,
+        "ms": 5696,
+        "tt_hit_rate": 0.1532
       },
       {
         "fixture": "midgame_30",
         "depth": 1,
         "nodes": 140,
         "ms": 0,
-        "tt_hit_rate": 0.038461538461538464
+        "tt_hit_rate": 0.0385
       },
       {
         "fixture": "midgame_30",
         "depth": 2,
         "nodes": 622,
-        "ms": 2,
-        "tt_hit_rate": 0.05555555555555555
+        "ms": 1,
+        "tt_hit_rate": 0.0556
       },
       {
         "fixture": "midgame_30",
         "depth": 3,
-        "nodes": 2375,
-        "ms": 7,
-        "tt_hit_rate": 0.0916030534351145
+        "nodes": 2395,
+        "ms": 5,
+        "tt_hit_rate": 0.0888
       },
       {
         "fixture": "midgame_30",
         "depth": 4,
-        "nodes": 4091,
-        "ms": 14,
-        "tt_hit_rate": 0.15072830905636478
+        "nodes": 3962,
+        "ms": 10,
+        "tt_hit_rate": 0.1814
       },
       {
         "fixture": "midgame_30",
         "depth": 5,
-        "nodes": 10805,
-        "ms": 36,
-        "tt_hit_rate": 0.19091847265221878
+        "nodes": 15194,
+        "ms": 41,
+        "tt_hit_rate": 0.2901
       },
       {
         "fixture": "midgame_30",
         "depth": 6,
-        "nodes": 62527,
-        "ms": 243,
-        "tt_hit_rate": 0.15891410048622368
+        "nodes": 29681,
+        "ms": 77,
+        "tt_hit_rate": 0.2959
       },
       {
         "fixture": "midgame_30",
         "depth": 7,
-        "nodes": 154395,
-        "ms": 623,
-        "tt_hit_rate": 0.1669279921770944
+        "nodes": 125590,
+        "ms": 338,
+        "tt_hit_rate": 0.2255
       },
       {
         "fixture": "midgame_30",
         "depth": 8,
-        "nodes": 270963,
-        "ms": 1098,
-        "tt_hit_rate": 0.19001226068093935
+        "nodes": 293340,
+        "ms": 804,
+        "tt_hit_rate": 0.1552
       }
     ],
     "scaling": [
