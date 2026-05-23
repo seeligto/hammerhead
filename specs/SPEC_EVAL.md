@@ -103,9 +103,11 @@ Detect named threat shapes. Score per WSC tuple `(W, S, C)`.
 | Open 4 `_XXXX_` (≥1 empty each side, room for 6) | 2 | 0 | 2 | 60_000 | Two-end threat |
 | Closed 4 | 1 | 0 | 2 | 20_000 | |
 
-S0 weights chosen so two non-overlapping open-4s (= fork mate via
-Layer 3) outranks any plausible Layer 2 sum. Empirical tuning in
-Phase 10 self-play.
+S0 weights sized so the Layer-2 S0 sum exceeds plausible Layer-1
+contributions for the same shape. The analytic constraint
+`open_5 ≫ 4 · window_k_scores[5]` (etc.) was the design driver in
+commit `a5e7c15`; no game-time tuning sweep was conducted. Phase 28B
+revisits these values.
 
 Layer 2 detects S0 shapes only. The S1/S2 pre-emptive shapes (open_3
 / rhombus / arch / bone / trapezoid / open_2 / closed_3 / triangle)
