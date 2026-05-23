@@ -127,6 +127,22 @@ impl TTStatsCounters {
     }
 }
 
+/// One TT slot: `(depth_preferred, always_replace)`, packed as a
+/// `#[repr(C, align(64))]` newtype so each bucket occupies exactly one
+/// 64-byte cache line. `(TTEntry, TTEntry)` is already 64 bytes wide —
+/// the annotation only lifts the alignment from 16 to 64, with no size
+/// change.
+#[repr(C, align(64))]
+#[derive(Copy, Clone, Debug)]
+pub struct TTBucket(TTEntry, TTEntry);
+
+impl TTBucket {
+    const EMPTY: TTBucket = TTBucket(TTEntry::EMPTY, TTEntry::EMPTY);
+}
+
+const _: () = assert!(std::mem::size_of::<TTBucket>() == 64);
+const _: () = assert!(std::mem::align_of::<TTBucket>() == 64);
+
 /// Two-bucket transposition table.
 ///
 /// Each index slot stores `(depth_preferred, always_replace)`:
@@ -137,7 +153,7 @@ impl TTStatsCounters {
 /// `mask` is `n_slots - 1` with `n_slots` rounded down to a power of two;
 /// indexing is therefore a single `AND` on the low 64 bits of the hash.
 pub struct TranspositionTable {
-    buckets: Box<[(TTEntry, TTEntry)]>,
+    buckets: Box<[TTBucket]>,
     mask: usize,
     generation: u8,
     #[cfg(feature = "tt_stats")]
@@ -152,12 +168,12 @@ impl TranspositionTable {
     /// search code can probe/store unconditionally.
     #[must_use]
     pub fn new(size_mb: usize) -> Self {
-        let slot_bytes = std::mem::size_of::<(TTEntry, TTEntry)>();
+        let slot_bytes = std::mem::size_of::<TTBucket>();
         let total_bytes = size_mb.saturating_mul(1024 * 1024);
         let raw_slots = (total_bytes / slot_bytes).max(1);
         let n_slots = floor_pow2(raw_slots);
         let mask = n_slots - 1;
-        let buckets = vec![(TTEntry::EMPTY, TTEntry::EMPTY); n_slots].into_boxed_slice();
+        let buckets = vec![TTBucket::EMPTY; n_slots].into_boxed_slice();
         Self {
             buckets,
             mask,
@@ -178,7 +194,7 @@ impl TranspositionTable {
     #[must_use]
     pub fn probe(&self, hash: u128) -> Option<&TTEntry> {
         let idx = (hash as u64 as usize) & self.mask;
-        let (a, b) = &self.buckets[idx];
+        let TTBucket(a, b) = &self.buckets[idx];
         let hit = if !a.is_empty() && a.hash == hash {
             Some(a)
         } else if !b.is_empty() && b.hash == hash {
@@ -209,7 +225,7 @@ impl TranspositionTable {
     #[inline]
     pub fn store(&mut self, hash: u128, depth: i8, score: i32, flag: TTFlag, best_move: Coord) {
         let idx = (hash as u64 as usize) & self.mask;
-        let (a, b) = &mut self.buckets[idx];
+        let TTBucket(a, b) = &mut self.buckets[idx];
         let new = TTEntry {
             hash,
             best_move,
@@ -247,7 +263,7 @@ impl TranspositionTable {
     #[cold]
     pub fn clear(&mut self) {
         for slot in &mut self.buckets {
-            *slot = (TTEntry::EMPTY, TTEntry::EMPTY);
+            *slot = TTBucket::EMPTY;
         }
         self.generation = 0;
         #[cfg(feature = "tt_stats")]
@@ -261,7 +277,7 @@ impl TranspositionTable {
     #[must_use]
     pub fn stats(&self) -> TTStatsSnapshot {
         let mut occupied = 0usize;
-        for (a, b) in &*self.buckets {
+        for TTBucket(a, b) in &*self.buckets {
             if !a.is_empty() || !b.is_empty() {
                 occupied += 1;
             }

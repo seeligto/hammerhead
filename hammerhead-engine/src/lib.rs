@@ -35,6 +35,6 @@ pub use search::{INF, SearchConfig, SearchResult, SearchScratch, search_root};
 pub use threats::{
     ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, compute as compute_threats,
 };
-pub use tt::{TTEntry, TTFlag, TranspositionTable};
+pub use tt::{TTBucket, TTEntry, TTFlag, TranspositionTable};
 pub use win::is_winning_move;
 pub use zobrist::{Z_HALFMOVE, Z_TURN_X, ZobristTable};

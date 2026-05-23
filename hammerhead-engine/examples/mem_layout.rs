@@ -18,8 +18,9 @@ use hammerhead_engine_core::proximity::{ProximityCounts, SparseCellSet};
 use hammerhead_engine_core::threats::ThreatScratch;
 use hammerhead_engine_core::{
     Axis, AxisBitmaps, Board, Coord, DEFAULT_TT_SIZE_MB, Engine, KillerSlot, MAX_PIECE_DISTANCE,
-    MAX_PLY, OrderingState, Player, SearchConfig, SearchResult, TTEntry, TTFlag, ThreatCounts,
-    ThreatInstance, ThreatKind, ThreatSet, TranspositionTable, ZOBRIST_WINDOW, ZobristTable,
+    MAX_PLY, OrderingState, Player, SearchConfig, SearchResult, TTBucket, TTEntry, TTFlag,
+    ThreatCounts, ThreatInstance, ThreatKind, ThreatSet, TranspositionTable, ZOBRIST_WINDOW,
+    ZobristTable,
 };
 
 fn row(name: &str, size: usize, align: usize) {
@@ -44,11 +45,7 @@ fn main() {
     );
     row("TTFlag", size_of::<TTFlag>(), align_of::<TTFlag>());
     row("TTEntry", size_of::<TTEntry>(), align_of::<TTEntry>());
-    row(
-        "(TTEntry, TTEntry)",
-        size_of::<(TTEntry, TTEntry)>(),
-        align_of::<(TTEntry, TTEntry)>(),
-    );
+    row("TTBucket", size_of::<TTBucket>(), align_of::<TTBucket>());
     row("ThreatKind", size_of::<ThreatKind>(), align_of::<ThreatKind>());
     row(
         "ThreatCounts",
@@ -137,7 +134,7 @@ fn main() {
     let killers_heap = MAX_PLY * size_of::<KillerSlot>();
     println!("  OrderingState.killers  = {killers_heap} B  (KillerSlot x {MAX_PLY})");
 
-    let bucket = size_of::<(TTEntry, TTEntry)>();
+    let bucket = size_of::<TTBucket>();
     let raw_buckets = DEFAULT_TT_SIZE_MB * 1024 * 1024 / bucket;
     // Mirror `tt.rs::floor_pow2`: largest power of two <= raw_buckets.
     let pow2_buckets = if raw_buckets == 0 {
