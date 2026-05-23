@@ -9,6 +9,12 @@ description = "Hammerhead — minimax engine SDK for HeXO, the hexagonal 6-in-a-
 requires-python = ">=3.11"
 dependencies = [
   "hammerhead_engine",
+  # Phase 28C-1 BO driver (`hammerhead tune-bo`): Optuna's GPSampler
+  # needs PyTorch + GPyTorch at runtime. We pin them explicitly rather
+  # than via `optuna[gp]` so the extras restructure-proofs the install.
+  "optuna>=4.8.0,<5.0",
+  "torch>=2.0",
+  "gpytorch>=1.11",
 ]
 
 [project.optional-dependencies]

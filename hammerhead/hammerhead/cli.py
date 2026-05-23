@@ -410,6 +410,18 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(fn=cmd_match)
 
     sp = sub.add_parser(
+        "tune-bo",
+        help="Phase 28C-1 Bayesian-optimisation sweep driver "
+        "(Optuna GPSampler) — outer loop over EvalOverrides trials",
+    )
+    # Defer argument wiring to tune_bo.add_tune_bo_args so the CLI
+    # surface stays defined next to the implementation.
+    from .tune_bo import add_tune_bo_args, cmd_tune_bo
+
+    add_tune_bo_args(sp)
+    sp.set_defaults(fn=cmd_tune_bo)
+
+    sp = sub.add_parser(
         "promote",
         help="run match vs .bestref worktree; advance .bestref on PROMOTE",
     )
