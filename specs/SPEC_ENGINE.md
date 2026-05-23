@@ -630,6 +630,8 @@ Z_HALFMOVE are XOR'd in/out on every parity transition.
 ## Transposition Table (`tt.rs`)
 
 Two-bucket flat array. Each slot holds `[depth_preferred, always_replace]`.
+The slot is a `#[repr(C, align(64))]` newtype `TTBucket` so each bucket
+occupies exactly one 64-byte cache line (Phase 27.5 / R-14).
 
 ```rust
 pub struct TTEntry {
@@ -644,8 +646,11 @@ pub struct TTEntry {
 #[repr(u8)]
 pub enum TTFlag { Empty, Exact, LowerBound, UpperBound }
 
+#[repr(C, align(64))]
+pub struct TTBucket(TTEntry, TTEntry);  // 64 B, align 64
+
 pub struct TranspositionTable {
-    buckets: Box<[(TTEntry, TTEntry)]>,
+    buckets: Box<[TTBucket]>,
     mask: usize,
     generation: u8,
 }
@@ -662,10 +667,13 @@ impl TranspositionTable {
 ```
 
 Sizing:
-- `slot_size = size_of::<(TTEntry, TTEntry)>()` (~64 bytes after
-  padding).
+- `slot_size = size_of::<TTBucket>()` = 64 bytes (cache-line sized,
+  cache-line aligned).
 - `n_slots = floor_pow2((size_mb * 1024 * 1024) / slot_size)`.
 - `mask = n_slots - 1`.
+- Multi-MB allocations land via mmap on glibc, so the bucket array
+  base address is page-aligned and every `TTBucket` sits on its own
+  cache line.
 
 Index: `(hash as u64 as usize) & mask`. Verification: compare full u128.
 
