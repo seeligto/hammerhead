@@ -33,7 +33,7 @@ closed_4 = 20_000
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
-window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]
+window_k_scores = [0, 1, 8, 64, 512, 2048, 1_000_000]
 
 # Layer 1 extension factor — applied after window lookup based on the
 # two cells immediately outside the 6-window:
