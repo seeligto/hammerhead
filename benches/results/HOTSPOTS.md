@@ -1,3 +1,90 @@
+# Hotspots — Phase 28C-0 (master state verification)
+
+## Phase 28C-0 state verification (2026-05-23)
+
+Phase 28C-0 ran a subset-verification sprint following Phase 28B's
+handoff item "subset experiments". Built an 8-config 2³ factorial
+(2 levels × 3 28B landings) vs Phase 27 baseline `e28d54a` at 400g
+each (3200 games total, ~1h46min wall) with self-test drift
+correction (-6.9 Elo). Verdict: **revert 2 of 3 Phase 28B landings**.
+
+**Headline (master HEAD post-sprint):**
+- **KEEP**: `open_4` = 135_000 (B-2.1, `b35936b`). 2³ main effect
+  +4.4 Elo (in noise band, positive). C1 = {B-2.1 only} = best
+  observed subset.
+- **REVERT**: `window_k_scores[5]` 2_048 → 4_096 (B-2.3 `5283059`
+  reverted in `5fe133e`). 2³ main effect -15.7 Elo (just outside
+  noise band, negative).
+- **REVERT**: `open_extension_factor` 8 → 4 (B-2.5 `13dc73a`
+  reverted in `11ab31a`). 2³ main effect -9.6 Elo (in noise band,
+  Occam tiebreak).
+
+**Drift-corrected Elo of post-revert HEAD vs `e28d54a`**:
+**+24.4 Elo CI [-9.7, +58.5]** (point estimate, CI straddles —
+same shape as Phase 27/28B MARGINAL-LANDs; matches C1 = best
+observed subset).
+
+**HEAD pre-revert (C7 = {B-2.1, B-2.3, B-2.5})**: drift-corrected
+-34.8 Elo CI [-68.9, -0.7] — CI ENTIRELY negative post-correction.
+Strongest single signal in the run: HEAD was net-negative vs Phase
+27 baseline. Net 28B contribution = negative with high confidence.
+
+**`.bestref` UNCHANGED** (`932c5d8`) — strict-promote rules
+unchanged; reverting bad landings is not promotion.
+
+**Key structural finding**: eval surface is non-separable. All
+three pairwise 2³ interactions exist; B-2.1×B-2.3 = -27.85 Elo
+(~2.27σ, borderline significant — the only above-noise structural
+signal). Sum of 2-way interactions = -22 Elo. C7 underperformed
+additive main-effect prediction by ~14 Elo. Per-axis coord
+descent (Phase 28B approach) systematically underexplores joint
+optima.
+
+**Phase 28C-1 methodology** (per `/tmp/phase_28c/0/feasibility_research.md`):
+Optuna 4.8.0 GPSampler — Matérn-5/2 kernel models cross-dimensional
+interactions implicitly; learns per-dim length-scales via marginal
+likelihood. `deterministic_objective=False` for ~±34 Elo Wilson
+noise. Seeds at C1. 50-80 trials, 6-10h wall on 10-worker host.
+TPESampler is the 1-line-swap fallback.
+
+**NPS impact (bench-quick, midgame_12):**
+- HEAD pre-revert (`13dc73a`, B-2.5 landed): ~524k NPS
+- Post-B-2.5 revert (`11ab31a`): ~551k NPS (+5.2%, recovers -4.9%
+  B-2.5 landing penalty)
+- Post-B-2.3 revert (`5fe133e`): ~554k NPS (+0.5%, neutral)
+
+Reference node counts rebaselined per revert (Phase 25.5 rule —
+value-tuning rebaseline event; both reverts shift search behaviour).
+
+**Commits (3 atomic, on master):**
+
+| SHA | Subject |
+|---|---|
+| `11ab31a` | revert: B-2.5 open_extension_factor per Phase 28C-0 |
+| `5fe133e` | revert: B-2.3 window_k_scores[5] per Phase 28C-0 |
+| (this commit) | bench: Phase 28C-0 master state verification |
+
+**Verification protocol**: each revert commit gated on `make check`
+133/133 + `make bench-quick` (NPS delta noted) + surgical
+`baseline.json` `macro.reference` refresh (per Phase 28B precedent).
+
+**Artifacts** (gitignored per Phase 25.5):
+- `/tmp/phase_28c/0/synthesis.md` — full drift-corrected 2³
+  factorial analysis (C0-SYN output).
+- `/tmp/phase_28c/0/verification_runner.md` — match protocol +
+  raw results (C0-VR output).
+- `/tmp/phase_28c/0/feasibility_research.md` — BO library decision.
+- `/tmp/phase_28c/0/matches/C{0..7}.json` — per-cell match data.
+
+**Match harness reminder (Phase 26.5 meta-finding, BINDING):**
+500ms × 400g CI ≈ ±34 Elo. The +24.4 Elo CI [-9.7, +58.5] of C1
+straddles zero (same as Phase 27/28B). At 400g any single-axis
+signal under ~25 Elo is fragile to drift-CI uncertainty. Phase
+28C-1 BO sprint should optimize joint cell directly; coord-descent
+under-explores interactions.
+
+---
+
 # Hotspots — Phase 28B (eval-value tuning sprint)
 
 ## Phase 28B status (2026-05-23)

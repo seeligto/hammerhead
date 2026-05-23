@@ -669,6 +669,65 @@ per Phase 25.5 repo hygiene). Per-candidate audit:
 `/tmp/phase_28b/B-{0..3}/`. HOTSPOTS detail:
 `benches/results/HOTSPOTS.md § Phase 28B status`.
 
+## Phase 28C-0 — Master State Verification
+
+2026-05-23. Subset-verification sprint following Phase 28B handoff
+item "subset experiments". Ran an 8-config 2³ factorial vs Phase 27
+baseline (`e28d54a`) at 400g (3200 games total, ~1h46min wall) with
+self-test drift correction (-6.9 Elo). C0-SYN drift-corrected
+verdict: **revert 2 of 3 Phase 28B landings**.
+
+Per-landing decision:
+- `open_4` = 135_000 (B-2.1, `b35936b`): **KEEP**. Main effect +4.4
+  Elo (in noise band but positive); C1 = {B-2.1 only} = best
+  observed subset (+24.4 Elo).
+- `window_k_scores[5]` = 4_096 (B-2.3 `5283059` reverted in
+  `5fe133e`): main effect -15.7 Elo, just outside noise band;
+  B-2.1×B-2.3 interaction = -27.85 Elo (~2.27σ, borderline
+  significant — strongest 2-way in the design).
+- `open_extension_factor` = 4 (B-2.5 `13dc73a` reverted in
+  `11ab31a`): main effect -9.6 Elo (in noise band); Occam
+  tiebreak — simpler config wins.
+
+Post-revert master HEAD ≡ C1 = drift-corrected +24.4 Elo vs
+`e28d54a` CI [-9.7, +58.5] — CI straddles zero (same shape as
+Phase 27/28B MARGINAL-LANDs, expected at 400g resolution floor).
+**`.bestref` UNCHANGED** (`932c5d8`) — strict-promote rules
+unchanged; reverting bad landings is not promotion.
+
+**Key finding**: eval surface is confirmed non-separable. Sum of
+2-way interactions = -22 Elo; C7 (HEAD pre-revert) underperformed
+additive main-effect prediction by ~14 Elo. Per-axis coordinate
+descent (Phase 28B approach) systematically underexplores joint
+optima.
+
+**Phase 28C-1 methodology**: Optuna 4.8.0 GPSampler (per
+`/tmp/phase_28c/0/feasibility_research.md`). Matérn-5/2 kernel
+models cross-dimensional interactions implicitly; learns
+per-dimension length-scales via marginal likelihood.
+`deterministic_objective=False` for the ~±34 Elo Wilson noise.
+Seeds at C1 (best observed). 50-80 trials, 6-10h wall on 10-worker
+host.
+
+Commits (3 on master):
+
+| SHA | Subject |
+|---|---|
+| `11ab31a` | revert: B-2.5 open_extension_factor per Phase 28C-0 |
+| `5fe133e` | revert: B-2.3 window_k_scores[5] per Phase 28C-0 |
+| (this commit) | bench: Phase 28C-0 master state verification |
+
+Reference node counts rebaselined per revert (Phase 25.5 rule —
+value-tuning rebaseline event; both reverts shift search behavior).
+NPS bench-quick: 524k (pre-revert HEAD) → 551k (post-B-2.5 revert)
+→ 554k (post-B-2.3 revert) — recovers the -4.9% B-2.5 NPS penalty.
+
+Artifacts: `/tmp/phase_28c/0/synthesis.md` (full drift-corrected
+2³ factorial), `verification_runner.md` (match protocol + raw
+results), `feasibility_research.md` (BO library decision),
+`matches/C{0..7}.json` (raw match data). Gitignored per Phase 25.5
+repo hygiene.
+
 ## Phase 26 candidates (deferred follow-ups)
 
 Carried forward — items still open after Phase 25.
