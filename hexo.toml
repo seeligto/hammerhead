@@ -40,7 +40,7 @@ window_k_scores = [0, 1, 8, 64, 512, 2048, 1_000_000]
 #   both empty       → open_extension_factor
 #   one empty, one O → closed_extension_factor (identity)
 #   both opp/blocked → 0 (dead window)
-open_extension_factor   = 8
+open_extension_factor   = 4
 closed_extension_factor = 1
 
 # Layer 3 fork detection — minimum-cover-2 bonus.
