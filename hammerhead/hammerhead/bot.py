@@ -7,7 +7,7 @@ re-export there is the supported path.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from hammerhead_engine import Engine
 
@@ -320,6 +320,38 @@ class Bot:
         if ms <= 0:
             raise ValueError("ms must be positive")
         self._time_per_stone_ms = ms
+
+    # ── Eval-weight overrides (Phase 28B-1) ─────────────────────────────
+
+    def eval_overrides(self) -> dict[str, Any]:
+        """Return the currently-active runtime eval overrides as a dict.
+
+        Keys mirror the Rust ``EvalOverrides`` field names. Defaults
+        equal the ``crate::config::*`` constants codegen'd from
+        ``hexo.toml``.
+        """
+        return self._engine.eval_overrides()
+
+    def set_eval_overrides(self, overrides: Mapping[str, Any]) -> None:
+        """Patch the runtime eval overrides.
+
+        Partial updates: keys absent from ``overrides`` retain their
+        *current* value (not defaults — the call is incremental).
+        Unknown keys raise ``ValueError``. Recognised keys:
+        ``open_5``, ``closed_5``, ``open_4``, ``closed_4``,
+        ``window_k_scores`` (sequence of 7 ints), ``open_extension_factor``,
+        ``closed_extension_factor``, ``fork_cover2_bonus``.
+
+        Passing an empty dict is a no-op — the call is byte-identical
+        to never having been made (gate for the sweep driver's
+        "no override applied" baseline).
+
+        Persists across :meth:`reset`.
+
+        Args:
+            overrides: Mapping of override key → new value.
+        """
+        self._engine.set_eval_overrides(dict(overrides))
 
 
 def _coord(move: Move) -> Move:

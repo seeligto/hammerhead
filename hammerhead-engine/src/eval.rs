@@ -34,10 +34,9 @@
 
 use crate::axis_bitmap::{Axis, AxisBitmaps, LineBitmap};
 use crate::board::{Board, Player};
-use crate::config::{
-    CLOSED_4_SCORE, CLOSED_5_SCORE, FORK_COVER2_BONUS, OPEN_4_SCORE, OPEN_5_SCORE, WINDOW_SCORE_8,
-};
+use crate::config::WINDOW_SCORE_8;
 use crate::coords::Coord;
+use crate::eval_overrides::EvalOverrides;
 use crate::threats::{ThreatCounts, ThreatInstance, ThreatSet};
 use smallvec::SmallVec;
 
@@ -49,19 +48,25 @@ pub const MATE_SCORE: i32 = crate::config::MATE_SCORE;
 ///
 /// Returns `±(MATE_SCORE - ply)` in terminal positions or when Layer 3
 /// detects a cover-≥-3 fork mate for either player.
+///
+/// Layer 1/2/3 read their tunable scalars from [`Board::eval_overrides`]
+/// (Phase 28B-1). Defaults mirror the codegen'd `crate::config::*`
+/// constants exactly, so an un-overridden board is byte-identical to
+/// the non-tuning build.
 #[must_use]
 pub fn eval(board: &Board) -> i32 {
     if let Some(winner) = board.winner() {
         return mate_score_for(winner, board.ply());
     }
 
+    let ov = board.eval_overrides();
     let tx = board.threats(Player::X);
     let to = board.threats(Player::O);
 
     // Layer 3 first: a mate sentinel intercepts before any arithmetic
     // so we never mix mate-class scores with positional sums.
-    let fork_x = layer3_fork_bonus(&tx);
-    let fork_o = layer3_fork_bonus(&to);
+    let fork_x = layer3_fork_bonus(&tx, &ov);
+    let fork_o = layer3_fork_bonus(&to, &ov);
     if fork_x == i32::MAX && fork_o == i32::MAX {
         // Both sides have a forced mate; the side about to move wins.
         return mate_score_for(board.to_move(), board.ply());
@@ -75,7 +80,7 @@ pub fn eval(board: &Board) -> i32 {
 
     let mut score = 0;
     score += layer1_window_scan_8cell(board);
-    score += layer2_shapes(tx.counts) - layer2_shapes(to.counts);
+    score += layer2_shapes(tx.counts, &ov) - layer2_shapes(to.counts, &ov);
     score += fork_x - fork_o;
     score
 }
@@ -84,8 +89,9 @@ pub fn eval(board: &Board) -> i32 {
 /// Cheap to call: reuses the same cached [`ThreatSet`] as [`eval`].
 #[must_use]
 pub fn is_mate_for(board: &Board, player: Player) -> bool {
+    let ov = board.eval_overrides();
     let threats = board.threats(player);
-    layer3_fork_bonus(&threats) == i32::MAX
+    layer3_fork_bonus(&threats, &ov) == i32::MAX
 }
 
 /// Bench-only: isolated Layer-1 window scan. Hidden from rustdoc; exposed
@@ -101,17 +107,19 @@ pub fn bench_layer1_window_scan(board: &Board) -> i32 {
 #[doc(hidden)]
 #[must_use]
 pub fn bench_layer2_shapes(board: &Board) -> i32 {
+    let ov = board.eval_overrides();
     let tx = board.threats(Player::X);
     let to = board.threats(Player::O);
-    layer2_shapes(tx.counts) - layer2_shapes(to.counts)
+    layer2_shapes(tx.counts, &ov) - layer2_shapes(to.counts, &ov)
 }
 
 /// Bench-only: isolated Layer-3 fork bonus for `player`.
 #[doc(hidden)]
 #[must_use]
 pub fn bench_layer3_fork_bonus(board: &Board, player: Player) -> i32 {
+    let ov = board.eval_overrides();
     let threats = board.threats(player);
-    layer3_fork_bonus(&threats)
+    layer3_fork_bonus(&threats, &ov)
 }
 
 /// Signed mate score with mate-distance accounting.
@@ -149,6 +157,16 @@ fn layer1_window_scan_8cell(board: &Board) -> i32 {
     // per-line borrow-check bookkeeping a mixed read/write path would
     // incur. Drops at end of function.
     let mut cache = board.line_contrib().borrow_mut();
+    // Phase 28B-1: prefer the override-derived runtime table when the
+    // active overrides perturb Layer-1 inputs; otherwise the codegen'd
+    // `WINDOW_SCORE_8`. The `Ref` keeps the optional `Box` alive for
+    // the scan; on the default path (`None`) the inner slice reference
+    // resolves to the static table at zero cost.
+    let table_ref = board.window_score_table();
+    let table: &[i32; 6561] = match table_ref.as_ref() {
+        Some(t) => t.as_ref(),
+        None => &WINDOW_SCORE_8,
+    };
     let mut total: i32 = 0;
 
     for axis in Axis::all() {
@@ -165,7 +183,7 @@ fn layer1_window_scan_8cell(board: &Board) -> i32 {
             let v = if let Some(v) = cache.get(axis, line_id) {
                 v
             } else {
-                let v = scan_line_8cell(bitmaps, axis, line_id);
+                let v = scan_line_8cell(bitmaps, axis, line_id, table);
                 cache.set(axis, line_id, v);
                 v
             };
@@ -179,7 +197,12 @@ fn layer1_window_scan_8cell(board: &Board) -> i32 {
 /// The inner-6 window slides over `[min_pos - 5, max_pos]`; each lookup
 /// keys the full 8-cell window `[p-1, p+6]` into `WINDOW_SCORE_8`.
 #[inline]
-fn scan_line_8cell(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
+fn scan_line_8cell(
+    bitmaps: &AxisBitmaps,
+    axis: Axis,
+    line_id: i16,
+    table: &[i32; 6561],
+) -> i32 {
     let xl = bitmaps.line(axis, Player::X, line_id);
     let ol = bitmaps.line(axis, Player::O, line_id);
     let xr = xl.and_then(LineBitmap::populated_range);
@@ -213,7 +236,7 @@ fn scan_line_8cell(bitmaps: &AxisBitmaps, axis: Axis, line_id: i16) -> i32 {
         }
         encode_ternary_8_batch(&x_buf[..chunk], &o_buf[..chunk], &mut idx_buf[..chunk]);
         for &idx in &idx_buf[..chunk] {
-            total += WINDOW_SCORE_8[idx as usize];
+            total += table[idx as usize];
         }
         emitted += chunk;
     }
@@ -340,13 +363,14 @@ unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u
 
 /// Weighted sum of the S0 shape counts in `c` (open / closed 4 & 5).
 /// Returned as a per-player magnitude; the top-level eval subtracts
-/// the two players to get the signed contribution.
+/// the two players to get the signed contribution. Weights come from
+/// the active [`EvalOverrides`] (defaults mirror `crate::config::*`).
 #[inline]
-fn layer2_shapes(c: ThreatCounts) -> i32 {
-    OPEN_5_SCORE * i32::from(c.open_5)
-        + CLOSED_5_SCORE * i32::from(c.closed_5)
-        + OPEN_4_SCORE * i32::from(c.open_4)
-        + CLOSED_4_SCORE * i32::from(c.closed_4)
+fn layer2_shapes(c: ThreatCounts, ov: &EvalOverrides) -> i32 {
+    ov.open_5 * i32::from(c.open_5)
+        + ov.closed_5 * i32::from(c.closed_5)
+        + ov.open_4 * i32::from(c.open_4)
+        + ov.closed_4 * i32::from(c.closed_4)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,14 +384,14 @@ fn layer2_shapes(c: ThreatCounts) -> i32 {
 ///   threat → forced mate). Caller is responsible for converting this
 ///   sentinel into a mate-distance score.
 #[inline]
-fn layer3_fork_bonus(threats: &ThreatSet) -> i32 {
+fn layer3_fork_bonus(threats: &ThreatSet, ov: &EvalOverrides) -> i32 {
     let insts = &threats.s0_instances;
     if insts.len() < 2 {
         return 0;
     }
     match min_vertex_cover_size(insts) {
         1 => 0,
-        2 => FORK_COVER2_BONUS,
+        2 => ov.fork_cover2_bonus,
         _ => i32::MAX,
     }
 }

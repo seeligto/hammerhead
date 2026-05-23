@@ -8,6 +8,7 @@ pub mod config;
 pub mod coords;
 pub mod engine;
 pub mod eval;
+pub mod eval_overrides;
 pub mod line_contrib;
 pub mod moves;
 pub mod ordering;
@@ -28,6 +29,7 @@ pub use coords::{
     for_each_in_range, hex_distance, within_range,
 };
 pub use eval::{eval, is_mate_for};
+pub use eval_overrides::EvalOverrides;
 pub use moves::{MOVE_GEN_CAP_INLINE, generate};
 pub use ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
 pub use engine::Engine;

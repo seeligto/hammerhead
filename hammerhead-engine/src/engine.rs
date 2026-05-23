@@ -14,6 +14,7 @@
 use crate::board::{Board, BoardError, Player};
 use crate::config::DEFAULT_TT_SIZE_MB;
 use crate::coords::Coord;
+use crate::eval_overrides::EvalOverrides;
 use crate::ordering::OrderingState;
 use crate::search::{SearchConfig, SearchResult, SearchScratch, search_root};
 use crate::tt::TranspositionTable;
@@ -194,6 +195,24 @@ impl Engine {
     /// preserved — TT scales with positions seen, history is per-game
     /// move-quality memory and outlives a single search.
     pub fn clear_tt(&mut self) {
+        self.tt.clear();
+    }
+
+    /// Snapshot of the runtime eval overrides held by the underlying
+    /// board. Cheap (`Copy`).
+    #[must_use]
+    pub fn eval_overrides(&self) -> EvalOverrides {
+        self.board.eval_overrides()
+    }
+
+    /// Install fresh runtime eval overrides. Wipes the transposition
+    /// table so search results computed under the old weights cannot
+    /// leak into the new run, and forwards to
+    /// [`Board::set_eval_overrides`] for the per-board cache
+    /// invalidation (Phase-27 `LineContribution` + lazy static eval +
+    /// threats). Persists across [`Self::reset`].
+    pub fn set_eval_overrides(&mut self, overrides: EvalOverrides) {
+        self.board.set_eval_overrides(overrides);
         self.tt.clear();
     }
 

@@ -413,6 +413,17 @@ fn emit_window_score_table(out: &mut String, cfg: &toml::Value) {
         k_scores[6], mate
     );
 
+    // Emit the raw 7-slot array so runtime callers (`EvalOverrides`) can
+    // mirror the codegen'd defaults without duplicating the values in
+    // source. Magic-number rule: defaults come from hexo.toml via
+    // codegen, never from hand-written literals.
+    let arr_body = k_scores
+        .iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(out, "pub const WINDOW_K_SCORES: [i32; 7] = [{arr_body}];").unwrap();
+
     emit_window_score_8_table(out, cfg, &k_scores);
 }
 

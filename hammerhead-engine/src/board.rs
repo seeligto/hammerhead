@@ -7,6 +7,7 @@
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
 use crate::coords::{Coord, ORIGIN};
+use crate::eval_overrides::{EvalOverrides, WINDOW_SCORE_8_LEN};
 use crate::line_contrib::LineContrib;
 use crate::proximity::{ProximityCounts, SparseCellSet, add_proximity, remove_proximity};
 use crate::threats::{self, ThreatScratch, ThreatSet};
@@ -114,6 +115,18 @@ pub struct Board {
     /// `RefCell` mirrors the `threats_x` / `threats_o` pattern: hot-path
     /// reads on `&Board` will populate the cache lazily on miss.
     line_contrib: RefCell<LineContrib>,
+    /// Phase 28B-1 runtime eval-weight overrides. `Default` mirrors the
+    /// codegen'd `crate::config::*` constants, so an unset override is
+    /// byte-identical to the non-tuning build (gate: reference node
+    /// counts unchanged).
+    eval_overrides: Cell<EvalOverrides>,
+    /// Runtime `WINDOW_SCORE_8` table mirror. `None` ⟹ Layer 1 reads the
+    /// build.rs-codegen'd `crate::config::WINDOW_SCORE_8`. `Some(box)` ⟹
+    /// the override changed Layer-1 inputs and `set_eval_overrides`
+    /// materialised a fresh 6561-entry table. Cost: one ~26 KB heap
+    /// allocation per `set_eval_overrides` call where Layer-1 inputs
+    /// changed — amortised across a whole match, never per node.
+    window_score_table: RefCell<Option<Box<[i32; WINDOW_SCORE_8_LEN]>>>,
 }
 
 impl Default for Board {
@@ -149,6 +162,8 @@ impl Board {
             threats_dirty: Cell::new(false),
             eval_cache: Cell::new(None),
             line_contrib: RefCell::new(LineContrib::new()),
+            eval_overrides: Cell::new(EvalOverrides::default()),
+            window_score_table: RefCell::new(None),
         }
     }
 
@@ -410,6 +425,60 @@ impl Board {
     #[inline]
     pub(crate) fn line_contrib(&self) -> &RefCell<LineContrib> {
         &self.line_contrib
+    }
+
+    /// Snapshot of the current runtime eval-weight overrides. `Copy`
+    /// — 56 bytes, fits in one cache line; no borrow tracking.
+    /// Defaults to `EvalOverrides::default()` (codegen'd constants), so
+    /// callers that never call [`Self::set_eval_overrides`] observe the
+    /// build-time defaults.
+    #[inline]
+    #[must_use]
+    pub fn eval_overrides(&self) -> EvalOverrides {
+        self.eval_overrides.get()
+    }
+
+    /// Runtime Layer-1 `WINDOW_SCORE_8` table accessor. Returns the
+    /// override-derived table if [`Self::set_eval_overrides`] has changed
+    /// any Layer-1 input; otherwise `None` and the caller falls back to
+    /// the codegen'd `crate::config::WINDOW_SCORE_8`. `RefCell` because
+    /// the table lives in a heap allocation owned by the board.
+    #[inline]
+    pub(crate) fn window_score_table(
+        &self,
+    ) -> std::cell::Ref<'_, Option<Box<[i32; WINDOW_SCORE_8_LEN]>>> {
+        self.window_score_table.borrow()
+    }
+
+    /// Replace the runtime eval-weight overrides. Invalidates the
+    /// Phase-27 `LineContribution` cache, the lazy static-eval cache,
+    /// and the cached threats so Layer 2/3 re-read the new S0/fork
+    /// weights. If Layer-1 inputs differ from the previous override,
+    /// rebuilds the runtime `WINDOW_SCORE_8` table (microseconds —
+    /// amortised across the match).
+    ///
+    /// Persists across [`Self::reset`] (Phase 18 precedent).
+    pub fn set_eval_overrides(&mut self, new_overrides: EvalOverrides) {
+        let old = self.eval_overrides.get();
+        self.eval_overrides.set(new_overrides);
+        let defaults = EvalOverrides::default();
+        // Layer-1 inputs unchanged ⟹ no table rebuild needed. When the
+        // new overrides happen to match defaults bit-for-bit, clear any
+        // stale runtime table so Layer-1 reads from the codegen'd
+        // `WINDOW_SCORE_8` (preserving the byte-identical-default gate).
+        if new_overrides == defaults {
+            *self.window_score_table.borrow_mut() = None;
+        } else if !new_overrides.layer1_inputs_eq(&old)
+            || self.window_score_table.borrow().is_none()
+        {
+            *self.window_score_table.borrow_mut() =
+                Some(new_overrides.build_window_score_8());
+        }
+        // Any S0 / window / extension / fork change perturbs cached
+        // contributions and downstream eval. Reuse the existing Phase-27
+        // cache-invalidation pattern.
+        self.line_contrib.borrow_mut().reset();
+        self.mark_threats_dirty();
     }
 
     /// Player who just won, if any. `Some(p)` iff the most recent

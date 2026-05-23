@@ -10,6 +10,7 @@ use pyo3::types::PyDict;
 use crate::board::Player;
 use crate::coords::Coord;
 use crate::engine::Engine as RustEngine;
+use crate::eval_overrides::EvalOverrides;
 
 /// `Board` keeps a few `RefCell` / `Cell` caches (lazy threat sets, lazy
 /// static eval), so the wrapper is `!Sync`. `unsendable` lifts `PyO3`'s
@@ -152,6 +153,84 @@ impl PyEngine {
         d.set_item("collisions", s.collisions)?;
         Ok(d)
     }
+
+    /// Snapshot of the currently-active runtime eval overrides as a
+    /// Python dict. Keys mirror the `EvalOverrides` field names.
+    /// Defaults equal `crate::config::*` (codegen'd from hexo.toml).
+    fn eval_overrides<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let ov = self.inner.eval_overrides();
+        let d = PyDict::new(py);
+        d.set_item("open_5", ov.open_5)?;
+        d.set_item("closed_5", ov.closed_5)?;
+        d.set_item("open_4", ov.open_4)?;
+        d.set_item("closed_4", ov.closed_4)?;
+        d.set_item("window_k_scores", ov.window_k_scores.to_vec())?;
+        d.set_item("open_extension_factor", ov.open_extension_factor)?;
+        d.set_item("closed_extension_factor", ov.closed_extension_factor)?;
+        d.set_item("fork_cover2_bonus", ov.fork_cover2_bonus)?;
+        Ok(d)
+    }
+
+    /// Patch the runtime eval overrides. Partial updates allowed:
+    /// missing keys retain their *current* value (not defaults — the
+    /// call is incremental). Unknown keys raise `ValueError`.
+    ///
+    /// Recognised keys (match `EvalOverrides` fields exactly):
+    /// `open_5`, `closed_5`, `open_4`, `closed_4`,
+    /// `window_k_scores` (sequence of 7 ints, including index 6 ==
+    /// mate score), `open_extension_factor`,
+    /// `closed_extension_factor`, `fork_cover2_bonus`.
+    ///
+    /// Persists across `reset()` (Phase 18 precedent).
+    fn set_eval_overrides(&mut self, overrides: &Bound<'_, PyDict>) -> PyResult<()> {
+        let next = build_overrides_from_dict(self.inner.eval_overrides(), overrides)?;
+        self.inner.set_eval_overrides(next);
+        Ok(())
+    }
+}
+
+/// Merge `dict` into `current`. Unknown keys are a `ValueError` (catches
+/// typos before they silently no-op). `window_k_scores` accepts any
+/// 7-element iterable (list or tuple of ints).
+fn build_overrides_from_dict(
+    current: EvalOverrides,
+    dict: &Bound<'_, PyDict>,
+) -> PyResult<EvalOverrides> {
+    let mut next = current;
+    for (k, v) in dict.iter() {
+        let key: String = k.extract()?;
+        match key.as_str() {
+            "open_5" => next.open_5 = v.extract()?,
+            "closed_5" => next.closed_5 = v.extract()?,
+            "open_4" => next.open_4 = v.extract()?,
+            "closed_4" => next.closed_4 = v.extract()?,
+            "open_extension_factor" => next.open_extension_factor = v.extract()?,
+            "closed_extension_factor" => next.closed_extension_factor = v.extract()?,
+            "fork_cover2_bonus" => next.fork_cover2_bonus = v.extract()?,
+            "window_k_scores" => {
+                // Accept any sequence; `extract::<Vec<i32>>` covers
+                // lists, tuples, and other iterables. PyO3 0.28
+                // deprecated the explicit `downcast::<PyList>`
+                // / `<PyTuple>` paths in favour of this trait route.
+                let vals: Vec<i32> = v.extract()?;
+                if vals.len() != 7 {
+                    return Err(PyValueError::new_err(format!(
+                        "window_k_scores must have 7 entries, got {}",
+                        vals.len()
+                    )));
+                }
+                let mut arr = [0i32; 7];
+                arr.copy_from_slice(&vals);
+                next.window_k_scores = arr;
+            }
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown eval override key: {key:?}"
+                )));
+            }
+        }
+    }
+    Ok(next)
 }
 
 #[pymodule]
