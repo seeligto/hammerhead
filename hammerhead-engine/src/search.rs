@@ -301,7 +301,7 @@ fn iterate_at_depth(
         _ => (-INF, INF),
     };
 
-    // Aspiration loop. Up to 2 narrow widens; on the third failure we
+    // Aspiration loop. Up to 1 narrow widen; on the second failure we
     // promote to full-window which always returns in-window and exits.
     let mut attempt = 0_u8;
     loop {
