@@ -16,7 +16,7 @@ root:
 
 ```python
 from hammerhead import (
-    Bot,
+    Bot, SearchStats,
     Move, Player, MATE_SCORE,
     HammerheadError, IllegalMoveError, GameOverError, NotationError,
 )
@@ -32,6 +32,8 @@ Full reference with worked examples: `docs/sdk.md`.
 - `MATE_SCORE` — `int`, the score magnitude of a forced win. A decisive
   position evaluates near `±(MATE_SCORE - ply)`. Sourced from
   `hexo.toml § [engine.eval] mate_score`.
+- `SearchStats` — frozen dataclass returned by
+  `Bot.suggest(return_stats=True)` (see below).
 
 ### `Bot`
 
@@ -59,7 +61,12 @@ class Bot:
     tt_size_mb: int
 
     # engine queries (no mutation)
-    def suggest(self, time_ms: int | None = None) -> Move: ...
+    def suggest(
+        self,
+        time_ms: int | None = None,
+        depth: int | None = None,
+        return_stats: bool = False,
+    ) -> Move | tuple[Move, SearchStats]: ...
     def evaluate(self) -> int: ...
     def principal_variation(self, max_depth: int = 16) -> list[Move]: ...
 
@@ -73,11 +80,35 @@ class Bot:
 - Search is **per stone**. A HeXO turn is two stones for the same side;
   X's opening turn is a single stone. `stone_in_turn` disambiguates.
 - `suggest` does not place the move — apply it with `play`.
+- `suggest` accepts `time_ms` (per-stone budget), `depth` (fixed-depth
+  target), or both. Passing `depth=N` alone lifts the time bound; passing
+  both lets the search abort on whichever bound hits first. With neither
+  argument, the construction-time `time_per_stone_ms` is used. Set
+  `return_stats=True` to receive `(Move, SearchStats)` instead of `Move`
+  — default `False` is backwards-compatible.
 - The engine is X-positive: `evaluate` returns positive for an X
   advantage regardless of side to move.
 - `Bot` is **not thread-safe**. One instance per game; do not share
   across threads.
 - The engine is deterministic — there is no random seed.
+
+### `SearchStats`
+
+Frozen dataclass returned by `Bot.suggest(return_stats=True)`:
+
+```python
+@dataclass(frozen=True, slots=True)
+class SearchStats:
+    max_depth_reached: int   # deepest ID iteration that completed
+    nodes: int               # recursive + qsearch nodes visited
+    nps: float               # nodes / (time_ms / 1000); 0.0 if time_ms == 0
+    time_ms: float           # actual search wall-clock
+    score: int               # X-positive evaluation of the chosen move
+```
+
+Computed once per search; not cumulative. `nps` is computed in the SDK
+from the underlying `(nodes, time_ms)` pair — the Rust layer returns
+the two raw fields, the derived ratio lives in Python.
 
 ### Exceptions
 
@@ -93,7 +124,7 @@ class NotationError(HammerheadError): ...    # string passed where Move expected
 | `__init__` | `ValueError` (non-positive `time_per_stone_ms` / `tt_size_mb`) |
 | `play` | `IllegalMoveError`, `GameOverError`, `NotationError`, `TypeError` |
 | `undo` | `IndexError` (empty history) |
-| `suggest` | `GameOverError`, `ValueError` (non-positive `time_ms`) |
+| `suggest` | `GameOverError`, `ValueError` (non-positive `time_ms` or `depth`) |
 | `principal_variation` | `ValueError` (negative `max_depth`) |
 | `set_time_per_stone` | `ValueError` (non-positive `ms`) |
 
