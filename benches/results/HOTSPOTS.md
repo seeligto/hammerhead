@@ -1,3 +1,142 @@
+# Hotspots — Phase 28D-1 (cycle-break match, Outcome C: ADVANCE)
+
+## Phase 28D-1 status (2026-05-24)
+
+Phase 28D-1 ran an 800-game promote-match HEAD (`5bd8964`, engine
+state C1 = Phase 25.5 + Phase 27 LineContribution cache + Phase
+28B-B-2.1 `open_4=135_000`) vs prior `.bestref` (`932c5d8`, Phase
+25.5 final). No eval / `hexo.toml` / source change — pure
+cumulative measurement. Designed as the cycle-breaker after three
+consecutive Phase-27-shape outcomes (27 / 28B / 28C all REJECT
+on strict gate).
+
+**Headline: Outcome C — strict-positive. `.bestref` advanced
+`932c5d8` → `5bd89648`.** First `.bestref` advance in 6 phases
+(since Phase 25.5, commit `432ddba`). Cycle BROKEN.
+
+**Match result** (800g, 500 ms/stone, 10 workers, Wilson 95%,
+color-balance ON, opening-diversity OFF — no library exists):
+
+```
+games:    800
+current:  429  best: 371  draws: 0
+winrate:  0.5363  wilson95: [0.5016, 0.5706]
+elo:      +25.2  ci95: [+1.1, +49.4]
+verdict:  PROMOTE
+```
+
+W-L-D 429-371-0. Wilson 95% half-width ±24.2 Elo (matches the
+dispatcher's pre-match prediction). Independent recomputation in
+D1-REV reproduces +25.233 / [+1.114, +49.353] to displayed
+precision.
+
+**Strict gate cleared by razor-thin margin** (+1.1 Elo CI lower).
+~12 fewer wins would have flipped this to Outcome B. The cycle-
+break hypothesis holds but the cumulative signal at HEAD is at
+the edge of resolvability even at 800g.
+
+**Additive-prediction comparison**:
+
+| Source | Estimate | Method |
+|---|---:|---|
+| 28C C2-DRIFT: `e28d54a` vs `.bestref` | +33.11 Elo @ 400g | direct |
+| 28C-0 drift-corrected: C1 vs `e28d54a` | +24.4 Elo @ 400g | drift-corrected |
+| Sum (additive prediction) | ~+57.5 Elo | composite |
+| **800g measurement: HEAD vs `.bestref`** | **+25.2 Elo** | direct |
+
+Observed is ~32 Elo BELOW additive prediction — ~1.3σ below the
+sum-of-variances std dev (~25 Elo). Most likely explanation:
+**partial regression to mean from CI-straddling prior
+measurements.** Both anchor measurements were single 400g points
+with CIs straddling zero; each could be 5–20 Elo upward noise
+excursion, and summing compounds the optimistic bias. **Real
+cumulative Elo at HEAD vs prior `.bestref` ≈ +25 Elo point
+estimate, not +57.** Consistent with Phase 27 alone (+27 Elo at
+400g vs `.bestref`).
+
+**Drift recalibration SKIPPED** per Outcome C protocol —
+correction can only tighten an already-cleared verdict (28C
+drift was -1.74 Elo, statistically zero).
+
+**Self-time band shift: none.** D1 is pure measurement; engine
+source byte-identical to `0c3cc6b`. The hotspot ranking from the
+Phase 27 LineContribution-cache snapshot (board 31.51% > eval
+26.55% > search_other 24.58% > threats 12.43% > ordering 4.93%)
+still applies unchanged.
+
+**Commits (3 since Phase 28C close, all on master)**:
+
+| SHA | Subject | Type |
+|---|---|---|
+| `b95a672` | `promote: advance .bestref to 5bd89648 (Phase 28D-1)` | promote (config-only) |
+| `4208e8f` | `spec: mark Phase 28D-1 done in roadmap` | doc |
+| (this commit) | `bench: HOTSPOTS Phase 28D-1 .bestref advance` | doc |
+
+No source / `hexo.toml` / Cargo changes. Reference node counts
+trivially byte-identical (only `.bestref` config file modified).
+
+**Wall-clock budget**:
+
+| Stage | Wall-clock |
+|---|---:|
+| D1-RUN setup + 14-worker false-start | ~5 min |
+| D1-RUN clean 10-worker 800g match | ~30 min |
+| D1-LAND state cleanup + commit | ~10 min |
+| D1-REV independent review | ~15 min |
+| D1-RETRO 2 doc commits | ~20 min |
+| **Total** | **~80 min** |
+
+The 800g match was the binding cost. Far under any reasonable
+envelope.
+
+**Promote-harness commit bug** (incidental finding, NOT FIXED —
+out of scope for D1, logged for follow-up): the auto-commit
+branch in `hammerhead/hammerhead/promote.py` invokes
+`git commit --only -- <path> -m <msg>` — `-m` is placed AFTER the
+`--` pathspec separator, so git treats it as an invalid pathspec
+and the commit fails. Auto-commit rolled back working-tree
+`.bestref` but left the staged index dirty; D1-LAND performed
+manual cleanup + atomic commit. Trivial fix (reorder to
+`-m <msg> --only -- <path>`); high-priority follow-up for the
+next phase that touches `promote.py`. Reviewer also noted
+`specs/SPEC_BENCHMARKS.md` lacks an explicit `[promote]` section
+despite roadmap references — reconcile alongside.
+
+**Phase 28D-2+ handoff** (Outcome C dispatch column):
+
+- **BO sprint v2 vs new `.bestref` (`5bd89648`)**: widened
+  bounds, optional warm-start from C1, convergence early-stop
+  (design.md §3) wired. Resumable study at
+  `/tmp/phase_28c/2/study.db`.
+- **Opening-diversity library + harness wiring** (deferred B-1.3 /
+  B-1.4 from 28B C-DEFERRED): now relevant for A/B vs new
+  `.bestref`. ~150 LOC Python + 10–20 fixture entries; replaces
+  `NotImplementedError` at `promote.py:372-376` + `:553-557`.
+- **Tempo proxy investigation** (deferred 28B → 28C → 28D).
+- **External arena (SealBot)**: PRIORITY — cross-engine
+  independent signal confirms cumulative work is real strength,
+  not within-engine harness artifact.
+- **Promote-harness commit-bug fix**: high-priority follow-up.
+- **NOT NEEDED**: 1600g promote-match (Outcome C cleared at
+  800g). **DEFER**: search-side tuning revival (harness floor
+  unchanged by new `.bestref`).
+
+**Match harness reminder** (Phase 26.5 meta-finding, BINDING):
+500ms × 200g CI ≈ ±48 Elo; 400g ≈ ±34 Elo; 800g ≈ ±24 Elo. The
++1.1 Elo CI-lower margin at 800g confirms 800g is the right
+resolution for cycle-break tests at the accumulated-work scale
+we are operating at; 400g would have left this ambiguous.
+
+**Artifacts** (gitignored per Phase 25.5):
+- `/tmp/phase_28d/PHASE_28D_1_RETRO.md` — full retrospective.
+- `/tmp/phase_28d/1/match_runner.md` — D1-RUN report.
+- `/tmp/phase_28d/1/landed.md` — D1-LAND report.
+- `/tmp/phase_28d/1/review.md` — D1-REV report.
+- `/tmp/phase_28d/1/match_800g.log` — raw 800g match log.
+- `/tmp/phase_28d/1/games/` — per-game outputs.
+
+---
+
 # Hotspots — Phase 28C (BO sprint, no land)
 
 ## Phase 28C-1 status (2026-05-24)
