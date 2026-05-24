@@ -98,8 +98,12 @@ fn forced_block_of_opp_closed_five() {
     // stone (e.g. (4,1)) that still leaves (5,0) available for the
     // forced stone-2 block. Assert the non-losing score envelope
     // instead of pinning a single root move.
+    // Phase 28D-3 A.1: envelope bumped from 50K to 150K to accommodate
+    // OPEN_3 weight (90K per instance). Test asserts non-mate-class
+    // post-block evaluation; one or two open-3 shape differentials are
+    // expected on this position and do not constitute a tactical loss.
     assert!(
-        r.score.abs() < 50_000,
+        r.score.abs() < 150_000,
         "post-block score must be near-neutral, got best_move={:?} score={}",
         r.best_move,
         r.score
