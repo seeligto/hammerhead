@@ -91,12 +91,29 @@ Implementation:
 - Sum across all axes.
 
 Layer-1 contributions to Layer-2-detected shapes are by design:
-Layer 2 detects discrete shapes (k=4, k=5 with open/closed gating),
-Layer 1 provides continuous gradient across all k including k=2 and
-k=3 which Layer 2 ignores. The Layer-1 contribution to a Layer-2-
-classified shape is small relative to the shape weight (≤15 %
+Layer 2 detects discrete shapes (k=4, k=5 with open/closed gating;
+Phase 28D-3 added length-3 open / closed and length-2 open S1 shapes
+— see § Layer 2: Shape Detection). Layer 1 provides continuous
+gradient across all k. The Layer-1 contribution to a Layer-2-
+classified S0 shape is small relative to the shape weight (≤15 %
 empirically) and provides search gradient on the way to forming the
 shape rather than re-rewarding it.
+
+**Layer-1 / Layer-2 length-3 double-count finding** (Phase 28D-3
+D3-DIAG + A.1/A.2/A.3): for length-3 own-stone configurations the
+Layer-1 `window_k_scores[3] = 64` already fires on every matching
+6-window with base score `64 × open_extension_factor = 256`. Adding
+a Layer-2 OPEN_3 / CLOSED_3 weight on top double-counts the same
+configuration. Sweep evidence: A.1 (open_3) all 5 cells negative
+(-35 to -108 Elo, 200g each); A.2 (closed_3) two cells exactly 0 Elo
+with 100-100-0 records. A.3 (open_2, length-2) cleared Wilson-lower
+> 0 at +52 Elo because Layer-1 is silent on length-2 windows
+(`window_k_scores[2] = 8`, an order of magnitude below length-3).
+Length is the discriminator. Phase 28E Gap #1 (window pattern table
+redesign) addresses the disjointness directly — either by zeroing
+`window_k_scores[3]` and re-sweeping open_3 / closed_3 weights
+against a disjoint baseline, or by replacing the bucket table with
+a 729-entry continuous pattern table per axis.
 
 ## Layer 2: Shape Detection (WSC tuples)
 
@@ -117,11 +134,40 @@ contributions for the same shape. The analytic constraint
 commit `a5e7c15`; no game-time tuning sweep was conducted. Phase 28B
 revisits these values.
 
-Layer 2 detects S0 shapes only. The S1/S2 pre-emptive shapes (open_3
-/ rhombus / arch / bone / trapezoid / open_2 / closed_3 / triangle)
-were eval-only contributions; their weights were zeroed in Phase 17
-and the detection code was removed in Phase 20 — see § Layer 2
-history.
+### S1 threats — revived in Phase 28D-3
+
+Layer 2 also carries a partial S1 (pre-fork) shape tier revived in
+Phase 28D-3 D3-INFRA / A.1 / A.2 / A.3:
+
+| Shape | Pattern | Score | Phase 28D-3 commit | Notes |
+|---|---|---|---|---|
+| Open 3 `_XXX_` (both ends empty, length-3 own run) | length-3, both 2-beyond cells empty | 90_000 | `65ed2dc` detect, `5011ea3` tune | A.1 landed least-negative sweep cell. All internal cells were `<= 0` Elo because of Layer-1 length-3 collision (see § Layer 1). |
+| Closed 3 `OXXX_` (one end opp, one end empty + room) | length-3, one 2-beyond opp, other non-opp | 11_250 | `392e410` detect, `9a25ef6` tune | A.2 landed smaller of two TIE 100-100-0 sweep cells. Same Layer-1 collision. |
+| Open 2 `_XX_` (both ends empty, length-2 own run) | length-2, symmetric viability gate (both 2-beyond non-opp) | 11_250 | `c656e0d` detect, `ab72ec2` tune | A.3 sole positive A.X cell internally (+52 Elo CI [+4, +101] @ 200g). Length-2 doesn't collide with Layer-1 length-3 windows; fills a genuine Layer-1 gap. |
+
+Closed-2 explicitly out of scope (no detector landed). The S1 shapes
+are detected by additional arms in `classify_linear_run`
+(`hammerhead-engine/src/threats.rs`): `(3, 2)` for open-3, `(3, 1)`
+for closed-3, `(2, 2)` for open-2. They emit on `ThreatKind`
+variants `OpenThree`, `ClosedThree`, `OpenTwo` and bump
+`ThreatCounts.open_3` / `.closed_3` / `.open_2`. S1 shapes do NOT
+push to `s0_instances` (S1 has no defender-cell semantics in the
+fork-cover layer — see § Layer 3) and do NOT contribute to
+quiescence or check-extension paths. They contribute only to
+`layer2_shapes` as additive Σ`(count × weight)` terms per side.
+
+**Phase 28D-3 D3-GATE outcome**: external arena flat (Cond B 4.5%
+vs I4 baseline 8.7%, n=200, CIs overlap); internal REJECT (-33 Elo
+CI [-67, +1] vs `.bestref`). `.bestref` NOT advanced. Commits stay
+on master because per-landing arena cells were each NEUTRAL not
+REGRESSION; cumulative did not clear the strict gate. The S1
+revival hypothesis was FALSIFIED at GATE n=200. Open-2 is the only
+shape that survived internal Stage-2; open_3 + closed_3 are kept
+at their landed weights but flagged for Phase 28E Gap #1 re-tune
+once Layer-1 / Layer-2 disjointness is fixed.
+
+The earlier S1/S2 history (Phase 16-20 ablation + removal) remains
+the relevant prior context — see § Layer 2 history.
 
 ### Detection method
 
@@ -146,6 +192,8 @@ Cache shape counts per player:
 struct ThreatCounts {
     open_5: u8, closed_5: u8,
     open_4: u8, closed_4: u8,
+    // Phase 28D-3 D3-INFRA / A.1 / A.2 / A.3:
+    open_3: u8, closed_3: u8, open_2: u8,
 }
 ```
 
@@ -327,7 +375,11 @@ Implementation: for each enemy colony cluster, check if own pieces within C/D ri
 `SmallVec<[ThreatInstance; 8]>` (inline cap-8; spills to heap only
 when a position exceeds 8 concurrent S0 threats, bounded above by
 `MAX_S0_INSTANCES`), each holding:
-- `kind: ThreatKind` (OpenFive, ClosedFive, OpenFour, ClosedFour)
+- `kind: ThreatKind` (OpenFive, ClosedFive, OpenFour, ClosedFour;
+  Phase 28D-3 added OpenThree, ClosedThree, OpenTwo as type-level
+  variants — these are emitted by detection but S1 shapes do NOT
+  push to `s0_instances`, only bump the matching `ThreatCounts`
+  counter)
 - `pieces: SmallVec<[Coord; 5]>` — the stones participating
 - `defense_cells: SmallVec<[Coord; 4]>` — cells whose occupation by
   opponent denies completion next stone
@@ -370,4 +422,23 @@ Timeline:
   the sole beneficiary of the Phase 15 incremental reconcile path, so
   that path collapsed to a single linear-run scan.
 
-The current eval has no S1/S2 layer. Layer 2 detects S0 shapes only.
+**Phase 28D-3 revived a partial S1 tier** (open_3, closed_3, open_2)
+— see § S1 threats above. The S2 family (rhombus, arch, bone,
+trapezoid, triangle) remains removed. The Phase 17/18/20 ablation
+evidence still applies to S2; the Phase 28D-3 D3-DIAG correlation
+diagnostic + per-shape atomic landings established that S1 length-2
+fills a genuine Layer-1 gap while S1 length-3 (open_3, closed_3)
+double-counts Layer-1 `window_k_scores[3]`. Open-2 detection is the
+only net-positive A.X internal landing from D3; open_3 and closed_3
+were landed as least-disruptive sweep cells and are flagged for
+Phase 28E Gap #1 re-tune once Layer-1 / Layer-2 disjointness is
+addressed.
+
+### Tempo term
+
+The Phase 17 removal text in § Tempo above ("A future eval-tuning
+phase that revisits S1/S2 can reintroduce a tempo term with a fresh
+weight") remains the operative guidance. Phase 28D-3 revived S1
+detection (counts available on `ThreatCounts.open_3`) but did NOT
+reintroduce a tempo term. Tempo proxy investigation remains
+deferred (28B → 28C → 28D-1 → 28D-3 → 28E-B).
