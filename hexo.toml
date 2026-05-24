@@ -36,7 +36,7 @@ closed_4 = 20_000
 # and the weight gets sweep-tuned in its own sub-phase. Zero weight
 # means zero behaviour change at this stage.
 open_3   = 90_000
-closed_3 = 0
+closed_3 = 11250
 open_2   = 0
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
