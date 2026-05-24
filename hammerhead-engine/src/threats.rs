@@ -13,7 +13,7 @@
 use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
 use crate::config::MAX_S0_INSTANCES;
-use crate::coords::Coord;
+use crate::coords::{Coord, hex_distance};
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 
@@ -43,6 +43,11 @@ pub struct ThreatCounts {
     pub closed_3: u8,
     /// S1 — `_XX_` (both ends empty). Phase 28D-3 D3-A.3 detector.
     pub open_2: u8,
+    /// Cross-axis cluster: 4 cells in a diamond (pairwise distances
+    /// `{1,1,1,1,1,2}`) — see `HeXOpedia` §4.3. Counted only when
+    /// isolated (no opp inside Ring C of centroid per Radius Theory).
+    /// Phase 28E-2 Stage 1 detector.
+    pub rhombus: u8,
 }
 
 /// Tag of a threat shape. S0 variants (mate-in-one-turn) are populated
@@ -98,10 +103,20 @@ pub struct ThreatSet {
 /// between calls so the `FxHashSet` `seen` dedup and the per-player
 /// pieces `Vec` keep their backing capacity instead of reallocating on
 /// every dirty read.
+///
+/// Phase 28E-2 Stage 1 adds the rhombus-detection sub-scratch:
+/// per-player coord sets (own + opp) and the canonicalized 4-tuple
+/// dedup set.
 #[derive(Debug, Default)]
 pub struct ThreatScratch {
     seen: FxHashSet<(Axis, i16, i16)>,
     pieces: Vec<Coord>,
+    /// Rhombus pass: opp coord set for isolation check.
+    rhombus_opp_set: FxHashSet<Coord>,
+    /// Rhombus pass: own coord set for vertex membership check.
+    rhombus_own_set: FxHashSet<Coord>,
+    /// Rhombus pass: canonical sorted 4-tuple dedup set.
+    rhombus_seen: FxHashSet<[Coord; 4]>,
 }
 
 impl ThreatScratch {
@@ -111,6 +126,9 @@ impl ThreatScratch {
     fn reset(&mut self) {
         self.seen.clear();
         self.pieces.clear();
+        self.rhombus_opp_set.clear();
+        self.rhombus_own_set.clear();
+        self.rhombus_seen.clear();
     }
 
     /// Clear every internal buffer. Called from `Board::reset` so a
@@ -119,6 +137,9 @@ impl ThreatScratch {
     pub fn clear_all(&mut self) {
         self.seen.clear();
         self.pieces.clear();
+        self.rhombus_opp_set.clear();
+        self.rhombus_own_set.clear();
+        self.rhombus_seen.clear();
     }
 }
 
@@ -147,12 +168,36 @@ pub fn compute_with_scratch(
 ) -> ThreatSet {
     let mut out = ThreatSet::default();
     scratch.reset();
+    let ov = board.eval_overrides();
+    // Gate the rhombus pass on a non-zero weight: building per-player
+    // own/opp coord sets and running the cross-axis enumerator costs
+    // ~5-30% NPS depending on board density. Default `rhombus = 0`
+    // (codegen'd from hexo.toml) keeps the hot path byte-equivalent
+    // to the pre-Stage-1 build. Sweep / EvalOverrides callers pay
+    // only when they opt in via a non-zero weight.
+    let rhombus_active = ov.rhombus != 0;
+    let opp = player.opponent();
     for (c, p) in board.pieces() {
         if p == player {
             scratch.pieces.push(c);
+            if rhombus_active {
+                scratch.rhombus_own_set.insert(c);
+            }
+        } else if p == opp && rhombus_active {
+            scratch.rhombus_opp_set.insert(c);
         }
     }
     walk_linear_runs(board, player, &scratch.pieces, &mut scratch.seen, &mut out);
+    if rhombus_active {
+        detect_rhombi(
+            &scratch.pieces,
+            &scratch.rhombus_own_set,
+            &scratch.rhombus_opp_set,
+            &mut scratch.rhombus_seen,
+            ov.rhombus_isolation_radius,
+            &mut out.counts,
+        );
+    }
     out
 }
 
@@ -392,6 +437,128 @@ fn coord_at(axis: Axis, line_id: i16, pos: i16) -> Coord {
         Axis::Q => Coord::new(pos, line_id),
         Axis::R => Coord::new(line_id, pos),
         Axis::S => Coord::new(pos, line_id - pos),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rhombus detection (Phase 28E-2 Stage 1)
+//
+// Per `HeXOpedia` §4.3, a rhombus is 4 pieces arranged in a diamond shape.
+// On axial hex coordinates this is equivalent to 4 cells whose pairwise
+// distances are `{1,1,1,1,1,2}` — 5 unit-length edges plus one
+// long diagonal of distance 2. Per Threat Theory it is a 3-1-2 threat
+// (W=3, S=1, C=2) and per Radius Theory a single opp stone in Ring C
+// (hex_distance ≤ 3) of the centroid defends. We therefore only credit
+// rhombi that are *isolated* — no opp inside Ring C of the rhombus
+// centroid. This binary gate (count-or-skip) matches the `HeXOpedia`
+// "guaranteed win in isolation" framing; partial-credit shadings are
+// future-phase scope.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Six axial unit-direction vectors. Together with the pairwise
+/// adjacency check `hex_distance(u, v) == 1` they yield exactly the 6
+/// distinct rhombus generators per anchor.
+const HEX_UNITS: [Coord; 6] = [
+    Coord::new(1, 0),
+    Coord::new(0, 1),
+    Coord::new(1, -1),
+    Coord::new(-1, 0),
+    Coord::new(0, -1),
+    Coord::new(-1, 1),
+];
+
+/// Round-half-away-from-zero divide-by-4 used to map a 4-cell sum onto
+/// the nearest integer hex cell (rhombus centroid). Bounded inputs
+/// (4 × `i16::MAX` fits in `i32`) so the cast back is exact in
+/// practice; `i32::try_into` is used to surface any future overflow as
+/// a debug panic rather than silently wrapping.
+#[inline]
+fn round_div4(x: i32) -> i32 {
+    if x >= 0 { (x + 2) / 4 } else { -((-x + 2) / 4) }
+}
+
+/// Detect isolated rhombi for `player` and bump `counts.rhombus`.
+///
+/// Algorithm:
+///   1. For each own anchor piece `P`, enumerate unordered pairs of
+///      unit-direction vectors `(u, v)` with `hex_distance(u, v) == 1`
+///      (i.e. directions that share a hex edge). There are exactly 6
+///      such pairs across the 6 unit directions.
+///   2. The candidate rhombus is `{P, P+u, P+v, P+u+v}`. All four
+///      cells must be in `own_set` (a hashset of own pieces).
+///   3. Canonicalize by sorting the 4 vertices into a `[Coord; 4]`
+///      ascending-`(q, r)`, and dedup via the `seen` set — each
+///      rhombus is generated up to 4 times (once per anchor vertex).
+///   4. Isolation check: compute the centroid as the round-half-away
+///      mean of the 4 vertices, then reject if any opp piece sits
+///      within `iso_radius` (`hex_distance`) of the centroid.
+///   5. Surviving rhombi increment `counts.rhombus` (saturating u8).
+///
+/// `iso_radius < 0` collapses to "no isolation" (every rhombus
+/// counted). `iso_radius == 0` collapses to "centroid cell empty of
+/// opp" — accepted in practice because that cell is a vertex when the
+/// rhombus has the canonical sum-divisible-by-4 layout.
+fn detect_rhombi(
+    own_pieces: &[Coord],
+    own_set: &FxHashSet<Coord>,
+    opp_set: &FxHashSet<Coord>,
+    seen: &mut FxHashSet<[Coord; 4]>,
+    iso_radius: i32,
+    counts: &mut ThreatCounts,
+) {
+    // Capped per-call iteration ceiling: own_pieces.len() ≤ board
+    // capacity; the inner double loop is 15 pairs (6 choose 2 with
+    // adjacency-1) per anchor. No allocation in the hot loop —
+    // `seen`, `own_set`, `opp_set` keep their capacity across calls.
+    let iso_radius_i16 = i16::try_from(iso_radius.max(0)).unwrap_or(i16::MAX);
+    for &p in own_pieces {
+        for (i, &u) in HEX_UNITS.iter().enumerate() {
+            for &v in HEX_UNITS.iter().skip(i + 1) {
+                // Adjacency-1 filter: u and v must be hex-neighbours,
+                // i.e. P, P+u, P+v form a unit triangle. Anything else
+                // (opposite direction, distance-2 pair) cannot complete
+                // the {1,1,1,1,1,2} rhombus signature.
+                if hex_distance(u, v) != 1 {
+                    continue;
+                }
+                let p_along_u = p.add(u);
+                let p_along_v = p.add(v);
+                let p_diag = p_along_u.add(v);
+                if !own_set.contains(&p_along_u) {
+                    continue;
+                }
+                if !own_set.contains(&p_along_v) {
+                    continue;
+                }
+                if !own_set.contains(&p_diag) {
+                    continue;
+                }
+                // Canonicalize: sort by (q, r).
+                let mut verts = [p, p_along_u, p_along_v, p_diag];
+                verts.sort_by_key(|a| (a.q, a.r));
+                if !seen.insert(verts) {
+                    continue;
+                }
+                // Isolation: opp within Ring C of centroid?
+                let sum_q: i32 = verts.iter().map(|c| i32::from(c.q)).sum();
+                let sum_r: i32 = verts.iter().map(|c| i32::from(c.r)).sum();
+                #[allow(clippy::cast_possible_truncation)]
+                let centroid = Coord::new(
+                    round_div4(sum_q) as i16,
+                    round_div4(sum_r) as i16,
+                );
+                let mut isolated = true;
+                for &opp in opp_set {
+                    if hex_distance(opp, centroid) <= iso_radius_i16 {
+                        isolated = false;
+                        break;
+                    }
+                }
+                if isolated {
+                    counts.rhombus = counts.rhombus.saturating_add(1);
+                }
+            }
+        }
     }
 }
 

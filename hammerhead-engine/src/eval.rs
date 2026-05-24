@@ -379,6 +379,7 @@ fn layer2_shapes(c: ThreatCounts, ov: &EvalOverrides) -> i32 {
         + ov.open_3 * i32::from(c.open_3)
         + ov.closed_3 * i32::from(c.closed_3)
         + ov.open_2 * i32::from(c.open_2)
+        + ov.rhombus * i32::from(c.rhombus)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

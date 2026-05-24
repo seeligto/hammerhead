@@ -92,6 +92,8 @@ _SCALAR_PARAMS: tuple[str, ...] = (
     "open_3",
     "closed_3",
     "open_2",
+    # Phase 28E-2 Stage 1 — rhombus cluster shape weight.
+    "rhombus",
     "open_extension_factor",
     "closed_extension_factor",
     "fork_cover2_bonus",

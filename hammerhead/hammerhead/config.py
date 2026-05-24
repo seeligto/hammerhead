@@ -58,6 +58,11 @@ class EvalConfig:
     open_3: int
     closed_3: int
     open_2: int
+    # Phase 28E-2 Stage 1 — isolated rhombus cluster shape (and the
+    # Ring-distance gate that decides "isolated"). Default weight zero
+    # keeps detection behaviour-neutral until the S1-IMPL sweep lands.
+    rhombus: int
+    rhombus_isolation_radius: int
     window_k_scores: tuple[int, ...]
     open_extension_factor: int
     closed_extension_factor: int
@@ -251,6 +256,8 @@ def load() -> HexoConfig:
             open_3=e["open_3"],
             closed_3=e["closed_3"],
             open_2=e["open_2"],
+            rhombus=e["rhombus"],
+            rhombus_isolation_radius=e["rhombus_isolation_radius"],
             window_k_scores=tuple(e["window_k_scores"]),
             open_extension_factor=e["open_extension_factor"],
             closed_extension_factor=e["closed_extension_factor"],

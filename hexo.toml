@@ -39,6 +39,15 @@ open_3   = 90_000
 closed_3 = 11250
 open_2   = 11250
 
+# Phase 28E-2 Stage 1 — cross-axis cluster shape: rhombus (4 cells in
+# a diamond, pairwise distances {1,1,1,1,1,2}). 3-1-2 threat per
+# HeXOpedia §4.3 / Threat Theory. Counted only when isolated — no opp
+# stone within Ring C (hex_distance ≤ rhombus_isolation_radius) of the
+# rhombus centroid, per Radius Theory. Default weight 0 keeps the
+# detector behaviour-neutral until the S1-IMPL weight sweep lands.
+rhombus                   = 0
+rhombus_isolation_radius  = 3
+
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
 window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]

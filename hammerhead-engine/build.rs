@@ -366,6 +366,12 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         (&["engine", "eval", "open_3"], "OPEN_3_SCORE"),
         (&["engine", "eval", "closed_3"], "CLOSED_3_SCORE"),
         (&["engine", "eval", "open_2"], "OPEN_2_SCORE"),
+        // Phase 28E-2 Stage 1 — rhombus cluster shape.
+        (&["engine", "eval", "rhombus"], "RHOMBUS_SCORE"),
+        (
+            &["engine", "eval", "rhombus_isolation_radius"],
+            "RHOMBUS_ISOLATION_RADIUS",
+        ),
         (
             &["engine", "eval", "open_extension_factor"],
             "OPEN_EXTENSION_FACTOR",

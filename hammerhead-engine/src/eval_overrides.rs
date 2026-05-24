@@ -13,7 +13,7 @@
 use crate::config::{
     CLOSED_3_SCORE, CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS,
     OPEN_2_SCORE, OPEN_3_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR,
-    WINDOW_K_SCORES,
+    RHOMBUS_ISOLATION_RADIUS, RHOMBUS_SCORE, WINDOW_K_SCORES,
 };
 
 /// Number of entries in the Layer-1 `WINDOW_SCORE_8` ternary table.
@@ -41,6 +41,15 @@ pub struct EvalOverrides {
     pub open_3: i32,
     pub closed_3: i32,
     pub open_2: i32,
+    /// Layer 2 cluster shape: isolated rhombus weight (Phase 28E-2
+    /// Stage 1). Detector lives in `threats::detect_rhombi`; default
+    /// is zero until the S1-IMPL weight sweep lands.
+    pub rhombus: i32,
+    /// Ring-distance gate for rhombus isolation (Radius Theory C-ring
+    /// default = 3). Threat detection treats a rhombus as isolated iff
+    /// no opp piece sits within `hex_distance ≤ rhombus_isolation_radius`
+    /// of the rhombus centroid.
+    pub rhombus_isolation_radius: i32,
     /// Layer 1 window-scan scores indexed by own-stone count `[0..=6]`.
     /// Index 6 mirrors `mate_score` (build.rs enforces equality).
     pub window_k_scores: [i32; 7],
@@ -65,6 +74,8 @@ impl Default for EvalOverrides {
             open_3: OPEN_3_SCORE,
             closed_3: CLOSED_3_SCORE,
             open_2: OPEN_2_SCORE,
+            rhombus: RHOMBUS_SCORE,
+            rhombus_isolation_radius: RHOMBUS_ISOLATION_RADIUS,
             window_k_scores: WINDOW_K_SCORES,
             open_extension_factor: OPEN_EXTENSION_FACTOR,
             closed_extension_factor: CLOSED_EXTENSION_FACTOR,
@@ -173,7 +184,8 @@ mod tests {
     use crate::config::{
         CLOSED_3_SCORE, CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR,
         FORK_COVER2_BONUS, OPEN_2_SCORE, OPEN_3_SCORE, OPEN_4_SCORE, OPEN_5_SCORE,
-        OPEN_EXTENSION_FACTOR, WINDOW_K_SCORES, WINDOW_SCORE_8,
+        OPEN_EXTENSION_FACTOR, RHOMBUS_ISOLATION_RADIUS, RHOMBUS_SCORE, WINDOW_K_SCORES,
+        WINDOW_SCORE_8,
     };
 
     /// `Default::default()` MUST equal the live `crate::config::*`
@@ -191,6 +203,11 @@ mod tests {
         assert_eq!(d.open_3, OPEN_3_SCORE, "open_3");
         assert_eq!(d.closed_3, CLOSED_3_SCORE, "closed_3");
         assert_eq!(d.open_2, OPEN_2_SCORE, "open_2");
+        assert_eq!(d.rhombus, RHOMBUS_SCORE, "rhombus");
+        assert_eq!(
+            d.rhombus_isolation_radius, RHOMBUS_ISOLATION_RADIUS,
+            "rhombus_isolation_radius"
+        );
         assert_eq!(d.window_k_scores, WINDOW_K_SCORES, "window_k_scores");
         assert_eq!(
             d.open_extension_factor, OPEN_EXTENSION_FACTOR,

@@ -2,6 +2,7 @@
 
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::coords::Coord;
+use hammerhead_engine_core::eval_overrides::EvalOverrides;
 use hammerhead_engine_core::threats::{ThreatCounts, ThreatKind, compute};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,6 +23,31 @@ fn o(b: &mut Board, cells: &[(i16, i16)]) {
 
 fn fresh() -> Board {
     Board::new()
+}
+
+/// Enable the Phase 28E-2 Stage 1 rhombus detector on `b` so the
+/// detection pass actually runs in `compute()`. The detector is
+/// behaviour-gated on a non-zero `EvalOverrides::rhombus` weight
+/// (see `threats::compute_with_scratch`) to keep the byte-equivalent
+/// default-callers contract; the Stage 1 rhombus-test suite flips
+/// the weight on so the detector path is exercised. `iso_radius`
+/// stays at its codegen'd Ring-C default (= 3) unless overridden.
+fn enable_rhombus(b: &mut Board) {
+    let mut ov = b.eval_overrides();
+    ov.rhombus = 1; // any non-zero value is sufficient to arm detection
+    b.set_eval_overrides(ov);
+}
+
+/// Variant of `enable_rhombus` that also sets an explicit isolation
+/// radius; reserved for future tests that want to vary the gate.
+#[allow(dead_code)]
+fn enable_rhombus_with_radius(b: &mut Board, radius: i32) {
+    let ov = EvalOverrides {
+        rhombus: 1,
+        rhombus_isolation_radius: radius,
+        ..b.eval_overrides()
+    };
+    b.set_eval_overrides(ov);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -577,4 +603,188 @@ fn open_two_per_player_isolation() {
     let to = compute(&b, Player::O);
     assert_eq!(tx.counts.open_2, 1);
     assert_eq!(to.counts.open_2, 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rhombus — cross-axis cluster shape (Phase 28E-2 Stage 1)
+//
+// Per HeXOpedia §4.3, a rhombus is 4 pieces arranged in a diamond.
+// On axial hex coordinates this is 4 cells whose pairwise distances
+// are {1,1,1,1,1,2} — 5 unit-length edges plus one long diagonal of
+// distance 2. Per the Threat Theory PDF a rhombus is a 3-1-2 threat
+// (W=3, S=1, C=2). Per Radius Theory a single opp cell in Ring C
+// (hex_distance ≤ 3) of the rhombus centroid defends — so we only
+// credit isolated rhombi (no opp inside Ring C of centroid).
+//
+// Detector enumerates own pieces; for each anchor `P` and each pair of
+// adjacent unit-direction vectors `(u, v)` with hex_distance(u, v) == 1,
+// the candidate rhombus is `{P, P+u, P+v, P+u+v}` provided all four
+// cells hold an own stone. Dedup canonicalizes via sorted 4-tuple.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── positive cases (5) — isolated rhombi in different rotations
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn rhombus_isolated_canonical_q_r() {
+    // Vertices (0,0)(1,0)(0,1)(1,1) — directions (1,0) and (0,1).
+    // No opponent stones anywhere → isolated.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+    // S2 shapes do not surface as ThreatInstance entries.
+    assert!(t.s0_instances.is_empty());
+}
+
+#[test]
+fn rhombus_isolated_q_s_axis() {
+    // Vertices (0,0)(1,0)(1,-1)(2,-1) — directions (1,0) and (1,-1).
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (1, -1), (2, -1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+}
+
+#[test]
+fn rhombus_isolated_r_negative_s_axis() {
+    // Vertices (0,0)(0,1)(-1,1)(-1,2) — directions (0,1) and (-1,1).
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (0, 1), (-1, 1), (-1, 2)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+}
+
+#[test]
+fn rhombus_isolated_negative_quadrant() {
+    // Translated rhombus deep in negative quadrant.
+    let mut b = fresh();
+    x(&mut b, &[(-5, -5), (-4, -5), (-5, -4), (-4, -4)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+}
+
+#[test]
+fn rhombus_isolated_with_distant_opp() {
+    // Rhombus at origin; opp far outside Ring C of centroid (1,1).
+    // Distance from (1,1) to (10,10) = 18 ≫ 3 → isolated.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(10, 10), (-10, -10)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+}
+
+// ── negative cases (5) — geometric rhombus but isolation fails
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn rhombus_with_opp_at_centroid_not_counted() {
+    // Centroid of canonical rhombus is (1,1); opp on that cell.
+    // Actually (1,1) is itself a vertex (own X), so opp must be
+    // elsewhere — pick a cell at distance 1 from centroid.
+    // Centroid (1,1); opp at (2,1) → dist 1 ≤ 3 → reject.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(2, 1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+#[test]
+fn rhombus_with_opp_at_centroid_radius_2_not_counted() {
+    // Centroid (1,1); opp at (3,1) → hex_distance 2 ≤ 3 → reject.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(3, 1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+#[test]
+fn rhombus_with_opp_at_centroid_radius_3_not_counted() {
+    // Centroid (1,1); opp at (4,1) → hex_distance 3 == 3 → reject.
+    // Ring C boundary inclusive per Radius Theory.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(4, 1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+#[test]
+fn rhombus_with_opp_inside_bounding_region_not_counted() {
+    // Centroid (1,1); opp at (1,2) → hex_distance 1 → reject.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(1, 2)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+#[test]
+fn rhombus_with_opp_adjacent_to_vertex_within_ring_c_not_counted() {
+    // Centroid (1,1); opp at (-1,0) → hex_distance to centroid:
+    // dq=-2, dr=-1, ds=3 → (2+1+3)/2 = 3 → within Ring C → reject.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(-1, 0)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+// ── edge cases (3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn rhombus_on_far_position_translation_invariant() {
+    // Same shape, translated to (20, 20) region. Detector must be
+    // translation-invariant (no edge effects — board is infinite).
+    let mut b = fresh();
+    x(&mut b, &[(20, 20), (21, 20), (20, 21), (21, 21)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+}
+
+#[test]
+fn overlapping_rhombi_in_2_by_3_block_all_count() {
+    // Six X stones filling a 2x3 axial block. On axial hex coords
+    // (1,0) and (0,1) are themselves neighbours, so three distinct
+    // rhombi sit inside this block (verified by brute-force
+    // enumeration of every 4-cell subset with pairwise distances
+    // `{1,1,1,1,1,2}`):
+    //   A = (0,0),(1,0),(0,1),(1,1)
+    //   B = (1,0),(2,0),(0,1),(1,1)  — cross-axis "middle" rhombus
+    //   C = (1,0),(2,0),(1,1),(2,1)
+    // No opp anywhere → all three isolated → rhombus count = 3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 3);
+}
+
+#[test]
+fn rhombus_coexists_with_nearby_linear_shapes() {
+    // Rhombus at (0,0)..(1,1) plus a separate linear open-3 far away
+    // on a different axis. Rhombus must count AND open_3 must count.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    // Far open-3 on q axis at y=10.
+    x(&mut b, &[(0, 10), (1, 10), (2, 10)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
+    assert_eq!(t.counts.open_3, 1);
 }

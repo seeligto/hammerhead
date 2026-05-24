@@ -167,6 +167,8 @@ impl PyEngine {
         d.set_item("open_3", ov.open_3)?;
         d.set_item("closed_3", ov.closed_3)?;
         d.set_item("open_2", ov.open_2)?;
+        d.set_item("rhombus", ov.rhombus)?;
+        d.set_item("rhombus_isolation_radius", ov.rhombus_isolation_radius)?;
         d.set_item("window_k_scores", ov.window_k_scores.to_vec())?;
         d.set_item("open_extension_factor", ov.open_extension_factor)?;
         d.set_item("closed_extension_factor", ov.closed_extension_factor)?;
@@ -181,6 +183,7 @@ impl PyEngine {
     /// Recognised keys (match `EvalOverrides` fields exactly):
     /// `open_5`, `closed_5`, `open_4`, `closed_4`,
     /// `open_3`, `closed_3`, `open_2`,
+    /// `rhombus`, `rhombus_isolation_radius`,
     /// `window_k_scores` (sequence of 7 ints, including index 6 ==
     /// mate score), `open_extension_factor`,
     /// `closed_extension_factor`, `fork_cover2_bonus`.
@@ -211,6 +214,8 @@ fn build_overrides_from_dict(
             "open_3" => next.open_3 = v.extract()?,
             "closed_3" => next.closed_3 = v.extract()?,
             "open_2" => next.open_2 = v.extract()?,
+            "rhombus" => next.rhombus = v.extract()?,
+            "rhombus_isolation_radius" => next.rhombus_isolation_radius = v.extract()?,
             "open_extension_factor" => next.open_extension_factor = v.extract()?,
             "closed_extension_factor" => next.closed_extension_factor = v.extract()?,
             "fork_cover2_bonus" => next.fork_cover2_bonus = v.extract()?,
