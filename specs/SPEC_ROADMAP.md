@@ -883,7 +883,145 @@ Full retrospective: `/tmp/phase_28d/PHASE_28D_1_RETRO.md`
 (gitignored per Phase 25.5 repo hygiene). D1-RUN /
 D1-LAND / D1-REV reports under `/tmp/phase_28d/1/`.
 
-## Phase 28D-2+ candidates
+## Phase 28D-3 — Eval Revival + Bug Sweep (KEEP commits, no .bestref advance)
+
+2026-05-24. 11 sub-phases targeting two parallel hypotheses: revive S1
+detection (open_3 / closed_3 / open_2) per D3-DIAG eval correlation
+diagnostic; sweep four I3-flagged SealBot-perf bug patterns in HH (TT
+EXACT quantization, root ordering after aspiration fail-high, search
+inner-loop heap alloc, TimeUp killer rollback). Per-shape atomic
+landings + arena measurements at 50g per cell + GATE n=200 final
+external match.
+
+**Outcome: KEEP all 12 commits on master; `.bestref` NOT advanced.**
+External arena flat (GATE Cond B 4.5% vs I4 baseline 8.7%, CIs overlap);
+internal REJECT (-33 Elo, CI [-67, +1] — CI upper touches zero, NOT
+strict-negative). Per the D3-GATE decision matrix this resolves
+between "DO NOT LAND" (external <15%) and "REVERT" (strict-negative);
+per-landing arena cells were each NEUTRAL not REGRESSION, so individual
+landings are not defective. **Keep commits, do not advance .bestref.**
+
+### Sub-phase summary
+
+| Sub-phase | Commits | Outcome | Notes |
+|---|---|---|---|
+| D3-DIAG | (no commit) | PROCEED-WITH-CAUTION | HH-SB Pearson 0.963 hand-curated S1, -0.113 i2 real-game. Predicts modest gain; bigger lever is Gap #1. |
+| D3-INFRA | `fca4dad`, `8542938` | byte-identical | S1 ThreatType + ThreatCounts + hexo.toml weights (all 0); detection skeletons; codegen + EvalOverrides + Python facade plumbing. |
+| A.1 open_3 | `65ed2dc`, `5011ea3` | NEUTRAL externally | All 5 sweep cells negative (-35 to -108 Elo). Landed least-negative 90000. Cond B 8.0% / Cond A 0.0%. |
+| A.2 closed_3 | `392e410`, `9a25ef6` | NEUTRAL externally | Two cells TIED at 0 Elo (100-100-0 each). Landed smaller weight 11250. Cond B 6.0% / Cond A 2.0%. |
+| A.3 open_2 | `c656e0d`, `ab72ec2` | NEUTRAL externally | **FIRST positive A.X cell**: open_2=11250 = +52 Elo CI [+4, +101] internally. Length-2 doesn't collide with Layer-1 length-3. Cond B 2.0% / Cond A 6.0%. |
+| B.1 TT EXACT | `8de7979` | REFUTED | HH stores `score: i32` raw, no quantization. Test-only commit (release binary byte-identical). `score_round_trip_is_bitwise_exact_no_quantization` lock-in. |
+| B.2 root ordering | `8d75f8d` | REFUTED | HH routes ordering through TT; unconditional `pvs_node` tail TT store writes fail-high move with LowerBound flag. Test-only commit. `pvs_root_fail_high_writes_failing_move_to_tt` lock-in. |
+| B.3 inner-loop alloc | `a3c7753` | REFUTED | No heap alloc in HH recursive search path (audited every site). Test-only commit. `search_hot_path_zero_alloc_structural_invariants` lock-in. |
+| B.4 TimeUp rollback | `f1032ba` | REFUTED | Test-only commit; TimeUp killer-rollback invariant lock-in. |
+| D3-GATE | (no new commit) | external arena flat / internal REJECT | Cond A 7.0%, Cond B 4.5%, vanilla SB 9.0%; internal 400g -33 Elo CI [-67, +1]. |
+
+### Per-landing arena trajectory (Cond B per-stone 500ms)
+
+| State | Win/Lose/Draw | Winrate | Wilson 95% | Internal Elo (200g sweep) |
+|---|---|---|---|---|
+| pre-D3 (I4) | 4-46-0 | 8.7% | [3.4%, 20.0%] | n/a |
+| post-A.1 | 4-46-0 | 8.0% | [3.2%, 18.8%] | -35 Elo CI [-83, +13] |
+| post-A.2 | 3-47-0 | 6.0% | [2.1%, 16.2%] | 0 Elo CI [-48, +48] |
+| post-A.3 | 1-49-0 | 2.0% | [0.4%, 10.5%] | **+52 Elo CI [+4, +101]** |
+| **GATE n=200 Cond B** | **9-191-0** | **4.5%** | **[2.4%, 8.4%]** | n/a |
+
+Cumulative D3 (A.1+A.2+A.3+GATE) Cond B: 17/346 = 4.9% Wilson [3.1%, 7.7%].
+I4 CI overlap [3.4%, 7.7%]. External arena flat within sampling noise.
+
+### Layer-1 length-3 double-counting finding (the durable lesson)
+
+Per-shape atomic landings allowed clean confound-free attribution.
+open_3 (length-3) and closed_3 (length-3) cells uniformly non-positive;
+open_2 (length-2) cleared Wilson-lower > 0. Length is the discriminator:
+Layer-1 `window_k_scores[3] = 64` (codegen'd into `WINDOW_SCORE_8`)
+already fires on length-3 own-stone configurations, double-counting
+any additive Layer-2 OPEN_3 / CLOSED_3 weight. Layer-1 is silent on
+length-2, so OPEN_2 carries independent information.
+
+The two NULL closed_3 cells (11250 and 33750, both exactly 100-100-0)
+plus uniformly negative open_3 cells are direct evidence of collision.
+Open_2's positive cell is the cleanest counter-example. Refines
+D3-DIAG's "Layer-1 double-counting" hypothesis to a length-3-specific
+finding; directly seeds Phase 28E Gap #1 (window pattern table
+redesign) as the next substantive lever.
+
+### Per-stone vs per-turn observation (GATE n=200)
+
+Cond A (per-turn-equiv HH 500 vs SB-perf 1000) 7.0% > Cond B (per-stone
+equal 500/500) 4.5%. HH does BETTER when SB-perf has 2× per-stone but
+equal per-turn time. Suggests HH's locked 60/40 stone1/stone2 split may
+be suboptimal vs whole-turn-planning opponents (SB-perf plans whole
+turns jointly per `bots/external/INTEGRATION_NOTES.md` §3). Cheap to
+A/B in Phase 28E.
+
+### Commits (12 atomic on master, + 3 doc commits this retro)
+
+| SHA | Subject |
+|---|---|
+| `fca4dad` | `eval: add S1 ThreatType + ThreatCounts fields` |
+| `8542938` | `eval: surface S1 weights in hexo.toml + EvalOverrides` |
+| `65ed2dc` | `eval: implement open-3 detection` |
+| `5011ea3` | `eval: tune open_3 weight to 90000` |
+| `8de7979` | `tt: add score round-trip regression test (no quantization)` |
+| `8d75f8d` | `search: add M5 root-tt fail-high invariant test (refutation lock-in)` |
+| `392e410` | `eval: implement closed-3 detection` |
+| `9a25ef6` | `eval: tune closed_3 weight to 11250` |
+| `a3c7753` | `search: lock zero-alloc invariants for hot path (B.3)` |
+| `f1032ba` | `search: lock TimeUp killer-rollback invariant (B.4)` |
+| `c656e0d` | `eval: implement open-2 detection` |
+| `ab72ec2` | `eval: tune open_2 weight to 11250` |
+| (this commit) | `spec: mark Phase 28D-3 done in roadmap` |
+| (next) | `spec(eval): document Phase 28D-3 revived S1 detection` |
+| (prev/sibling) | `bench: HOTSPOTS Phase 28D-3 eval revival + bug sweep` |
+
+### Honest assessment
+
+External arena DID NOT MOVE. The S1 revival hypothesis ("HH lacks S1
+detection, that's why SB-perf wins") is FALSIFIED at GATE n=200. The
+phase has methodology value (per-shape atomic attribution, B.X invariant
+test pattern, length-3 collision finding) and one productive forward
+landing (open_2 detection + 11250 weight) but did not close the SB-perf
+gap. Phase 28E Gap #1 is the next substantive lever.
+
+Full retrospective: `/tmp/phase_28d/PHASE_28D_3_RETRO.md` (gitignored
+per Phase 25.5 repo hygiene). Per-sub-phase reports under
+`/tmp/phase_28d/3/{diag,infra,A.{1,2,3},B.{1,2,3,4},gate}/`.
+
+## Phase 28E candidates (updated post-28D-3)
+
+Phase 28D-3 D3-RETRO updated. Gap #1 (window pattern table redesign)
+PRIORITIZED based on Layer-1 length-3 collision finding from
+A.1/A.2/A.3.
+
+- **28E-A — Gap #1 (window pattern table redesign) — PRIORITY**: make
+  Layer-1 length-3 and length-2 disjoint from S1 detection. Option (a)
+  diagnostic: zero `window_k_scores[3]` and re-sweep open_3 / closed_3
+  weights against the disjoint baseline. If positive cells appear post-
+  zero, double-counting hypothesis is experimentally confirmed and tuned
+  weights become real signal. Option (b) substantive: replace
+  `window_k_scores` bucket with a 729-entry continuous pattern table per
+  axis (SB-perf style — addresses D3-DIAG Gap #2 magnitude-resolution
+  finding). Recommend (a) first as the diagnostic; (b) follows.
+- **28E-B — Tempo proxy investigation**: deferred 28B → 28C → 28D-1 →
+  28D-3. Detector revival or proxy invention. TT p.11 "tempo is the
+  most important currency" — strongest PDF evidence of any deferred
+  item.
+- **28E-C — Opening-diversity library + harness wiring**: deferred
+  B-1.3 / B-1.4 from Phase 28B. Library doesn't exist;
+  `promote.py:372-376` + `:553-557` still raise `NotImplementedError`.
+  ~150 LOC Python + 10-20 fixture entries.
+- **28E-D — Per-stone vs per-turn time-split A/B**: D3-GATE n=200
+  showed Cond A (per-turn-equiv) 7.0% > Cond B (per-stone equal) 4.5%.
+  HH 60/40 stone1/stone2 split may be suboptimal vs whole-turn-planning
+  opponents (SB-perf plans whole turns jointly). Cheap A/B (vary
+  `stone1_fraction` only).
+- **28E-E — Promote-harness commit-bug fix**: trivial reorder
+  `-m <msg> --only -- <path>` in `promote.py` auto-commit branch.
+  Bundle with next phase that touches `promote.py`. Carried from
+  Phase 28D-1.
+
+## Phase 28D-2+ candidates (legacy, superseded by 28E above)
 
 Carried forward from Phase 28C retrospective + Phase 28D-1
 Outcome C dispatch column. Ordering not yet locked; dispatcher
