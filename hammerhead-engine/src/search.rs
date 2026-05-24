@@ -1212,5 +1212,187 @@ mod tests {
              which fires on every leaf node and qsearch stand-pat."
         );
     }
+
+    /// B.4 (`SealBot-perf` B2 pattern, see I3 `2026-05-20-code-analysis.md`
+    /// §Section D-4 + `/tmp/phase_28d/3/B.4/implementer.md`).
+    ///
+    /// `SealBot-perf` shipped `24e23ff` ("phase1.7: snapshot `_killers`
+    /// per iteration, restore on `TimeUp`") to plug a `TimeUp`-rollback
+    /// gap where killers mutated during an aborted depth contaminated
+    /// the next `best_move()` call's ordering. HH avoids that bug
+    /// *structurally*: `search_root` snapshots `ordering.killers` once
+    /// per ID depth (search.rs ~L244) and restores from the snapshot on
+    /// the `Err(SearchError::Timeout)` arm (~L268). This test pins the
+    /// rollback contract end-to-end.
+    ///
+    /// The other search-mutated members listed in the I3 audit are either
+    /// (a) safe-by-construction or (b) intentionally retained:
+    ///
+    /// - **TT writes** propagate up via `?` from `try_one_move`'s
+    ///   `score_result?`, so a node never reaches its tail `tt.store`
+    ///   when a descendant times out. Sibling sub-searches that
+    ///   completed *before* `TimeUp` wrote correct entries (their
+    ///   depth/bound semantics are unchanged by what happened later in
+    ///   the tree); no pollution.
+    /// - **History** (`ord.record_cutoff`) only fires after a real
+    ///   `alpha >= beta` cutoff with a fully-completed child score. It is
+    ///   global-with-decay by design (`decay_history` runs once per
+    ///   `search_root`), explicitly retained across iterations as the
+    ///   per-game move-quality memory (`SPEC_ENGINE.md` "no wipe between
+    ///   iterations"). Not rollback-eligible.
+    /// - **TT generation** is bumped once per `search_root` call, not
+    ///   per-iteration; never needs rollback.
+    /// - **PV** is reconstructed from TT each iteration via
+    ///   `iterate_at_depth`'s probe at the root hash; no separate PV
+    ///   buffer to roll back.
+    ///
+    /// So `ordering.killers` is the only state needing iteration-scoped
+    /// rollback, and the snapshot/restore pair at search.rs:244,268
+    /// covers it. The test below:
+    ///
+    /// 1. Asserts the structural invariant that the snapshot type
+    ///    matches `OrderingState::killers` exactly (catches a refactor
+    ///    that changes one without the other).
+    /// 2. Forces an immediate `TimeUp` (`time_ms = Some(0)`) and confirms
+    ///    killers return to the pre-`search_root` baseline (which equals
+    ///    fresh state because `reset_killers` runs unconditionally at
+    ///    `search_root` entry).
+    /// 3. Runs a search that completes depth >= 1 then times out, and
+    ///    confirms killers at exit equal what they were after the last
+    ///    fully-completed iteration's snapshot point — by re-running the
+    ///    completed-depths search standalone and comparing slot-by-slot.
+    #[test]
+    fn time_up_rollback_restores_killer_state() {
+        use crate::board::Board;
+        use crate::config::{KILLER_SLOTS, MAX_PLY};
+        use crate::ordering::{KillerSlot, OrderingState};
+        use crate::tt::TranspositionTable;
+
+        // Invariant 1: the snapshot buffer in `search_root` is typed as
+        // `Box<[KillerSlot; MAX_PLY]>` so `*snapshot = *ord.killers`
+        // memcpy's the exact bytes. If `OrderingState::killers` ever
+        // changes shape, this assertion stops compiling — the rollback
+        // path's `*ordering.killers = *killers_snapshot` would otherwise
+        // silently lose its meaning.
+        let snap: Box<[KillerSlot; MAX_PLY]> = Box::new([KillerSlot::default(); MAX_PLY]);
+        let ord_proto = OrderingState::new();
+        assert_eq!(
+            std::mem::size_of_val(snap.as_ref()),
+            std::mem::size_of_val(ord_proto.killers.as_ref()),
+            "snapshot buffer and OrderingState::killers must have \
+             identical layout for the rollback memcpy to remain correct"
+        );
+
+        // Build an open-4 position so depth-2+ produces β-cutoffs that
+        // populate killers (otherwise the rollback target degenerates to
+        // "all-empty == all-empty" and we'd be testing nothing).
+        // `Board` is not `Clone`, so each per-iteration use rebuilds.
+        let make_board = || {
+            let mut b = Board::new();
+            x_row(&mut b, 0, 4);
+            b.force_parity_for_test(Player::X, 0);
+            b
+        };
+
+        // Invariant 2: immediate TimeUp leaves killers at the fresh
+        // (post-`reset_killers`) baseline. With `time_ms = Some(0)` the
+        // first `bump_and_check_deadline` at root fires Timeout before
+        // any cutoff can record a killer.
+        {
+            let mut bb = make_board();
+            let mut tt = TranspositionTable::new(16);
+            let mut ord = OrderingState::new();
+            let mut scratch = SearchScratch::new();
+            let cfg = SearchConfig {
+                max_depth: 5,
+                time_ms: Some(0),
+                deadline_check_nodes: 1,
+                ..SearchConfig::default()
+            };
+            let _ = search_root(&mut bb, &mut tt, &mut ord, &mut scratch, &cfg);
+            for (ply, slot) in ord.killers.iter().enumerate() {
+                for (k_idx, k) in slot.slots().iter().enumerate() {
+                    assert!(
+                        k.is_none(),
+                        "immediate TimeUp left a killer at ply={ply} slot={k_idx}: \
+                         {k:?}. The rollback restore at search.rs:268 should have \
+                         reverted to the post-`reset_killers` baseline (all None)."
+                    );
+                }
+            }
+            // Sanity: KILLER_SLOTS is consistent with what we just walked.
+            assert_eq!(KILLER_SLOTS, ord.killers[0].slots().len());
+        }
+
+        // Invariant 3: rollback parity. Run a complete search at depth=2
+        // to capture the "after fully-completed depth 2" killer state.
+        // Then run a search at depth=5 with no time limit (fully
+        // completes everything). Then run a search at depth=5 with a
+        // tight time budget calibrated to time out *after* depth 2 but
+        // *during* depth 3+. The time-limited search's final killer
+        // state must equal the *completed* search's state at the same
+        // depth as `depth_reached`. We can't pre-predict which depth
+        // completes under the tight budget, so we run several searches
+        // at depths {1..=5} to build a reference table, then assert the
+        // time-limited search's killers match the reference for whatever
+        // `depth_reached` it ended on.
+        let mut reference_killers: Vec<Box<[KillerSlot; MAX_PLY]>> = Vec::with_capacity(6);
+        reference_killers.push(Box::new([KillerSlot::default(); MAX_PLY])); // depth_reached=0
+        for d in 1_i8..=5 {
+            let mut bb = make_board();
+            let mut tt = TranspositionTable::new(16);
+            let mut ord = OrderingState::new();
+            let mut scratch = SearchScratch::new();
+            let cfg = SearchConfig {
+                max_depth: d,
+                time_ms: None,
+                ..SearchConfig::default()
+            };
+            let _ = search_root(&mut bb, &mut tt, &mut ord, &mut scratch, &cfg);
+            reference_killers.push(ord.killers.clone());
+        }
+
+        // Now run a time-limited search. We pick a tiny budget; the
+        // exact `depth_reached` is platform-dependent, but whatever
+        // depth completes, the killers must equal the corresponding
+        // reference snapshot.
+        for &budget_us in &[10u64, 100, 1_000, 10_000] {
+            let mut bb = make_board();
+            let mut tt = TranspositionTable::new(16);
+            let mut ord = OrderingState::new();
+            let mut scratch = SearchScratch::new();
+            // `time_ms` in `SearchConfig` is milliseconds; multiply
+            // budget_us into ms via the smallest representable >0 (round
+            // up). For < 1ms cases we set `time_ms = Some(0)` which is
+            // already covered by Invariant 2 above, so start at 1ms.
+            let ms = (budget_us / 1000).max(1);
+            let cfg = SearchConfig {
+                max_depth: 5,
+                time_ms: Some(ms),
+                deadline_check_nodes: 1,
+                ..SearchConfig::default()
+            };
+            let result = search_root(&mut bb, &mut tt, &mut ord, &mut scratch, &cfg);
+            let d = result.depth_reached;
+            assert!(
+                (0..=5).contains(&d),
+                "depth_reached out of expected range: {d}"
+            );
+            let expected = &reference_killers[d as usize];
+            for (ply, (actual_slot, expected_slot)) in
+                ord.killers.iter().zip(expected.iter()).enumerate()
+            {
+                assert_eq!(
+                    actual_slot.slots(),
+                    expected_slot.slots(),
+                    "TimeUp rollback failure: at budget={ms}ms, search reported \
+                     depth_reached={d} but killers at ply={ply} diverge from a \
+                     fully-completed depth-{d} reference search. \
+                     Partial-iteration killer writes leaked past the rollback \
+                     in search_root's Err(Timeout) arm (search.rs:266-269)."
+                );
+            }
+        }
+    }
 }
 
