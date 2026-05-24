@@ -31,7 +31,10 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 23 | SRP splits — `search`/`engine`, `board` proximity helpers, `cli.py`, `promote.py` | ✅ done |
 | 24 | performance investigation — read-only HOTSPOTS refresh | ✅ done |
 | 25 | optimization quick wins + measurement cleanup | ✅ done |
-| 27 | per-line `LineContribution` cache (Layer-1 delta-update memo) | 🚧 in progress |
+| 27 | per-line `LineContribution` cache (Layer-1 delta-update memo) | ✅ done |
+| 28B | eval-value tuning sprint (coordinate-descent, 5 candidates) | ✅ done |
+| 28C-0 | subset verification (2³ factorial); reverted B-2.3 + B-2.5 per non-replication | ✅ done |
+| 28C-1 | BO sprint (60 trials × 200g, GPSampler); winner reverted on 400g validation | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -727,6 +730,115 @@ Artifacts: `/tmp/phase_28c/0/synthesis.md` (full drift-corrected
 results), `feasibility_research.md` (BO library decision),
 `matches/C{0..7}.json` (raw match data). Gitignored per Phase 25.5
 repo hygiene.
+
+## Phase 28C-1 — BO Sprint (Outcome A: REVERT)
+
+2026-05-23 → 2026-05-24. 60-trial Optuna 4.8.0 GPSampler sprint
+over 5 eval scalars (`open_4`, `closed_5`, `window_k_scores[5]`,
+`open_extension_factor`, `fork_cover2_bonus`) at 200g per trial
+vs Phase 27 baseline (`e28d54a`). Sprint clean: 60/60 COMPLETE,
+0 FAIL, **6h 40min** wall-clock on 10-worker host.
+
+**Outcome A — REVERT, zero eval landings.** BO winner trial 34
+(raw +63.23 Elo at 200g, hit 4 of 5 search bounds) collapsed under
+400g validation:
+
+- Trial 34 vs `.bestref` (`932c5d8`) at 400g, direct:
+  **-14.77 Elo CI [-48.80, +19.25]**, W-L-D 191-208-1. Strict
+  gate FAILED, marginal gate FAILED (point < 0).
+- Trial 34 vs `e28d54a` at 400g (smoke): -10.43 Elo, drift-corrected
+  -8.69. Vs current HEAD C1 (additive): ~-33 Elo regression.
+
+**Cumulative reference (fresh 400g measurement)**:
+`e28d54a` vs `.bestref` = **+33.11 Elo CI [-1.04, +67.25]** —
+Phase 27 marginal-positive shape repeats at the cumulative anchor.
+C1 (current HEAD) implied vs `.bestref` ≈ **+57.5 Elo** (additive
++24.4 + 33.11).
+
+**Key findings:**
+
+- fANOVA importance: `window_k_scores[5]` dominant at **0.521**
+  share of variance — confirms 28C-0 §7 finding (B-2.1×B-2.3
+  interaction is real). The dimensional coupling is real; trial
+  34's specific corner was a 200g noise spike, not a real
+  interaction payoff.
+- 4 of 5 search bounds hit at the winner: `open_4=240k` HIGH,
+  `closed_5=240k` LOW, `wk[5]=1024` LOW, `oef=1` LOW (only
+  `fork_cover2_bonus=12k` interior). Bounds were too narrow on
+  4 dims.
+- 200g best-of-60 applies +20 Elo positive selection bias;
+  Wilson CI half-width ±48 Elo at 200g makes top-1 selection
+  unreliable. Sample size is the binding constraint, not the
+  sampler.
+- Convergence early-stop unimplemented (design.md §3 rule);
+  would have fired at trial 48 (post-trial-34 plateau) and
+  saved ~1.4h.
+
+**Path C taken (no commits to eval/hexo.toml):**
+
+| SHA | Subject | Type |
+|---|---|---|
+| `36b8cdc` | tune: add Optuna BO driver scaffolding | infra |
+| `fb36ddd` | tune: integrate Optuna study with EvalOverrides | infra |
+| `e46869c` | tune: BO study report + spec update | infra |
+| `3d5ae7e` | bench: HOTSPOTS Phase 28C BO sprint section | doc |
+| (this commit) | spec: mark Phase 28C done in roadmap | doc |
+
+Engine byte-identical to `0c3cc6b` (Phase 28C-0 close).
+`.bestref` UNCHANGED (`932c5d8`, 6 phases).
+
+**Third consecutive Phase-27-shape outcome (27 / 28B / 28C).**
+The eval-tuning lever is at the harness resolution floor.
+Phase 28D should test the cumulative C1 implied +57.5 Elo via
+an 800g promote-match at HEAD vs `.bestref` (no eval change)
+to break the cycle.
+
+C3-DIVERSITY DEFERRED: opening-diversity infra is missing
+(`promote.py:372-376` + `:553-557` raise `NotImplementedError`,
+no opening library in `positions.json`). Cannot run A/B at HEAD;
+infra (deferred B-1.3 / B-1.4 from 28B C-DEFERRED) must land
+first.
+
+Artifacts: `/tmp/phase_28c/PHASE_28C_RETRO.md` (full retro),
+`/tmp/phase_28c/{1,2,3}/{design,implementer,sprint,drift,validation,diversity,landed}.md`,
+`/tmp/phase_28c/2/study.db` + `trials/{0000..0059}.json`,
+`/tmp/phase_28c/3/val_trial34_vs_bestref.json`. Gitignored per
+Phase 25.5 repo hygiene.
+
+## Phase 28D candidates
+
+Carried forward from Phase 28C retrospective. Order not yet locked;
+dispatcher subagent should sequence per host budget + risk.
+
+- **28D-A — BO sprint v2**: 400g/trial (or averaged-200g) with
+  widened bounds on 4 of 5 dims (`open_4 > 240k`, `closed_5 <
+  240k`, `window_k_scores[5] < 1024`, `open_extension_factor = 0`
+  unprobed). Optionally warm-start from C1 instead of HEAD-seed
+  (HEAD-seed at trial #0 in C2 produced the worst result, -41.89
+  Elo). Resumable study at `/tmp/phase_28c/2/study.db` — Optuna
+  can extend with new sampler / bounds. Convergence early-stop
+  (design.md §3 rule) cheap to wire.
+- **28D-B — Opening-diversity library + harness wiring**: deferred
+  B-1.3 + B-1.4 from Phase 28B C-DEFERRED. Replace the
+  `NotImplementedError` in `run_match` / `run_match_parallel`,
+  add `opening_moves` field to `GameConfig`, round-robin in
+  `build_game_configs`, opening-replay loop in `play_one_game`
+  after `reset`. Append 12-20 HeXO opening positions to
+  `benches/fixtures/positions.json` tagged `screen` / `validate`.
+  Pure Python, ~150 LOC + ~10-20 fixtures, bench-quick must be
+  NPS-neutral. Unblocks all future diversity A/Bs.
+- **28D-C — Tempo proxy investigation**: deferred from Phase 28B
+  retro (I1 § 3 cited TT p. 11 "tempo is the most important
+  currency" as strongest PDF evidence for any deferred item).
+  Structurally different from value tuning — requires detector
+  revival or proxy invention.
+- **28D-D — 800g promote-match at HEAD vs `.bestref`**: no eval
+  change, pure measurement. C1 implied +57.5 Elo from additive
+  chain; 800g CI half-width ≈ ±24 Elo. If C1 truly sits where
+  the additive measurement places it, an 800g strict-gate match
+  would clear comfortably and finally advance `.bestref` for the
+  first time since Phase 25.5. Natural cycle-breaker after three
+  consecutive Phase-27-shape outcomes (27, 28B, 28C).
 
 ## Phase 26 candidates (deferred follow-ups)
 
