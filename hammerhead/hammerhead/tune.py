@@ -306,6 +306,7 @@ def run_one_cell(
     time_ms_per_stone: int,
     n_workers: int,
     max_plies: int,
+    opening_diversity: bool = False,
 ) -> CellResult:
     """Run one A/B match: candidate (override applied) vs baseline.
 
@@ -325,10 +326,11 @@ def run_one_cell(
     current_cmd = list(cmd_base)
     best_cmd = list(cmd_base)
 
-    # Build a Wilson-only MatchConfig. opening_diversity is FORCED off
-    # per Phase 28A.5 (A-5); tune.py MUST NOT enable it even though
-    # it is a new consumer of the harness pool. color_balance follows
-    # the hexo.toml default (true) — A-5 only locks diversity.
+    # Build a Wilson-only MatchConfig. opening_diversity defaults to
+    # OFF (Phase 28A.5 A-5 lock); Phase 28E-2 Stage 0 landed the
+    # diversity library, so callers MAY opt in via the explicit
+    # `opening_diversity=True` kwarg (CLI `--diversity` on tune-sweep).
+    # color_balance follows the hexo.toml default (true).
     cfg = promote_mod.MatchConfig(
         n_games=n_games,
         time_ms_per_stone=time_ms_per_stone,
@@ -340,7 +342,7 @@ def run_one_cell(
         wilson_min_lower=CONFIG.promote.wilson_min_lower,
         raw_min_winrate=CONFIG.promote.raw_min_winrate,
         color_balance=CONFIG.promote.color_balance,
-        opening_diversity=False,
+        opening_diversity=opening_diversity,
         max_plies=max_plies,
     )
 
@@ -456,6 +458,7 @@ def cell_result_to_json(
     started_at: str,
     finished_at: str,
     smoke: bool,
+    opening_diversity: bool = False,
 ) -> dict[str, Any]:
     """Build the serialisable dict for one cell result."""
     return {
@@ -478,7 +481,7 @@ def cell_result_to_json(
         "workers": res.workers,
         "time_ms_per_stone": res.time_ms_per_stone,
         "color_balance": CONFIG.promote.color_balance,
-        "opening_diversity": False,
+        "opening_diversity": opening_diversity,
         "host": socket.gethostname(),
         "git_sha": _git_sha(),
         "started_at": started_at,
@@ -536,6 +539,7 @@ class SweepArgs:
     max_plies: int
     out_dir: Path
     smoke: bool
+    opening_diversity: bool = False
 
 
 def run_stage(args: SweepArgs) -> list[Path]:
@@ -567,6 +571,7 @@ def run_stage(args: SweepArgs) -> list[Path]:
             time_ms_per_stone=args.time_ms_per_stone,
             n_workers=args.workers,
             max_plies=args.max_plies,
+            opening_diversity=args.opening_diversity,
         )
         finished = _now_iso()
         wall = time.monotonic() - t0
@@ -581,6 +586,7 @@ def run_stage(args: SweepArgs) -> list[Path]:
             started_at=started,
             finished_at=finished,
             smoke=args.smoke,
+            opening_diversity=args.opening_diversity,
         )
         _atomic_write_json(path, payload)
         paths.append(path)
@@ -682,6 +688,15 @@ def add_tune_sweep_args(p: argparse.ArgumentParser) -> None:
             "tune/smoke/... subtree to keep it trivially identifiable."
         ),
     )
+    p.add_argument(
+        "--diversity",
+        action="store_true",
+        help=(
+            "enable opening_diversity for the sweep A/B (Phase 28E-2 "
+            "Stage 0 library). OFF by default to preserve the "
+            "Phase 28A.5 (A-5) hard-lock for pre-S0 callers."
+        ),
+    )
 
 
 def resolve_args(ns: argparse.Namespace) -> SweepArgs:
@@ -713,6 +728,7 @@ def resolve_args(ns: argparse.Namespace) -> SweepArgs:
         max_plies=int(ns.max_plies),
         out_dir=out_dir,
         smoke=bool(ns.smoke),
+        opening_diversity=bool(getattr(ns, "diversity", False)),
     )
 
 
