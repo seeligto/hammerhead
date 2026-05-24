@@ -1,3 +1,141 @@
+# Hotspots — Phase 28C (BO sprint, no land)
+
+## Phase 28C-1 status (2026-05-24)
+
+Phase 28C-1 ran a 60-trial Bayesian optimisation sprint over the 5
+top-leverage eval scalars (`open_4`, `closed_5`, `window_k_scores[5]`,
+`open_extension_factor`, `fork_cover2_bonus`) using Optuna 4.8.0
+GPSampler (Matérn-5/2 kernel, ARD per-dim length-scales,
+`deterministic_objective=False`). Trials ran at 200g vs Phase 27
+baseline (`e28d54a`) on the 10-worker host. Sprint clean: 60/60
+COMPLETE, 0 FAIL, 6h 40min wall-clock.
+
+**Headline: REVERT.** BO winner (trial 34, raw +63.23 Elo at 200g)
+collapsed under 400g validation. Vs `.bestref` (`932c5d8`) at 400g:
+**-14.77 Elo CI [-48.80, +19.25]**, W-L-D 191-208-1 — strict gate
+FAILED, marginal gate FAILED (point < 0). Vs `e28d54a` at 400g
+(smoke): **-10.43 Elo CI [-44.44, +23.58]**, drift-corrected -8.69.
+Vs current HEAD C1 (additive estimate): **~-33 Elo regression**.
+Outcome A (REVERT) per Phase 28A.5 plan § G. Zero eval / hexo.toml
+commits from the sprint.
+
+**Self-time band shift: none.** tune_bo.py is offline tooling
+(Python-only driver invoking match harness via subprocess); no
+Rust touched, no hot-path impact. Reference node counts
+byte-identical to `0c3cc6b`. The hotspot ranking from the Phase 27
+LineContribution-cache snapshot (board 31.51% > eval 26.55% >
+search_other 24.58% > threats 12.43% > ordering 4.93%) still
+applies unchanged.
+
+**BO study summary (60 trials × 200g):**
+
+Top-5 by raw Elo vs `e28d54a`:
+
+| Rank | # | open_4 | closed_5 | wk[5] | oef | fork | Elo | CI lo | CI hi |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 33 | 240000 | 240000 | 1024 | 1 | 12000 | **+63.23** | +14.44 | +112.02 |
+| 2 | 12 | 240000 | 240000 | 6723 | 6 | 0 | +34.86 | -13.38 | +83.10 |
+| 3 | 54 | 240000 | 840000 | 6738 | 1 | 44000 | +34.86 | -13.38 | +83.10 |
+| 4 | 52 | 240000 | 840000 | 4586 | 1 | 32000 | +31.35 | -16.84 | +79.55 |
+| 5 |  6 | 146348 | 360000 | 6741 | 6 | 3000 | +27.85 | -20.30 | +76.01 |
+
+Only trial 34's 200g lower CI excludes zero. Ranks 2-5 noise-comparable.
+
+**400g smoke validation (trial 34 candidate vs `e28d54a`):**
++63.23 (200g) → **-10.43 (400g)** — 73-Elo collapse, classic 200g
+noise-spike signature. C3-VAL 400g vs `.bestref`: **-14.77 Elo**.
+
+**fANOVA importance (60 trials, 5-D):**
+
+```
+window_k_scores_5             0.5209
+fork_cover2_bonus             0.1597
+open_4                        0.1439
+open_extension_factor         0.1152
+closed_5                      0.0604
+```
+
+`window_k_scores[5]` dominant — consistent with 28C-0 §7 finding
+(B-2.1×B-2.3 = -27.85 Elo interaction couples `open_4` with `wk[5]`).
+The dimensional coupling is real; trial 34's specific corner was not
+a real optimum. Caveat: fANOVA on n=60 in 5-D is a ranking, not a
+precise variance partition.
+
+**Boundary-hit warning:** trial 34 hit **4 of 5 search bounds**
+(`open_4=240k` HIGH, `closed_5=240k` LOW, `wk[5]=1024` LOW,
+`oef=1` LOW; only `fork_cover2_bonus=12k` interior). Bounds were
+too narrow. Phase 28D recommendation: widen `open_4 > 240k`,
+`closed_5 < 240k`, `wk[5] < 1024`, `oef = 0` unprobed.
+
+**Cumulative reference measurement (400g, fresh):**
+`e28d54a` vs `.bestref` = **+33.11 Elo CI [-1.04, +67.25]**, W-L-D
+219-181-0. 28C-0's 200g prior estimate was ~+13 Elo; 400g
+measurement is ~2.5× higher with CI lower at -1.04 just barely
+straddling zero — same Phase 27 marginal-positive shape.
+
+**HEAD Elo state: unchanged.** C1 = {B-2.1 only} from Phase 28C-0.
+Drift-corrected vs `e28d54a` = +24.4 Elo (200g, 28C-0 measurement).
+Implied vs `.bestref` (additive: +24.4 + 33.11) = **~+57.5 Elo**.
+Phase 28D could test `make promote N_GAMES=800` at HEAD to formally
+cross the strict gate without further eval changes — this is the
+3rd consecutive Phase-27-shape outcome (27 / 28B / 28C) and an 800g
+match is the natural cycle-breaker.
+
+**Commits (5 since 28C-0 close, all on master):**
+
+| SHA | Subject | Type |
+|---|---|---|
+| `36b8cdc` | tune: add Optuna BO driver scaffolding | infra |
+| `fb36ddd` | tune: integrate Optuna study with EvalOverrides | infra |
+| `e46869c` | tune: BO study report + spec update | infra |
+| (this commit) | bench: HOTSPOTS Phase 28C BO sprint section | doc |
+| (next commit) | spec: mark Phase 28C done in roadmap | doc |
+
+No eval / hexo.toml / Rust changes. Engine byte-identical to `0c3cc6b`.
+
+**Wall-clock budget:**
+
+| Stage | Wall-clock |
+|---|---:|
+| C1-DESIGN / IMPL / REV | ~3h 30min |
+| C2-RUN (60 × 200g) | ~6h 40min |
+| C2-DRIFT + smoke | ~42min |
+| C3-VAL (400g vs .bestref) | ~16min |
+| C-RETRO (2 doc commits) | ~30min |
+| **Total** | **~7h 40min match wall** |
+
+Well under 18h envelope.
+
+**Phase 28D handoff (from `/tmp/phase_28c/PHASE_28C_RETRO.md`):**
+
+- BO sprint v2 at 400g/trial OR averaged-200g, widened bounds on
+  4 of 5 dims. Resumable study.db at `/tmp/phase_28c/2/study.db`.
+- 800g promote-match at HEAD vs `.bestref` (no eval change) —
+  the cycle-breaker experiment.
+- Tempo proxy investigation (deferred 28B → 28C → 28D).
+- Opening diversity library construction (B-1.3 / B-1.4 from 28B
+  C-DEFERRED; `promote.py:372-376` + `:553-557` raise
+  `NotImplementedError`; no opening library exists per
+  `positions.json`).
+- Convergence early-stop in tune_bo.py (design.md §3 rule
+  unimplemented; would have fired at trial 48, saved ~1.4h).
+
+**Match harness reminder** (Phase 26.5 meta-finding, BINDING):
+500ms × 200g CI ≈ ±48 Elo; 400g ≈ ±34 Elo; 800g ≈ ±24 Elo.
+Best-of-N at 200g applies +20 Elo positive selection bias for N=60
+(per I3 §E.1). Per-trial BO objectives below 400g require either
+sample-size doubling or repeated measurements.
+
+**Artifacts** (gitignored per Phase 25.5):
+- `/tmp/phase_28c/PHASE_28C_RETRO.md` — full retrospective.
+- `/tmp/phase_28c/1/` — C1 design / implementer / review reports.
+- `/tmp/phase_28c/2/` — sprint.md, drift.md, study.db, trials/,
+  smoke400_trial34.json.
+- `/tmp/phase_28c/3/` — validation.md, diversity.md, landed.md,
+  val_trial34_vs_bestref.json.
+
+---
+
 # Hotspots — Phase 28C-0 (master state verification)
 
 ## Phase 28C-0 state verification (2026-05-23)
