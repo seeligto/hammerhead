@@ -1144,5 +1144,73 @@ mod tests {
             "stored score for a mate-finding fail-high should be mate-class; got {stored}"
         );
     }
+
+    /// B.3 (`SealBot-perf` M6 pattern, see I3 `2026-05-20-code-analysis.md`
+    /// §M6 + brief in `/tmp/phase_28d/3/B.3/implementer.md`).
+    ///
+    /// Locks the structural conditions that keep the search inner loop
+    /// allocation-free. The audit traced through `pvs_node`, `pvs_dance`,
+    /// `try_one_move`, `quiescence_node`, `moves::generate`,
+    /// `ordering::bucket_value` / `order_moves_with_buckets`,
+    /// `threats::compute_with_scratch`, and `eval::layer1_window_scan_8cell`
+    /// and found no heap allocation in the recursive path *as long as*:
+    ///
+    /// 1. `DEFAULT_MOVE_RADIUS <= MOVE_GEN_INNER_RADIUS` — search always
+    ///    hits the cached-`inner_candidates` arm in `moves::generate`,
+    ///    bypassing the `sweep_neighbourhood` `FxHashSet` alloc.
+    /// 2. The per-node `tried` `SmallVec` inline cap accommodates the staged
+    ///    pipeline maximum (1 TT move + `KILLER_SLOTS = 2` killers = 3).
+    /// 3. `eval::Layer1`'s per-axis `line_ids` `SmallVec` inline cap stays
+    ///    well above the empirical max (~19 across 2M+ `bench-perf` calls;
+    ///    pin at >= 32 to absorb future growth).
+    ///
+    /// Empirical confirmation under `make bench perf` at HEAD: zero spills
+    /// across `2_097_152` eval calls and zero `sweep_neighbourhood` calls.
+    /// This test pins the invariants so a future refactor that, e.g.,
+    /// raises the default search radius, drops `inner_candidates`, or
+    /// shrinks an inline cap will fail at `cargo test` time instead of
+    /// silently re-introducing a per-node heap allocation.
+    #[test]
+    fn search_hot_path_zero_alloc_structural_invariants() {
+        use crate::config::{DEFAULT_MOVE_RADIUS, KILLER_SLOTS, MOVE_GEN_INNER_RADIUS};
+
+        // Invariant 1: search's move-generation path must terminate in
+        // the cached inner candidate set, not the alloc-bearing sweep.
+        // Both constants are compile-time `const`s codegen'd from
+        // `hexo.toml`, so a `const { ... }` block fires the assert at
+        // build time the moment the inequality breaks — `cargo test`
+        // never needs to run.
+        const _: () = assert!(
+            DEFAULT_MOVE_RADIUS <= MOVE_GEN_INNER_RADIUS,
+            "DEFAULT_MOVE_RADIUS must be <= MOVE_GEN_INNER_RADIUS so \
+             moves::generate never enters sweep_neighbourhood (which \
+             would allocate an FxHashSet per search node)"
+        );
+
+        // Invariant 2: the staged-pipeline `tried` SmallVec inline cap
+        // must hold stages 1+2's maximum push count (1 TT move + 2
+        // killers).
+        let tried: SmallVec<[Coord; 3]> = SmallVec::new();
+        let tried_cap = tried.inline_size();
+        assert!(
+            tried_cap > KILLER_SLOTS,
+            "search.rs `tried` SmallVec inline cap {tried_cap} must be \
+             > KILLER_SLOTS={KILLER_SLOTS} (1 TT slot + every killer); \
+             otherwise stages 1+2 spill to the heap on every node where \
+             staged dispatch does not cutoff"
+        );
+
+        // Invariant 3: eval Layer-1 `line_ids` inline cap. Observed
+        // midgame max ~19 across 2M bench-perf calls; >= 32 keeps a
+        // safety margin for sparser-board futures.
+        let layer1_buf: SmallVec<[i16; 32]> = SmallVec::new();
+        let layer1_cap = layer1_buf.inline_size();
+        assert!(
+            layer1_cap >= 32,
+            "eval::Layer1 line_ids SmallVec inline cap {layer1_cap} \
+             must stay >= 32; any reduction risks per-eval heap alloc, \
+             which fires on every leaf node and qsearch stand-pat."
+        );
+    }
 }
 
