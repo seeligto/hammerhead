@@ -235,3 +235,52 @@ fn stats_counters_default_zero_and_reset() {
     assert_eq!(s3.occupied, 0);
     assert_eq!(s3.generation, 0);
 }
+
+/// 12) **Quantization guard.** Round-trip every score in a representative
+///     i32 range — small ints, mid-magnitude eval peaks (~162k, matching
+///     SealBot-perf's instrumented non-mate eval ceiling), mate-class
+///     scores near `MATE_SCORE`, and signed extremes — and assert each
+///     comes back **byte-for-byte identical**. Locks in the invariant
+///     that the TT performs zero lossy transformation on the `score`
+///     field: any future addition of a divide/multiply/round/scale in
+///     `store` or `probe` (cf. SealBot-perf M4: `lround(s / TT_SCALE)`,
+///     ±2 error at `TT_EXACT` serve sites) trips this test before it
+///     can contaminate near-tie root-move selection.
+#[test]
+fn score_round_trip_is_bitwise_exact_no_quantization() {
+    let mut tt = TranspositionTable::new(1);
+    // Spread covers signed extremes, mid-magnitude eval peaks, and
+    // values just below / at / above `MATE_SCORE` (1_000_000) so any
+    // scale that special-cases mate-class also gets caught.
+    let scores: [i32; 17] = [
+        0, 1, -1, 2, 3, 7, 17, 999,
+        162_376,   // SB-perf instrumented non-mate eval ceiling
+        -162_376,
+        999_999,   // one below mate
+        1_000_000, // exactly MATE_SCORE
+        1_000_127, // MATE_SCORE + MAX_PLY (max value `score_to_tt` can emit)
+        -1_000_127,
+        i32::MAX / 4,
+        i32::MIN / 4,
+        i32::MAX / 2, // matches `INF`
+    ];
+    for (i, &s) in scores.iter().enumerate() {
+        // Distinct, structured hash per score so each lands in its own
+        // store/probe pair even on a 1-slot table (always-replace keeps
+        // the most recent write reachable).
+        // Reinterpret `s`'s bit pattern (negatives → large positives)
+        // so the hash differs for every score without sign-extension lints.
+        #[allow(clippy::cast_sign_loss)]
+        let s_bits = s as u32;
+        let h: u128 = 0xDEAD_BEEF_CAFE_BABE_u128
+            .wrapping_mul((i as u128).wrapping_add(1))
+            ^ (u128::from(s_bits) << 64);
+        tt.store(h, 5, s, TTFlag::Exact, ORIGIN);
+        let e = tt.probe(h).expect("entry should be present");
+        assert_eq!(
+            e.score, s,
+            "score {s} did not round-trip (got {}); TT must not quantize",
+            e.score
+        );
+    }
+}
