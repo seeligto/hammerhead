@@ -7,7 +7,8 @@ re-export there is the supported path.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from dataclasses import dataclass
+from typing import Any, Mapping, Optional, Tuple, Union
 
 from hammerhead_engine import Engine
 
@@ -31,6 +32,47 @@ MATE_SCORE: int = CONFIG.eval.mate_score
 
 A decisive position evaluates near ``±(MATE_SCORE - ply)`` — see
 :meth:`Bot.evaluate`. Positive is a win for X, negative a win for O.
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class SearchStats:
+    """Search-side telemetry for one :meth:`Bot.suggest` call.
+
+    Populated only when ``return_stats=True`` is passed. All fields are
+    snapshot values for the single search that produced the returned
+    move; they are not cumulative across calls.
+
+    Attributes:
+        max_depth_reached: Deepest iterative-deepening iteration that
+            fully completed before the search returned. ``0`` when the
+            search aborted before any iteration finished (vanishingly
+            small budgets only).
+        nodes: Total search nodes visited — recursive plus quiescence.
+        nps: Nodes per second over the search wall-clock. Computed in
+            the SDK from ``nodes / (time_ms / 1000)``; ``0.0`` when
+            ``time_ms`` is zero.
+        time_ms: Actual wall-clock time the search consumed, in
+            milliseconds. May undershoot the budget when a forced mate
+            is found or the depth ceiling is hit; matches the budget
+            for time-bounded searches.
+        score: Engine evaluation of the chosen move, X-positive (see
+            :meth:`Bot.evaluate` for sign convention).
+    """
+
+    max_depth_reached: int
+    nodes: int
+    nps: float
+    time_ms: float
+    score: int
+
+
+SuggestResult = Union[Move, Tuple[Move, SearchStats]]
+"""Return type of :meth:`Bot.suggest`.
+
+Plain :class:`Move` when ``return_stats=False`` (the default,
+backwards-compatible); a ``(Move, SearchStats)`` tuple when
+``return_stats=True``.
 """
 
 
@@ -233,7 +275,12 @@ class Bot:
 
     # ── Engine queries (no state mutation) ──────────────────────────────
 
-    def suggest(self, time_ms: Optional[int] = None) -> Move:
+    def suggest(
+        self,
+        time_ms: Optional[int] = None,
+        depth: Optional[int] = None,
+        return_stats: bool = False,
+    ) -> SuggestResult:
         """Return the engine's recommended next stone.
 
         Does not mutate the position — call :meth:`play` to apply the
@@ -244,27 +291,63 @@ class Bot:
                 milliseconds. The engine consumes the whole value on
                 this single call — there is no internal split. Falls
                 back to the bot's configured ``time_per_stone_ms`` when
-                ``None``.
+                ``None`` *and* ``depth`` is also ``None``. Ignored
+                (no fallback) when ``depth`` is set, unless the caller
+                explicitly passes both — in which case the search
+                aborts on whichever bound hits first.
+            depth: Fixed-depth target. The iterative-deepening loop
+                completes this depth and returns. When set, the time
+                bound is lifted unless ``time_ms`` is also passed.
+            return_stats: If ``True``, returns ``(Move, SearchStats)``
+                with per-call search telemetry. Default ``False``
+                returns ``Move`` alone (backwards-compatible).
 
         Returns:
-            The recommended stone as a ``(q, r)`` coordinate tuple.
+            The recommended stone as a ``(q, r)`` coordinate tuple, or
+            ``(Move, SearchStats)`` when ``return_stats=True``.
 
         Raises:
             GameOverError: if the game has already been won.
-            ValueError: if ``time_ms`` is not positive.
+            ValueError: if ``time_ms`` or ``depth`` is non-positive.
 
         Example:
             >>> bot = Bot(time_per_stone_ms=200)
             >>> bot.play((0, 0))
             >>> reply = bot.suggest()
             >>> bot.play(reply)
+
+            >>> move, stats = bot.suggest(depth=3, return_stats=True)
+            >>> stats.max_depth_reached
+            3
         """
         if self.is_game_over:
             raise GameOverError("game is over; there is no move to suggest")
-        budget = self._time_per_stone_ms if time_ms is None else time_ms
-        if budget <= 0:
+        if depth is not None and depth <= 0:
+            raise ValueError("depth must be positive")
+        if time_ms is not None and time_ms <= 0:
             raise ValueError("time_ms must be positive")
-        q, r = self._engine.best_move(time_ms=budget)
+        # Fall back to the construction-time per-stone budget only when
+        # neither bound was passed; depth=N means "depth-only, no time
+        # cap" unless the caller explicitly opts into a time bound.
+        budget: Optional[int]
+        if time_ms is None and depth is None:
+            budget = self._time_per_stone_ms
+        else:
+            budget = time_ms
+        if return_stats:
+            q, r, score, dr, nodes, tms = self._engine.bench_best_move(
+                time_ms=budget, depth=depth,
+            )
+            nps = (nodes / (tms / 1000.0)) if tms > 0 else 0.0
+            stats = SearchStats(
+                max_depth_reached=int(dr),
+                nodes=int(nodes),
+                nps=float(nps),
+                time_ms=float(tms),
+                score=int(score),
+            )
+            return (int(q), int(r)), stats
+        q, r = self._engine.best_move(time_ms=budget, depth=depth)
         return (q, r)
 
     def evaluate(self) -> int:
