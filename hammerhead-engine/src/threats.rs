@@ -17,9 +17,15 @@ use crate::coords::Coord;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 
-/// Per-player count of every detected S0 shape. All u8 — saturated at
+/// Per-player count of every detected shape. All u8 — saturated at
 /// 255 by the detection loop (deep enough never to be reached in legal
 /// play).
+///
+/// S0 fields (`open_5`, `closed_5`, `open_4`, `closed_4`) are populated
+/// by [`walk_linear_runs`]. S1 fields (`open_3`, `closed_3`, `open_2`)
+/// were revived as types in Phase 28D-3 D3-INFRA; the corresponding
+/// detectors land in sub-phases D3-A.1 / A.2 / A.3 and the counts stay
+/// at zero until then.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThreatCounts {
     /// `_XXXXX_` (both ends empty).
@@ -30,9 +36,19 @@ pub struct ThreatCounts {
     pub open_4: u8,
     /// `OXXXX_` (one end empty + extension space).
     pub closed_4: u8,
+    /// S1 — `_XXX_` (both ends empty). Phase 28D-3 D3-A.1 detector.
+    pub open_3: u8,
+    /// S1 — `OXXX_` (one end empty + extension space).
+    /// Phase 28D-3 D3-A.2 detector.
+    pub closed_3: u8,
+    /// S1 — `_XX_` (both ends empty). Phase 28D-3 D3-A.3 detector.
+    pub open_2: u8,
 }
 
-/// Tag of an S0 (mate-in-one-turn) threat.
+/// Tag of a threat shape. S0 variants (mate-in-one-turn) are populated
+/// by detection; S1 variants are reserved for the Phase 28D-3 A.X
+/// detectors and never appear in a [`ThreatInstance`] until those
+/// detectors land.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ThreatKind {
@@ -44,6 +60,13 @@ pub enum ThreatKind {
     OpenFour,
     /// `OXXXX_` — opponent must play the single open extension.
     ClosedFour,
+    /// S1 — `_XXX_` (both ends empty). Phase 28D-3 D3-A.1 detector.
+    OpenThree,
+    /// S1 — `OXXX_` (one end empty + extension space).
+    /// Phase 28D-3 D3-A.2 detector.
+    ClosedThree,
+    /// S1 — `_XX_` (both ends empty). Phase 28D-3 D3-A.3 detector.
+    OpenTwo,
 }
 
 /// One detected S0 threat with its participating pieces and the minimal
