@@ -350,3 +350,118 @@ fn open_three_per_player_isolation() {
     assert_eq!(tx.counts.open_3, 1);
     assert_eq!(to.counts.open_3, 1);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1 — closed-3 (Phase 28D-3 D3-A.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn closed_three_left_blocked_axis_q() {
+    // OXXX_ on the q axis; right 2-beyond empty → closed-3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 1);
+    assert_eq!(t.counts.open_3, 0);
+    // S1 shapes do not surface as ThreatInstance entries.
+    assert!(t.s0_instances.is_empty());
+}
+
+#[test]
+fn closed_three_right_blocked_axis_q() {
+    // _XXXO on the q axis; left 2-beyond empty → closed-3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(3, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 1);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn closed_three_axis_r() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (0, 1), (0, 2)]);
+    o(&mut b, &[(0, -1)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 1);
+}
+
+#[test]
+fn closed_three_axis_s() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, -1), (2, -2)]);
+    o(&mut b, &[(-1, 1)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 1);
+}
+
+#[test]
+fn closed_three_both_blocked_is_not_closed_three() {
+    // OXXXO — open_ends == 0, no S1 fire.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-1, 0), (3, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 0);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn closed_three_open_side_2beyond_blocked_is_not_closed_three() {
+    // OXXX_O — left blocker plus right 2-beyond opp. Extending the
+    // open side gives OXXXX_O, a doubly-boxed 5 that cannot reach
+    // 6. Conservative gate skips, mirroring closed-4's "beyond
+    // non-opp" growth check.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-1, 0), (4, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 0);
+}
+
+#[test]
+fn closed_three_open_side_2beyond_own_stone_still_counts() {
+    // OXXX_X — open side's 2-beyond is own (non-opp); viability
+    // gate accepts. Mirrors open-3's analogous "own 2-beyond" case.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0), (4, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 1);
+}
+
+#[test]
+fn closed_three_does_not_fire_for_length_two() {
+    // OXX_ — length 2, no closed-3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 0);
+}
+
+#[test]
+fn closed_three_does_not_fire_for_length_four() {
+    // OXXXX_ — length 4 with one blocker is closed_4, not closed_3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.closed_3, 0);
+    assert_eq!(t.counts.closed_4, 1);
+}
+
+#[test]
+fn closed_three_per_player_isolation() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    o(&mut b, &[(0, 5), (1, 5), (2, 5)]);
+    x(&mut b, &[(-1, 5)]);
+    let tx = compute(&b, Player::X);
+    let to = compute(&b, Player::O);
+    assert_eq!(tx.counts.closed_3, 1);
+    assert_eq!(to.counts.closed_3, 1);
+}

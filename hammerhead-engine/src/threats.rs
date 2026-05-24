@@ -287,6 +287,29 @@ fn classify_linear_run(
                 bump_s1(out, |c| c.open_3 = c.open_3.saturating_add(1));
             }
         }
+        (3, 1) => {
+            // Closed-3 (S1, Phase 28D-3 D3-A.2): `OXXX_` with the
+            // open side's 2-cell-beyond non-opp. The closed side is
+            // already blocked by an opp stone, so growth there is
+            // dead; viability lives entirely on the open side. The
+            // 2-beyond gate mirrors the closed-4 growth check —
+            // `OXXX_O` would extend to `OXXXX_O` then dies as a
+            // doubly-boxed 5 (no winning 6 possible).
+            //
+            // "Blocked" is opp-stone only; off-board cells satisfy
+            // `is_player(_, opp) == false` and are treated as open
+            // by the existing detector framework (matches the
+            // closed-4 convention). This is consistent across all
+            // arms in this match.
+            let (open_cell_beyond, _closed_cell) = if left_open {
+                (coord_at(axis, line_id, start_pos - 2), right_cell)
+            } else {
+                (coord_at(axis, line_id, end_pos + 2), left_cell)
+            };
+            if !board.axes().is_player(open_cell_beyond, opp) {
+                bump_s1(out, |c| c.closed_3 = c.closed_3.saturating_add(1));
+            }
+        }
         _ => {}
     }
 }
