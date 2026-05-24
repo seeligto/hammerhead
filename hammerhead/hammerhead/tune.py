@@ -87,6 +87,11 @@ _SCALAR_PARAMS: tuple[str, ...] = (
     "closed_5",
     "open_4",
     "closed_4",
+    # S1 trio added in Phase 28D-3 D3-INFRA; the per-shape detector
+    # plus weight sweep land in D3-A.1 / A.2 / A.3.
+    "open_3",
+    "closed_3",
+    "open_2",
     "open_extension_factor",
     "closed_extension_factor",
     "fork_cover2_bonus",

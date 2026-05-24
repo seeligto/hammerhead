@@ -339,6 +339,7 @@ class Bot:
         *current* value (not defaults — the call is incremental).
         Unknown keys raise ``ValueError``. Recognised keys:
         ``open_5``, ``closed_5``, ``open_4``, ``closed_4``,
+        ``open_3``, ``closed_3``, ``open_2``,
         ``window_k_scores`` (sequence of 7 ints), ``open_extension_factor``,
         ``closed_extension_factor``, ``fork_cover2_bonus``.
 

@@ -35,6 +35,9 @@ def test_eval_overrides_defaults_match_config() -> None:
     assert d["closed_5"] == CONFIG.eval.closed_5
     assert d["open_4"] == CONFIG.eval.open_4
     assert d["closed_4"] == CONFIG.eval.closed_4
+    assert d["open_3"] == CONFIG.eval.open_3
+    assert d["closed_3"] == CONFIG.eval.closed_3
+    assert d["open_2"] == CONFIG.eval.open_2
     assert list(d["window_k_scores"]) == list(CONFIG.eval.window_k_scores)
     assert d["open_extension_factor"] == CONFIG.eval.open_extension_factor
     assert d["closed_extension_factor"] == CONFIG.eval.closed_extension_factor
@@ -76,6 +79,9 @@ def test_partial_set_preserves_other_keys() -> None:
         "open_5",
         "closed_5",
         "closed_4",
+        "open_3",
+        "closed_3",
+        "open_2",
         "open_extension_factor",
         "closed_extension_factor",
         "fork_cover2_bonus",

@@ -361,16 +361,24 @@ unsafe fn encode_ternary_8_batch_avx2(x_bits: &[u8], o_bits: &[u8], out: &mut [u
 // Layer 2: shape weights
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Weighted sum of the S0 shape counts in `c` (open / closed 4 & 5).
+/// Weighted sum of the S0 shape counts in `c` (open / closed 4 & 5)
+/// plus the Phase 28D-3 S1 trio (`open_3` / `closed_3` / `open_2`).
 /// Returned as a per-player magnitude; the top-level eval subtracts
 /// the two players to get the signed contribution. Weights come from
 /// the active [`EvalOverrides`] (defaults mirror `crate::config::*`).
+///
+/// The S1 terms read zero-valued counts under their zero-valued
+/// codegen weights until D3-A.X lands the detectors and tunes the
+/// weights — so behaviour is byte-equivalent to the prior build.
 #[inline]
 fn layer2_shapes(c: ThreatCounts, ov: &EvalOverrides) -> i32 {
     ov.open_5 * i32::from(c.open_5)
         + ov.closed_5 * i32::from(c.closed_5)
         + ov.open_4 * i32::from(c.open_4)
         + ov.closed_4 * i32::from(c.closed_4)
+        + ov.open_3 * i32::from(c.open_3)
+        + ov.closed_3 * i32::from(c.closed_3)
+        + ov.open_2 * i32::from(c.open_2)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

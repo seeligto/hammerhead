@@ -363,6 +363,9 @@ fn emit_eval(out: &mut String, cfg: &toml::Value) {
         (&["engine", "eval", "closed_5"], "CLOSED_5_SCORE"),
         (&["engine", "eval", "open_4"], "OPEN_4_SCORE"),
         (&["engine", "eval", "closed_4"], "CLOSED_4_SCORE"),
+        (&["engine", "eval", "open_3"], "OPEN_3_SCORE"),
+        (&["engine", "eval", "closed_3"], "CLOSED_3_SCORE"),
+        (&["engine", "eval", "open_2"], "OPEN_2_SCORE"),
         (
             &["engine", "eval", "open_extension_factor"],
             "OPEN_EXTENSION_FACTOR",

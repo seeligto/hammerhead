@@ -164,6 +164,9 @@ impl PyEngine {
         d.set_item("closed_5", ov.closed_5)?;
         d.set_item("open_4", ov.open_4)?;
         d.set_item("closed_4", ov.closed_4)?;
+        d.set_item("open_3", ov.open_3)?;
+        d.set_item("closed_3", ov.closed_3)?;
+        d.set_item("open_2", ov.open_2)?;
         d.set_item("window_k_scores", ov.window_k_scores.to_vec())?;
         d.set_item("open_extension_factor", ov.open_extension_factor)?;
         d.set_item("closed_extension_factor", ov.closed_extension_factor)?;
@@ -177,6 +180,7 @@ impl PyEngine {
     ///
     /// Recognised keys (match `EvalOverrides` fields exactly):
     /// `open_5`, `closed_5`, `open_4`, `closed_4`,
+    /// `open_3`, `closed_3`, `open_2`,
     /// `window_k_scores` (sequence of 7 ints, including index 6 ==
     /// mate score), `open_extension_factor`,
     /// `closed_extension_factor`, `fork_cover2_bonus`.
@@ -204,6 +208,9 @@ fn build_overrides_from_dict(
             "closed_5" => next.closed_5 = v.extract()?,
             "open_4" => next.open_4 = v.extract()?,
             "closed_4" => next.closed_4 = v.extract()?,
+            "open_3" => next.open_3 = v.extract()?,
+            "closed_3" => next.closed_3 = v.extract()?,
+            "open_2" => next.open_2 = v.extract()?,
             "open_extension_factor" => next.open_extension_factor = v.extract()?,
             "closed_extension_factor" => next.closed_extension_factor = v.extract()?,
             "fork_cover2_bonus" => next.fork_cover2_bonus = v.extract()?,

@@ -31,6 +31,14 @@ closed_5 = 500_000
 open_4   = 135_000
 closed_4 = 20_000
 
+# S1 (pre-fork) shape weights. Phase 28D-3 D3-INFRA surfaces them as
+# zeroed config; the per-shape detector lands in D3-A.1 / A.2 / A.3
+# and the weight gets sweep-tuned in its own sub-phase. Zero weight
+# means zero behaviour change at this stage.
+open_3   = 0
+closed_3 = 0
+open_2   = 0
+
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
 window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]

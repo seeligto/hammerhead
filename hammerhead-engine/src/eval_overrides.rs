@@ -11,8 +11,9 @@
 //! `prompts/PHASE_28B_PROMPT.md` § C "Commit B-1.1".
 
 use crate::config::{
-    CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS, OPEN_4_SCORE,
-    OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, WINDOW_K_SCORES,
+    CLOSED_3_SCORE, CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS,
+    OPEN_2_SCORE, OPEN_3_SCORE, OPEN_4_SCORE, OPEN_5_SCORE, OPEN_EXTENSION_FACTOR,
+    WINDOW_K_SCORES,
 };
 
 /// Number of entries in the Layer-1 `WINDOW_SCORE_8` ternary table.
@@ -20,8 +21,14 @@ use crate::config::{
 /// `config::generated`.
 pub const WINDOW_SCORE_8_LEN: usize = 6561;
 
-/// All runtime-tunable eval scalars. `Copy` — 14 i32s = 56 bytes, fits
-/// in one cache line. Held by value on `Board` (no Box, no alloc).
+/// All runtime-tunable eval scalars. `Copy` — 17 i32s = 68 bytes, fits
+/// in two cache lines. Held by value on `Board` (no Box, no alloc).
+///
+/// Phase 28D-3 D3-INFRA added the S1 trio (`open_3`, `closed_3`,
+/// `open_2`) ahead of the per-shape detectors landing in D3-A.X.
+/// Defaults are zero (codegen'd from hexo.toml), so the S1 contribution
+/// is byte-equivalent to the prior build until both the detector and a
+/// non-zero weight are in place.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EvalOverrides {
     /// Layer 2 S0 (mate-in-one) weights, X-positive per-player.
@@ -29,6 +36,11 @@ pub struct EvalOverrides {
     pub closed_5: i32,
     pub open_4: i32,
     pub closed_4: i32,
+    /// Layer 2 S1 (pre-fork) weights. Zero until the matching detector
+    /// (D3-A.1 / A.2 / A.3) and weight sweep land.
+    pub open_3: i32,
+    pub closed_3: i32,
+    pub open_2: i32,
     /// Layer 1 window-scan scores indexed by own-stone count `[0..=6]`.
     /// Index 6 mirrors `mate_score` (build.rs enforces equality).
     pub window_k_scores: [i32; 7],
@@ -50,6 +62,9 @@ impl Default for EvalOverrides {
             closed_5: CLOSED_5_SCORE,
             open_4: OPEN_4_SCORE,
             closed_4: CLOSED_4_SCORE,
+            open_3: OPEN_3_SCORE,
+            closed_3: CLOSED_3_SCORE,
+            open_2: OPEN_2_SCORE,
             window_k_scores: WINDOW_K_SCORES,
             open_extension_factor: OPEN_EXTENSION_FACTOR,
             closed_extension_factor: CLOSED_EXTENSION_FACTOR,
@@ -156,8 +171,9 @@ impl EvalOverrides {
 mod tests {
     use super::{EvalOverrides, WINDOW_SCORE_8_LEN};
     use crate::config::{
-        CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR, FORK_COVER2_BONUS, OPEN_4_SCORE,
-        OPEN_5_SCORE, OPEN_EXTENSION_FACTOR, WINDOW_K_SCORES, WINDOW_SCORE_8,
+        CLOSED_3_SCORE, CLOSED_4_SCORE, CLOSED_5_SCORE, CLOSED_EXTENSION_FACTOR,
+        FORK_COVER2_BONUS, OPEN_2_SCORE, OPEN_3_SCORE, OPEN_4_SCORE, OPEN_5_SCORE,
+        OPEN_EXTENSION_FACTOR, WINDOW_K_SCORES, WINDOW_SCORE_8,
     };
 
     /// `Default::default()` MUST equal the live `crate::config::*`
@@ -172,6 +188,9 @@ mod tests {
         assert_eq!(d.closed_5, CLOSED_5_SCORE, "closed_5");
         assert_eq!(d.open_4, OPEN_4_SCORE, "open_4");
         assert_eq!(d.closed_4, CLOSED_4_SCORE, "closed_4");
+        assert_eq!(d.open_3, OPEN_3_SCORE, "open_3");
+        assert_eq!(d.closed_3, CLOSED_3_SCORE, "closed_3");
+        assert_eq!(d.open_2, OPEN_2_SCORE, "open_2");
         assert_eq!(d.window_k_scores, WINDOW_K_SCORES, "window_k_scores");
         assert_eq!(
             d.open_extension_factor, OPEN_EXTENSION_FACTOR,

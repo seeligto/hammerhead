@@ -53,6 +53,11 @@ class EvalConfig:
     closed_5: int
     open_4: int
     closed_4: int
+    # S1 pre-fork weights. Phase 28D-3 D3-INFRA: zero-defaulted, real
+    # values land with the matching detector in D3-A.1 / A.2 / A.3.
+    open_3: int
+    closed_3: int
+    open_2: int
     window_k_scores: tuple[int, ...]
     open_extension_factor: int
     closed_extension_factor: int
@@ -244,6 +249,9 @@ def load() -> HexoConfig:
             closed_5=e["closed_5"],
             open_4=e["open_4"],
             closed_4=e["closed_4"],
+            open_3=e["open_3"],
+            closed_3=e["closed_3"],
+            open_2=e["open_2"],
             window_k_scores=tuple(e["window_k_scores"]),
             open_extension_factor=e["open_extension_factor"],
             closed_extension_factor=e["closed_extension_factor"],
