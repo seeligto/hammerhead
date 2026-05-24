@@ -139,8 +139,9 @@ class Engine:
 
 - `place` uses the side stored on the board. No player argument.
 - `best_move` must be called with at least one of `time_ms` or `depth`.
-  Internally splits the per-turn budget by `time_stone1_pct`. It does
-  **not** place the move.
+  `time_ms` is the **per-stone** budget — the engine consumes the
+  whole value on this call and does not split. It does **not** place
+  the move.
 - `find_pv(depth)` walks the TT from the current position, returning at
   most `depth` legal moves. Best-effort: stops at the first TT miss; the
   board is restored before return.

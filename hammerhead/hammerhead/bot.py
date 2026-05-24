@@ -240,8 +240,10 @@ class Bot:
         result.
 
         Args:
-            time_ms: Search budget for this call only, in milliseconds.
-                Falls back to the bot's configured per-stone budget when
+            time_ms: Per-stone search budget for this call, in
+                milliseconds. The engine consumes the whole value on
+                this single call — there is no internal split. Falls
+                back to the bot's configured ``time_per_stone_ms`` when
                 ``None``.
 
         Returns:

@@ -5,11 +5,7 @@
 //! The actual search algorithm lives in [`crate::search`].
 
 #![allow(clippy::must_use_candidate)]
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss
-)]
+#![allow(clippy::cast_sign_loss)]
 
 use crate::board::{Board, BoardError, Player};
 use crate::config::DEFAULT_TT_SIZE_MB;
@@ -83,9 +79,9 @@ impl Engine {
     /// `time_ms` overrides `cfg.time_ms` for this call; `depth` overrides
     /// `cfg.max_depth`. When both are `None`, defaults apply.
     ///
-    /// The per-turn budget is split internally: stone 1 receives
-    /// `stone1_time_pct * t`, stone 2 the remainder. Bot callers should
-    /// pass the same full per-turn budget on both calls of a turn.
+    /// `time_ms` is the **per-stone** budget: the engine consumes the
+    /// whole value on this single `best_move` call and does not split it.
+    /// Callers issue one `best_move` per stone (two per turn).
     pub fn best_move(&mut self, time_ms: Option<u64>, depth: Option<i8>) -> SearchResult {
         let mut local = self.cfg;
         if let Some(d) = depth {
@@ -97,13 +93,11 @@ impl Engine {
         // neither argument explicitly — and the pybind layer rejects
         // that case before we get here, so the path is effectively
         // unreachable outside Rust unit tests.
-        let provided_time = if depth.is_some() {
+        local.time_ms = if depth.is_some() {
             time_ms
         } else {
             time_ms.or(self.cfg.time_ms)
         };
-        local.time_ms =
-            provided_time.map(|t| split_budget(t, self.board.halfmove(), local.stone1_time_pct));
         search_root(
             &mut self.board,
             &mut self.tt,
@@ -226,26 +220,3 @@ impl Engine {
     }
 }
 
-/// Per-stone time slice. `halfmove == 0` keeps `stone1_time_pct` of the
-/// budget; `halfmove == 1` gets the remainder. Anything else (defensive)
-/// passes the budget through unchanged. Computed entirely in `u128` so
-/// we stay clear of `f64` mantissa rounding warnings.
-#[inline]
-fn split_budget(t: u64, halfmove: u8, pct: f32) -> u64 {
-    let pct = pct.clamp(0.0, 1.0);
-    // 10000-ppm fixed-point — enough granularity for tuning, no floats
-    // in the multiply path.
-    let num: u128 = match halfmove {
-        0 => (pct * 10_000.0).round().clamp(0.0, 10_000.0) as u128,
-        1 => ((1.0 - pct) * 10_000.0).round().clamp(0.0, 10_000.0) as u128,
-        _ => return t,
-    };
-    let scaled = u128::from(t).saturating_mul(num) / 10_000;
-    if scaled == 0 {
-        1
-    } else if scaled > u128::from(u64::MAX) {
-        u64::MAX
-    } else {
-        scaled as u64
-    }
-}

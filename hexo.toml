@@ -75,9 +75,9 @@ default_move_radius    = 2
 deadline_check_nodes   = 4096
 aspiration_start_depth = 4
 
-# Stone 1 / stone 2 time split. Bot passes the full per-turn budget twice;
-# engine internally uses pct on the first call, (1 - pct) on the second.
-time_stone1_pct = 0.6
+# Per-stone time budget. Each Engine::best_move call consumes its own
+# deadline; callers issue one call per stone (two per turn). No
+# internal split — the budget passed in is the budget spent.
 
 # Aspiration window: initial half-width and per-failure widen factor.
 asp_window_initial      = 50

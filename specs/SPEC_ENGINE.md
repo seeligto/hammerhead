@@ -706,7 +706,6 @@ pub struct SearchConfig {
     pub max_depth: i8,
     pub time_ms: Option<u64>,
     pub deadline_check_nodes: u32,
-    pub stone1_time_pct: f32,  // 0..=1, default 0.6
     pub asp_window_initial: i32,
     pub asp_window_widen_factor: u32,
     pub lmr_min_depth: i8,
@@ -850,9 +849,14 @@ S0's `defense_cells` so bucket 7 ("complete the threat") kicks in.
 
 ### Time management
 
-- `cfg.time_ms` is the budget for the current `search_root` call.
-- The `Engine::best_move` wrapper splits the per-turn budget across the
-  two stones: stone 1 = `time_stone1_pct * t`, stone 2 = the remainder.
+- `cfg.time_ms` is the **per-stone** budget for the current `search_root`
+  call.
+- `Engine::best_move` is per-stone: the entire `time_ms` argument is
+  consumed on the single `best_move` call. Callers issue one
+  `best_move` per stone (two per turn for a normal turn). The engine
+  performs no internal split — Phase 28E-0 dropped the historical
+  60/40 stone-1/stone-2 split (every consumer was already passing
+  per-stone, and the extra split halved effective utilisation).
 - Deadline checked every `deadline_check_nodes` via a thread-local
   counter; on timeout the partial iteration is discarded and the last
   completed iteration's result is returned.

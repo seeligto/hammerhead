@@ -577,12 +577,6 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "move_gen_inner_radius"],
         "MOVE_GEN_INNER_RADIUS",
     );
-    emit_f32(
-        out,
-        cfg,
-        &["engine", "search", "time_stone1_pct"],
-        "TIME_STONE1_PCT",
-    );
     emit_i32(
         out,
         cfg,
@@ -724,12 +718,5 @@ fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_u8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: u8 = {v};").unwrap();
-}
-
-fn emit_f32(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
-    let v = get(cfg, path)
-        .as_float()
-        .unwrap_or_else(|| panic!("hexo.toml {} not a float", path.join(".")));
-    writeln!(out, "pub const {name}: f32 = {v}_f32;").unwrap();
 }
 

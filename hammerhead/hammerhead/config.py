@@ -82,7 +82,6 @@ class SearchConfigDefaults:
     deadline_check_nodes: int
     aspiration_start_depth: int
     move_gen_inner_radius: int
-    time_stone1_pct: float
     asp_window_initial: int
     asp_window_widen_factor: int
     lmr_min_depth: int
@@ -270,7 +269,6 @@ def load() -> HexoConfig:
             deadline_check_nodes=s["deadline_check_nodes"],
             aspiration_start_depth=s["aspiration_start_depth"],
             move_gen_inner_radius=s["move_gen_inner_radius"],
-            time_stone1_pct=float(s["time_stone1_pct"]),
             asp_window_initial=s["asp_window_initial"],
             asp_window_widen_factor=s["asp_window_widen_factor"],
             lmr_min_depth=s["lmr_min_depth"],

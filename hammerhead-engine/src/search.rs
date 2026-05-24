@@ -22,7 +22,7 @@ use crate::config::{
     ASPIRATION_START_DEPTH, ASP_WINDOW_INITIAL, ASP_WINDOW_WIDEN_FACTOR, DEADLINE_CHECK_NODES,
     DEFAULT_MAX_DEPTH,
     DEFAULT_MOVE_RADIUS, DEFAULT_TIME_MS, LMR_MIN_DEPTH, LMR_MIN_MOVE_INDEX,
-    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_MAX_PLIES, TIME_STONE1_PCT,
+    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_MAX_PLIES,
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
@@ -115,9 +115,6 @@ pub struct SearchConfig {
     /// Nodes between deadline checks. Powers of two are cheapest for the
     /// modulo test.
     pub deadline_check_nodes: u32,
-    /// Fraction of a per-turn budget allocated to stone 1. Stone 2 gets
-    /// the remainder.
-    pub stone1_time_pct: f32,
     /// Aspiration half-window for the first attempt.
     pub asp_window_initial: i32,
     /// Multiplicative widen factor between aspiration attempts.
@@ -140,7 +137,6 @@ impl Default for SearchConfig {
             max_depth: i8::try_from(DEFAULT_MAX_DEPTH).expect("DEFAULT_MAX_DEPTH fits in i8"),
             time_ms: Some(DEFAULT_TIME_MS),
             deadline_check_nodes: DEADLINE_CHECK_NODES as u32,
-            stone1_time_pct: TIME_STONE1_PCT,
             asp_window_initial: ASP_WINDOW_INITIAL,
             asp_window_widen_factor: ASP_WINDOW_WIDEN_FACTOR,
             lmr_min_depth: LMR_MIN_DEPTH,
