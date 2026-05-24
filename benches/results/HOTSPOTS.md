@@ -1,3 +1,203 @@
+# Hotspots — Phase 28E-0 (time-fix + SDK + audit)
+
+## Phase 28E-0 status (2026-05-24)
+
+Phase 28E-0 ran four sub-waves: TIME-DIAG + TIME-FIX (per-stone vs
+per-turn budget mechanism correction), SDK-DESIGN + SDK-IMPL (opt-in
+`SearchStats` observability + `depth=N` fixed-depth kwarg + arena
+adapter consumption), AUDIT + AUDIT-FIX (engine-wide 6-area bug sweep,
+1 MAJOR + 1 MINOR landed), VERIFY (100g external + 400g internal final
+read). Five code/spec commits added on master; three on hexo-arena
+main.
+
+**Headline: KEEP all 5 commits on master; `.bestref` NOT advanced.**
+External arena flat (VERIFY 100g 2.0% [0.5, 7.0] vs D3 GATE baseline
+4.5% [2.4, 8.4], CI overlap); internal +40 Elo center shift vs D3
+(51.12% / +7.8 Elo [-26.2, +41.8] vs D3 45.25% / -33.1 Elo [-67.3,
++1.0]) but CI spans 0 → REJECT (no strict-positive advance). `.bestref`
+stays at `5bd89648`.
+
+### Time-utilization fix (TIME-FIX commit `1f10f6c`)
+
+`Engine::best_move` at `engine.rs:106` called `split_budget(t, halfmove,
+stone1_time_pct)` on every per-stone call, halving incoming budget.
+SDK (`bot.py:265`) and arena adapter (`_hammerhead_worker.py:92`) both
+passed `time_ms` as per-stone; engine treated as per-turn and
+re-divided 60/40. Mean per-stone utilisation pre-fix = **50.5%**,
+post-fix = **100.2%** (SDK smoke + arena per-stone wall-clock both
+verified). Bug mechanically dead. `split_budget` helper +
+`stone1_time_pct` field deleted; `hexo.toml`, `config.py`, `SPEC_ENGINE`,
+`SPEC_API` updated to per-stone contract.
+
+| budget (ms) | halfmove | pre-fix wall (ms) | post-fix wall (ms) | pre util | post util |
+|---:|---:|---:|---:|---:|---:|
+| 500  | 0 |  303 |  500 | 60.6% | 100.0% |
+| 500  | 1 |  206 |  503 | 41.2% | 100.6% |
+| 1000 | 0 |  605 | 1001 | 60.5% | 100.1% |
+| 1000 | 1 |  400 | 1002 | 40.0% | 100.2% |
+
+**Methodology finding (load-bearing)**: pre-`1f10f6c` Phase 28 arena
+measurements were running at ~50% intended HH wall-clock per stone.
+Cross-phase comparisons across the entire Phase 28 arc are not directly
+comparable. The INTEGRATION_NOTES "at `--time T`, HH gets 2T per turn"
+characterization was inaccurate for vendored HH SHAs pre-fix and is now
+accurate again. E-1 baseline measurements should be re-taken at the
+post-fix HH effective time.
+
+### Arena trajectory (pre-28E-0 → post-28E-0)
+
+| State | n | HH wins | Winrate | Wilson 95% CI |
+|---|---:|---:|---:|---|
+| Phase 28D-2 I4 baseline | 50 | 4 | 8.7% | [3.4%, 20.0%] |
+| Phase 28D-3 GATE Cond B (pre-28E-0) | 200 | 9 | 4.5% | [2.4%, 8.4%] |
+| Phase 28E-0 TIME-FIX condA cross-check | 50 | 2 | 4.0% | [1.1%, 13.5%] |
+| **Phase 28E-0 VERIFY (post-fix primary gate)** | **100** | **2** | **2.0%** | **[0.5%, 7.0%]** |
+
+CI overlaps D3 GATE (2.4-8.4% vs 0.5-7.0%). External arena **flat
+within sampling noise**, at lower end of D3 CI band. Time-fix
+mechanism corrected utilization without lifting winrate against
+SB-perf — confirms 28D-3 retro's eval-gap hypothesis (Layer-1 length-3
+double-count Gap #1 is the load-bearing lever, not search-time budget).
+
+### Internal +40 Elo movement vs `.bestref`
+
+| Phase | n | HEAD record | Winrate | Elo | CI 95% | Verdict |
+|---|---:|---|---:|---:|---|---|
+| Phase 28D-3 retro internal sanity | 400 | 181-219-0 | 45.25% | -33.1 | [-67.3, +1.0] | REJECT (CI upper touches 0) |
+| **Phase 28E-0 VERIFY** | 400 | **204-195-1** | **51.12%** | **+7.8** | **[-26.2, +41.8]** | REJECT (CI spans 0) |
+
+**Δ vs D3: +5.87 pp winrate, +40.9 Elo center shift.** CI band shifted
+from "touching 0" to "spans 0 centered positive". No `.bestref`
+advance (strict gate requires Wilson lower > 0). Most plausibly
+attributable to TIME-FIX doubling HH per-stone wall-clock vs same-bug
+`.bestref` baseline (HH internally now searches genuinely 2× deeper at
+the same arena flag), with D-1 fix as a possible contributor for any
+test/edge state-corruption paths.
+
+### SDK observability surface (SDK-IMPL commits `7c53fd7` + `c799f57`)
+
+`Bot.suggest(time_ms=T, depth=N, return_stats=True)` lands:
+
+- `SearchStats` frozen dataclass: `max_depth_reached`, `nodes`, `nps`,
+  `time_ms`, `score`.
+- `depth=N` kwarg: fixed-depth target lifts time bound; deterministic
+  move output across `time_ms` settings at fixed depth.
+- `time_ms + depth` permissive — whichever bound hits first.
+- Default `Bot.suggest(time_ms=T)` returns `Move` unchanged
+  (additive). Existing 35 `test_public_api.py` tests pass.
+- 12 new tests in `test_bot_stats.py` cover the new surface.
+- No PyO3 changes — `bench_best_move` 6-tuple already in place,
+  repurposed.
+- Arena adapter (hexo-arena `5fd77f3`) consumes both surfaces;
+  `--depth N` end-to-end works against HH.
+
+**NPS impact**: 568k ± 3k post-`7c53fd7` SDK commit, 571k ± 1k post-
+`c799f57` spec commit. Δ −0.6% / +0.5% vs TIME-FIX baseline — within
+noise (additive observability surface, no hot-path changes).
+
+### D-1 board.rs winner-cache fix (AUDIT-FIX commit `34fa870`)
+
+**Bug**: `Board::undo` unconditionally cleared `winner = None` when the
+undone player matched the cached winner, even if a 6-in-row from an
+earlier stone-1 was still on the board. Hot search path insulated by
+`pvs_node` entry-guard; test code reliably hit it. Silent since Phase 4.
+
+**Fix**: `Board::undo` re-derives winner from axes via
+`#[cold] rederive_winner(player)` (scans `self.pieces()` calling
+`is_winning_move` per `player`-owned coord). Runs only on cold undo
+path when cached winner matches. 2 regression tests added in
+`tests/board_tests.rs`.
+
+**NPS impact**: 546k ± 2k vs ~563k pre-fix → **Δ -3.2%** (within ±5%
+threshold). Re-derive cost proportional to winning-leaf undo frequency
+on bench fixtures. Documented in commit body.
+
+### MINOR doc fix (AUDIT-FIX commit `012c327`)
+
+`search.rs:304` doc comment said "Up to 2 narrow widens; on the third
+failure we promote to full-window"; aspiration loop only does 1 narrow
+widen then promotes (attempt counter increments to 2 on second failure
+and the `>= 2` branch fires). Doc-only update. No bench impact.
+
+### Audit areas clean (no bugs)
+
+A search.rs (aspiration / PVS / LMR / TimeUp invariants / root TT
+store / history saturation), B threats.rs (window scanning / per-player
+isolation / S0-S1 disjointness / axis bounds), C eval.rs +
+line_contrib.rs (LineContribution invalidation / X-positive sign / fork
+mate semantics / SIMD parity), E tt.rs (128-bit verify / replacement
+policy / score bounds / round-trip), F pybind.rs + engine.rs (memory
+safety / borrow conflicts / error propagation; F-1 partial-clear on
+`Engine::reset` is intentional design).
+
+### Commits (5 atomic on hammerhead master + this doc commit pair)
+
+| SHA | Subject | Type |
+|---|---|---|
+| `1f10f6c` | `search: fix per-stone vs per-turn time budget` | TIME-FIX |
+| `7c53fd7` | `sdk: add SearchStats + depth/return_stats kwargs to suggest` | SDK-IMPL |
+| `c799f57` | `spec(api): document SearchStats + depth/return_stats kwargs` | SDK-IMPL |
+| `34fa870` | `board: re-derive winner on undo of cached-winner stone (D-1)` | AUDIT-FIX MAJOR |
+| `012c327` | `search: fix aspiration widen count doc comment (MINOR)` | AUDIT-FIX MINOR |
+| (this commit) | `bench: HOTSPOTS Phase 28E-0 time-fix + SDK + audit` | doc |
+| (next) | `spec: mark Phase 28E-0 done in roadmap` | doc |
+
+Plus 3 on hexo-arena main: `e47e5c0` (vendor refresh), `fe7b775`
+(`--time-a/--time-b` asymmetric CLI), `5fd77f3` (adapter consumes
+SearchStats + fixed-depth).
+
+### Phase 28E-1 preconditions met
+
+- Time bug fixed; HH uses 100% of per-stone budget.
+- SearchStats per-call observability ready for Gap #1 measurement.
+- `Bot.suggest(depth=N)` fixed-depth mode ready for eval-isolated A/B
+  (no time variance confounders).
+- Engine audit complete; no critical bugs blocking E-1.
+
+### Phase 28E candidates (updated post-28E-0)
+
+- **28E-1 — Gap #1 (window pattern table redesign) — PRIORITY**: zero
+  `window_k_scores[3]` diagnostic first (measures with SearchStats new
+  surface), then 729-entry continuous pattern table per axis if
+  confirmed. Layer-1 length-3 double-count finding from D3 carries
+  forward as the primary lever.
+- **28E-2+ — Tempo proxy investigation**: carried 28B → 28C → 28D-1 →
+  28D-3 → 28E-0. Detector revival or proxy.
+- **28E-2+ — Opening-diversity library + harness wiring**:
+  `NotImplementedError` in `promote.py:372-376` + `:553-557`. ~150 LOC
+  Python + 10-20 fixture entries.
+- **28E-2+ — Per-turn-joint vs per-stone-split scheduling A/B**:
+  re-scoped from defunct `stone1_fraction` A/B (the split fraction
+  concept no longer applies post-TIME-FIX). SB-perf plans whole turns
+  jointly; HH plans per-stone. Investigate whether HH benefits from a
+  per-turn-joint scheduling mode for arena gate symmetry.
+- **28E-2+ — Promote-harness commit-bug fix**: trivial reorder
+  `-m <msg> --only -- <path>` in `promote.py` auto-commit branch.
+
+### Honest assessment
+
+External arena DID NOT MOVE. Time-fix mechanism corrected without
+lifting winrate against SB-perf — eval-gap hypothesis from 28D-3 retro
+confirmed. Internal +40 Elo center shift is real movement but does not
+clear the strict-positive `.bestref` advance gate. One MAJOR audit bug
+(D-1) silent since Phase 4 is fixed. SDK observability + fixed-depth
+surface ready for E-1 measurement work. Methodology finding
+(50%-utilization implicit calibration error across all of Phase 28)
+re-frames the prior arc and must carry forward to E-1 baseline
+documentation. Phase 28E-1 Gap #1 (window pattern table redesign) is
+the next substantive lever.
+
+**Artifacts** (gitignored per Phase 25.5):
+
+- `/tmp/phase_28e/PHASE_28E_0_RETRO.md` — full retrospective.
+- `/tmp/phase_28e/0/time_diag.md`, `/tmp/phase_28e/0/time_fix.md` — TIME wave.
+- `/tmp/phase_28e/0/sdk_design.md`, `/tmp/phase_28e/0/sdk_impl.md` — SDK wave.
+- `/tmp/phase_28e/0/audit.md`, `/tmp/phase_28e/0/audit_fix.md` — AUDIT wave.
+- `/tmp/phase_28e/0/verify.md` — VERIFY 100g + 400g final read.
+- `~/Work/hexo-arena/runs/e0-verify-hh500-sb500/` — VERIFY arena run.
+
+---
+
 # Hotspots — Phase 28D-3 (eval revival + bug sweep)
 
 ## Phase 28D-3 status (2026-05-24)
