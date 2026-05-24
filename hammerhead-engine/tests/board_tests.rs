@@ -609,3 +609,90 @@ fn dirty_flag_set_on_place_cleared_on_read() {
     place_ok(&mut b, c1);
     assert!(b.threats_dirty_for_test());
 }
+
+/// Phase 28E-0 D-1 regression (variant 1: `place_for_test`-only).
+///
+/// Before fix: undoing a non-winning extra X stone after the 6-in-row was
+/// already on the board incorrectly cleared the cached `winner`, even
+/// though the winning run remained intact.
+#[test]
+fn winner_field_consistent_across_extra_place_undo() {
+    let mut b = Board::new();
+    // Build X's 6-in-row at q=0..=5.
+    for q in 0..6 {
+        b.place_for_test(Coord::new(q, 0), Player::X);
+    }
+    assert_eq!(b.winner(), Some(Player::X), "6-in-row sets winner");
+
+    // Place another X stone elsewhere — does not extend or break the win.
+    b.place_for_test(Coord::new(0, 5), Player::X);
+    assert_eq!(
+        b.winner(),
+        Some(Player::X),
+        "winner preserved after non-winning extra X stone",
+    );
+
+    // Undo the non-winning extra X. The 6-in-row at q=0..=5 still exists,
+    // so the cached winner must remain Some(X).
+    b.undo().unwrap();
+    for q in 0..6 {
+        assert_eq!(
+            b.piece_at(Coord::new(q, 0)),
+            Some(Player::X),
+            "6-in-row stone q={q} must persist",
+        );
+    }
+    assert_eq!(
+        b.winner(),
+        Some(Player::X),
+        "winner cache stale: 6-in-row still on board after undo of non-winning stone",
+    );
+}
+
+/// Phase 28E-0 D-1 regression (variant 2: production-path via `place`).
+///
+/// Production trigger: X wins on stone 1 of a turn, plays a non-winning
+/// stone 2 elsewhere, then stone 2 is undone. Pre-fix the cached `winner`
+/// was cleared even though the 6-in-row from stone 1 was still on the
+/// board.
+#[test]
+fn winner_cleared_incorrectly_after_winning_stone1_undo_stone2() {
+    let mut b = Board::new();
+    // Stage 5 X stones at q=0..=4 with `place_for_test` (parity bypass).
+    for q in 0..5 {
+        b.place_for_test(Coord::new(q, 0), Player::X);
+    }
+    assert_eq!(b.winner(), None, "no winner with 5 stones");
+
+    // Force parity to (X, halfmove=0) so the next real `place` is X stone 1.
+    b.force_parity_for_test(Player::X, 0);
+
+    // X plays winning stone 1 at (5, 0): completes 6-in-row q=0..=5.
+    b.place(Coord::new(5, 0)).expect("place winning stone");
+    assert_eq!(b.winner(), Some(Player::X), "X wins on stone 1");
+    assert_eq!(b.halfmove(), 1, "halfmove=1 after stone 1");
+    assert_eq!(b.to_move(), Player::X, "X still to move for stone 2");
+
+    // X plays stone 2 elsewhere; does not extend the win.
+    b.place(Coord::new(-3, 3)).expect("place X stone 2");
+    assert_eq!(
+        b.winner(),
+        Some(Player::X),
+        "winner preserved across non-winning stone 2",
+    );
+
+    // Undo stone 2. 6-in-row at q=0..=5 must remain; winner must stay X.
+    b.undo().expect("undo stone 2");
+    for q in 0..=5 {
+        assert_eq!(
+            b.piece_at(Coord::new(q, 0)),
+            Some(Player::X),
+            "6-in-row stone q={q} must persist after undo of stone 2",
+        );
+    }
+    assert_eq!(
+        b.winner(),
+        Some(Player::X),
+        "D-1: undo of non-winning stone 2 must not clear the winner cache",
+    );
+}

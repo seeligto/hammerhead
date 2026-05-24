@@ -267,7 +267,14 @@ impl Board {
         self.apply_clear(c, player);
         self.mark_threats_dirty();
         if self.winner == Some(player) {
-            self.winner = None;
+            // Cached `winner` is invalidated by removing any stone of the
+            // winning player — the run that triggered the cache could be
+            // the one we just broke, OR an unrelated earlier run that the
+            // undone stone wasn't part of (e.g. winner set on stone 1 of
+            // a turn, undoing stone 2 elsewhere). Re-derive against the
+            // post-undo axis bitmaps. Cold path: only fires when the
+            // undone player matches the cached winner.
+            self.winner = self.rederive_winner(player);
         }
 
         self.hash ^= self.zobrist.key(c, player);
@@ -593,6 +600,25 @@ impl Board {
     fn apply_clear(&mut self, c: Coord, player: Player) {
         self.axes.clear(c, player);
         self.line_contrib.borrow_mut().invalidate_coord(c);
+    }
+
+    /// Re-derive `winner` from scratch by scanning `player`'s placed stones
+    /// for any surviving 6-in-row. Returns `Some(player)` iff at least one
+    /// stone of `player` is still part of a winning run. Cold path: only
+    /// called from [`Self::undo`] when the cached `winner` matches the
+    /// undone stone's player.
+    ///
+    /// Per stone cost is bounded `O(1)` ([`crate::win::is_winning_move`]
+    /// scans ±5 along 3 axes). Total cost `O(stones_of_player)`; runs on
+    /// the cold undo path only when `winner == Some(player)` going in.
+    #[cold]
+    fn rederive_winner(&self, player: Player) -> Option<Player> {
+        for (c, p) in self.pieces() {
+            if p == player && crate::win::is_winning_move(self, c, player) {
+                return Some(player);
+            }
+        }
+        None
     }
 
     /// Mark the threat caches as stale so the next [`Self::threats`] read
