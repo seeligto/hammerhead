@@ -614,6 +614,18 @@ worker counts. Game *outcomes* are not reproducible: the harness
 runs a time-limited search, which depends on wall-clock. (The `vs`
 match harness has no opening book and takes no `--seed`.)
 
+Opening diversity (Phase 28E-2 Stage 0): when
+`[promote].opening_diversity = true`, `build_game_configs` calls
+`hammerhead.openings.pick_opening(i // 2)` per pair, so games
+`2k` and `2k+1` share the same forced opening, colour-swapped.
+The opening's plies are applied to both engines in
+`play_one_game` before either bot is asked to search. The library
+ships ~20 named openings curated from HeXOpedia §6 (Sword family,
+Pair / Closed Game variants, Pistol / Shotgun / Revolver, Island
+Gambit, Marge, Eclipse, etc., plus a small set of mechanically-
+identical control rotations). Selection is `seed % len(OPENINGS)`
+— deterministic and reproducible from the seed alone.
+
 Memory bound: 2 engines per game × 64 MB TT per engine × N workers
 ~ N × 128 MB resident. At default N=14 on a 16-core host: ~1.8 GB.
 Cap configurable via `MAX_TT_MB_PER_WORKER` (default 64).

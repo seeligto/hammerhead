@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .config import CONFIG, PromoteConfig
+from .openings import Opening, pick_opening
 from .promote_sprt import (  # re-export
     elo_to_winrate,
     sprt_llr,
@@ -259,19 +260,45 @@ def play_one_game(
     a_is_x: bool,
     time_ms: int,
     max_plies: int,
+    opening: Optional[Opening] = None,
 ) -> GameResult:
     """Drive both bots through one game. Returns the outcome from a's POV.
 
     Both bots are reset at the start. Bot ``a`` is the source of truth
     for engine state (``to_move``/``winner``); every placement is
     mirrored to ``b`` so both engines stay in sync.
+
+    If ``opening`` is supplied, its ply list is applied to both bots
+    before either is asked to search — no bot ever picks an opening
+    move. This is the Stage-0 prerequisite for Phase 28E-2 (eliminate
+    DIAG-1 fixed-depth determinism collapse by forcing trajectory
+    diversity per pair).
     """
     a.reset()
     b.reset()
 
     plies = 0
     last_winner = "none"
-    while plies < max_plies:
+
+    if opening is not None:
+        for _player, q, r in opening.plies:
+            a.place(q, r)
+            b.place(q, r)
+            plies += 1
+            last_winner = a.winner()
+            b_winner = b.winner()
+            if b_winner != last_winner:
+                raise BotProtocolError(
+                    f"engines disagree on winner after opening ply {plies}: "
+                    f"a={last_winner!r} b={b_winner!r}"
+                )
+            if last_winner != "none":
+                # Pathological opening already ended the game — bail with the
+                # terminal record. Curated openings are short and never reach
+                # 6-in-a-row, but the harness must be robust.
+                break
+
+    while last_winner == "none" and plies < max_plies:
         side = a.to_move()  # "X" or "O"
         mover_is_a = (side == "X") == a_is_x
         mover = a if mover_is_a else b
@@ -369,12 +396,6 @@ def run_match(
     hypothesis. ``on_game(i, result, llr)`` is called after every game
     if provided (used by the CLI for progress output).
     """
-    if cfg.opening_diversity:
-        raise NotImplementedError(
-            "opening_diversity is reserved for follow-up; "
-            "disable [promote].opening_diversity for v1"
-        )
-
     results: list[GameResult] = []
     log_low, log_high = sprt_thresholds(cfg)
     llr: Optional[float] = None
@@ -382,6 +403,12 @@ def run_match(
 
     for i in range(cfg.n_games):
         a_is_x = (i % 2 == 0) if cfg.color_balance else True
+        # Pair-based opening seeding: games 2k and 2k+1 share the same
+        # opening but swap colours. Disabled openings → opening=None →
+        # bots pick their own move 1 (legacy behaviour).
+        opening = (
+            pick_opening(i // 2) if cfg.opening_diversity else None
+        )
         with SubprocessBot(current_cmd) as a, SubprocessBot(best_cmd) as b:
             r = play_one_game(
                 a,
@@ -389,6 +416,7 @@ def run_match(
                 a_is_x=a_is_x,
                 time_ms=cfg.time_ms_per_stone,
                 max_plies=cfg.max_plies,
+                opening=opening,
             )
         results.append(r)
 
@@ -430,12 +458,18 @@ class GameConfig:
     The (game_idx → colour) mapping is fixed by ``build_game_configs``,
     so a match at a given ``n_games`` is reproducible across runs and
     worker counts (modulo timer noise — see SPEC_BENCHMARKS).
+
+    ``opening`` is ``None`` when opening diversity is off, otherwise the
+    curated ``Opening`` picked for this game's pair (games ``2k`` and
+    ``2k+1`` share the same opening, colour-swapped). ``Opening`` is a
+    frozen dataclass and pickles cleanly across the pool boundary.
     """
 
     game_idx: int
     current_is_x: bool
     time_ms: int
     max_plies: int
+    opening: Optional[Opening] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -459,6 +493,10 @@ def build_game_configs(cfg: MatchConfig) -> list[GameConfig]:
 
     Colour assignment mirrors the sequential :func:`run_match`: with
     ``color_balance``, even game indices play ``current`` as X.
+
+    With ``cfg.opening_diversity``, an opening is picked once per pair
+    via ``pick_opening(pair_idx)`` and shared by both games of the pair,
+    so the colour-swap holds the opening fixed. Disabled → ``None``.
     """
     return [
         GameConfig(
@@ -466,6 +504,7 @@ def build_game_configs(cfg: MatchConfig) -> list[GameConfig]:
             current_is_x=(i % 2 == 0) if cfg.color_balance else True,
             time_ms=cfg.time_ms_per_stone,
             max_plies=cfg.max_plies,
+            opening=pick_opening(i // 2) if cfg.opening_diversity else None,
         )
         for i in range(cfg.n_games)
     ]
@@ -501,6 +540,7 @@ def _play_one_game_in_worker(gc: GameConfig) -> ParallelGameResult:
                 a_is_x=gc.current_is_x,
                 time_ms=gc.time_ms,
                 max_plies=gc.max_plies,
+                opening=gc.opening,
             )
         return ParallelGameResult(
             game_idx=gc.game_idx,
@@ -550,11 +590,6 @@ def run_match_parallel(
     partial tail (games that had started but not finished) is simply
     discarded; the verdict stands on the games that completed.
     """
-    if cfg.opening_diversity:
-        raise NotImplementedError(
-            "opening_diversity is reserved for follow-up; "
-            "disable [promote].opening_diversity for v1"
-        )
     if cfg.n_games < 1:
         raise ValueError("n_games must be >= 1")
 
