@@ -1031,3 +1031,118 @@ fn cold_timeout() -> Result<(), SearchError> {
     Err(SearchError::Timeout)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit tests for invariants that need access to private items
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    //! M5-invariant lock-in (SealBot-perf bug-pattern, see I3
+    //! `2026-05-20-code-analysis.md` §M5).
+    //!
+    //! When the root `pvs_node` fail-highs on a beta cutoff, the root
+    //! TT entry MUST be written with `best_move == the move that
+    //! caused the cutoff` and `flag == LowerBound`. Without this, a
+    //! widened aspiration retry would re-order moves from scratch and
+    //! re-discover the failing move from the bottom of the bucket
+    //! pipeline (wasted nodes). HH's design satisfies the invariant
+    //! structurally — `pvs_node`'s unconditional TT store at the
+    //! function tail captures `best_move` regardless of fail-high — and
+    //! this test pins the behaviour so refactors can't regress it.
+    //!
+    //! Test calls `pvs_node` directly at root with a deliberately tight
+    //! beta so the first staged move triggers a beta cutoff, then
+    //! inspects TT[`root_hash`] for the M5 invariant.
+    use super::*;
+    use crate::board::Board;
+    use crate::config::MATE_SCORE;
+    use crate::coords::Coord;
+    use crate::ordering::OrderingState;
+    use crate::tt::{TTFlag, TranspositionTable};
+
+    fn x_row(b: &mut Board, start: i16, count: i16) {
+        for q in start..(start + count) {
+            b.place_for_test(Coord::new(q, 0), Player::X);
+        }
+    }
+
+    #[test]
+    fn pvs_root_fail_high_writes_failing_move_to_tt() {
+        // X has open-4 → next stone completes an open-5, a follow-up
+        // stone wins. At depth 3 (one X turn + one O turn + one X stone)
+        // mate-class scores are reachable and easily exceed any narrow
+        // beta we set below.
+        let mut b = Board::new();
+        x_row(&mut b, 0, 4);
+        b.force_parity_for_test(Player::X, 0);
+        let root_hash = b.hash();
+
+        let mut tt = TranspositionTable::new(16);
+        let mut ord = OrderingState::new();
+        let mut scratch = SearchScratch::new();
+        let cfg = SearchConfig::default();
+        let mut nodes: u64 = 0;
+
+        // Tight beta well below the mate score. X is the maximizer so a
+        // mate-class result trivially exceeds beta on the first staged
+        // move → guaranteed fail-high.
+        let alpha = -INF;
+        let beta: i32 = 1000;
+
+        let score = pvs_node(
+            &mut b,
+            &mut tt,
+            &mut ord,
+            &mut scratch,
+            &cfg,
+            5,
+            alpha,
+            beta,
+            0,
+            cfg.max_check_extensions,
+            None,
+            &[],
+            &mut nodes,
+        )
+        .expect("no timeout configured");
+
+        // Confirm fail-high actually occurred.
+        assert!(
+            score >= beta,
+            "test setup did not produce fail-high: score={score} beta={beta}"
+        );
+
+        // ── M5 invariant ────────────────────────────────────────────
+        let entry = tt
+            .probe(root_hash)
+            .expect("root TT entry must be present after pvs_node returns");
+        assert_ne!(
+            entry.best_move, ORIGIN,
+            "root TT best_move must be the failing move, not ORIGIN sentinel \
+             (M5: dropping best_move on fail-high makes the widened retry \
+              re-order from scratch)"
+        );
+        assert!(
+            matches!(entry.flag, TTFlag::LowerBound),
+            "fail-high must store TTFlag::LowerBound, got {:?}",
+            entry.flag
+        );
+        assert_eq!(
+            entry.depth, 5,
+            "TT entry depth must match the pvs_node depth argument"
+        );
+        // The score in TT must itself be >= beta (lower-bound semantics).
+        let stored = score_from_tt(entry.score, 0);
+        assert!(
+            stored >= beta,
+            "stored lower-bound score must be >= beta: stored={stored} beta={beta}"
+        );
+        // And the stored score must exceed the cutoff threshold by a
+        // mate-class margin (the failing move *is* a mate move).
+        assert!(
+            stored >= MATE_SCORE - 16,
+            "stored score for a mate-finding fail-high should be mate-class; got {stored}"
+        );
+    }
+}
+
