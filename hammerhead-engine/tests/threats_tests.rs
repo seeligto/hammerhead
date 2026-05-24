@@ -248,3 +248,105 @@ fn opponent_open_four_visible_to_o() {
     let to = compute(&b, Player::O);
     assert_eq!(to.counts.open_4, 1);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1 — open-3 (Phase 28D-3 D3-A.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn open_three_axis_q() {
+    // _XXX_ on the q axis, both 2-beyond cells empty → open-3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 1);
+    // S1 shapes do not surface as ThreatInstance entries.
+    assert!(t.s0_instances.is_empty());
+}
+
+#[test]
+fn open_three_axis_r() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (0, 1), (0, 2)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 1);
+}
+
+#[test]
+fn open_three_axis_s() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, -1), (2, -2)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 1);
+}
+
+#[test]
+fn open_three_blocked_on_one_side_is_not_open_three() {
+    // OXXX_ — left neighbour is opp, so open_ends == 1, classifier
+    // sees a non-open-3 (no closed-3 detector yet at A.1 either).
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn open_three_2beyond_blocked_left_is_not_open_three() {
+    // O_XXX_ — both immediate neighbours empty, but left 2-beyond is
+    // opp. Extending left gives _XXXX_-against-O which dies as a
+    // boxed 4 (no winning 6-line possible). Conservative gate skips.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(-2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn open_three_2beyond_blocked_right_is_not_open_three() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(4, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn open_three_2beyond_own_stone_still_counts() {
+    // X_XXX_ — own 2-beyond stone is not opp; extension viability
+    // gate is "non-opp", not "empty", so this still registers.
+    let mut b = fresh();
+    x(&mut b, &[(-2, 0), (0, 0), (1, 0), (2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 1);
+}
+
+#[test]
+fn open_three_does_not_fire_for_length_two() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 0);
+}
+
+#[test]
+fn open_three_does_not_fire_for_length_four() {
+    // Length-4 with both ends open is open_4, not open_3.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0), (3, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_3, 0);
+    assert_eq!(t.counts.open_4, 1);
+}
+
+#[test]
+fn open_three_per_player_isolation() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    o(&mut b, &[(0, 5), (1, 5), (2, 5)]);
+    let tx = compute(&b, Player::X);
+    let to = compute(&b, Player::O);
+    assert_eq!(tx.counts.open_3, 1);
+    assert_eq!(to.counts.open_3, 1);
+}

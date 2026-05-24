@@ -270,8 +270,35 @@ fn classify_linear_run(
                 );
             }
         }
+        (3, 2) => {
+            // Open-3 (S1, Phase 28D-3 D3-A.1): `_XXX_` with BOTH
+            // immediate neighbours empty AND both 2-cells-beyond
+            // non-opp. The 2-beyond gate excludes dead runs that
+            // can extend to a 4 but never to a winning 6 — e.g.
+            // `O_XXX_O` would form `_XXXX_` immediately surrounded
+            // by O on both sides, dying as a boxed 4. Mirrors the
+            // closed-4 "beyond non-opp" growth check, applied to
+            // both sides because open-3 needs growth viability on
+            // both ends.
+            let beyond_left = coord_at(axis, line_id, start_pos - 2);
+            let beyond_right = coord_at(axis, line_id, end_pos + 2);
+            let bm = board.axes();
+            if !bm.is_player(beyond_left, opp) && !bm.is_player(beyond_right, opp) {
+                bump_s1(out, |c| c.open_3 = c.open_3.saturating_add(1));
+            }
+        }
         _ => {}
     }
+}
+
+/// Bump an S1 (Phase 28D-3) shape count. S1 shapes do not enter the
+/// `s0_instances` defense-cells hypergraph (Layer 3 fork detection is
+/// S0-only by design) — they contribute solely via Layer 2 weighted
+/// sums, so the helper updates `counts` and skips the
+/// `ThreatInstance` push entirely.
+#[inline]
+fn bump_s1(out: &mut ThreatSet, bump: impl FnOnce(&mut ThreatCounts)) {
+    bump(&mut out.counts);
 }
 
 fn push_s0(
