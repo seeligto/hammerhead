@@ -35,6 +35,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 28B | eval-value tuning sprint (coordinate-descent, 5 candidates) | ✅ done |
 | 28C-0 | subset verification (2³ factorial); reverted B-2.3 + B-2.5 per non-replication | ✅ done |
 | 28C-1 | BO sprint (60 trials × 200g, GPSampler); winner reverted on 400g validation | ✅ done |
+| 28D-1 | 800g cycle-break match HEAD vs `.bestref`; Outcome C, `.bestref` 932c5d8 → 5bd89648 | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -805,40 +806,124 @@ Artifacts: `/tmp/phase_28c/PHASE_28C_RETRO.md` (full retro),
 `/tmp/phase_28c/3/val_trial34_vs_bestref.json`. Gitignored per
 Phase 25.5 repo hygiene.
 
-## Phase 28D candidates
+## Phase 28D-1 — Cycle-Break Match (Outcome C: ADVANCE)
 
-Carried forward from Phase 28C retrospective. Order not yet locked;
-dispatcher subagent should sequence per host budget + risk.
+2026-05-24. 800g promote-match HEAD (`5bd8964`, engine state C1
+= Phase 25.5 + Phase 27 LineContribution cache + Phase 28B-B-2.1
+`open_4=135_000`) vs prior `.bestref` (`932c5d8`, Phase 25.5
+final). No eval / `hexo.toml` / source change — pure cumulative
+measurement. The natural cycle-breaker after three consecutive
+Phase-27-shape outcomes (27 / 28B / 28C all REJECT on strict
+gate without eval regression).
 
-- **28D-A — BO sprint v2**: 400g/trial (or averaged-200g) with
-  widened bounds on 4 of 5 dims (`open_4 > 240k`, `closed_5 <
-  240k`, `window_k_scores[5] < 1024`, `open_extension_factor = 0`
+**Outcome C — strict-positive. Cycle BROKEN. `.bestref` advanced
+932c5d8 → 5bd89648.** First `.bestref` advance in 6 phases
+(since Phase 25.5, commit `432ddba`).
+
+**Match result**:
+- 800 games, 500 ms/stone, 10 workers, Wilson 95%, color-balance
+  ON, opening-diversity OFF (no library exists).
+- W-L-D **429-371-0**, winrate 0.5363 Wilson [0.5016, 0.5706].
+- **Elo +25.2, Wilson 95% CI [+1.1, +49.4]**, half-width ±24.2 Elo
+  (matches dispatcher prediction).
+- CI lower +1.1 > 0 — strict gate cleared by **razor-thin margin**
+  (~12 fewer wins would have flipped to Outcome B).
+
+**Additive-prediction comparison**:
+- 28C C2-DRIFT: `e28d54a` vs `.bestref` = +33.11 Elo @ 400g.
+- 28C-0 drift-corrected: C1 vs `e28d54a` = +24.4 Elo @ 400g.
+- Sum (additive): C1 vs `.bestref` ≈ +57.5 Elo.
+- Observed: **+25.2 Elo** — ~32 Elo BELOW additive prediction,
+  ~1.3σ below the sum-of-variances std dev (~25 Elo).
+
+Most likely explanation: partial regression to mean from
+CI-straddling prior measurements. Both anchor measurements
+(+33 and +24) were straddling-CI single 400g points with point
+estimates that could each be 5–20 Elo upward noise excursions;
+summing compounds the optimistic bias. **Real cumulative Elo at
+HEAD vs prior `.bestref` ≈ +25 Elo point estimate, not +57.**
+
+Consistent with Phase 27 alone (which measured +27 Elo at 400g
+vs `.bestref` and REJECTed on `CI lower > 0`): the B-2.1
+increment may contribute net ≈ 0 over Phase 27 at 800g
+resolution, or 400g sample noise dominated both prior anchor
+measurements equally. The data don't decisively distinguish; the
+cycle-break is real (CI lower > 0), the magnitude is more
+modest than additive arithmetic suggested.
+
+**Drift recalibration SKIPPED** per Outcome C protocol —
+correction could only tighten an already-cleared verdict
+(28C drift measurement on the `e28d54a` anchor was -1.74 Elo,
+statistically zero).
+
+**Commit** (1 atomic, on master, engine source byte-identical):
+
+| SHA | Subject | Notes |
+|---|---|---|
+| `b95a672` | `promote: advance .bestref to 5bd89648 (Phase 28D-1)` | Only `.bestref` config file changed. Reference node counts trivially byte-identical. |
+| (this commit) | `spec: mark Phase 28D-1 done in roadmap` | Doc — this section. |
+| (next commit) | `bench: HOTSPOTS Phase 28D-1 .bestref advance` | Doc — HOTSPOTS Outcome C section. |
+
+**Promote-harness bug** (incidental, NOT FIXED — logged for
+follow-up phase): the auto-commit branch in
+`hammerhead/hammerhead/promote.py` invokes
+`git commit --only -- <path> -m <msg>` — with `-m` AFTER the
+`--` pathspec separator. Per `git commit(1)`, everything after
+`--` is a pathspec, so `-m` + message text become invalid
+pathspecs and the commit fails. Auto-commit rolled back the
+working-tree `.bestref` but left the staged index dirty; D1-LAND
+performed manual cleanup + atomic commit. Trivial fix
+(reorder to `-m <msg> --only -- <path>`); high-priority follow-
+up for the next phase that touches `promote.py`. Reviewer
+additionally noted `specs/SPEC_BENCHMARKS.md` lacks an explicit
+`[promote]` section despite roadmap references — reconcile
+alongside.
+
+Full retrospective: `/tmp/phase_28d/PHASE_28D_1_RETRO.md`
+(gitignored per Phase 25.5 repo hygiene). D1-RUN /
+D1-LAND / D1-REV reports under `/tmp/phase_28d/1/`.
+
+## Phase 28D-2+ candidates
+
+Carried forward from Phase 28C retrospective + Phase 28D-1
+Outcome C dispatch column. Ordering not yet locked; dispatcher
+subagent sequences per host budget + risk.
+
+- **28D-2-A — BO sprint v2 vs new `.bestref` (`5bd89648`)**:
+  400g/trial (or averaged-200g) with widened bounds on 4 of 5
+  dims (`open_4 > 240k`, `closed_5 < 240k`,
+  `window_k_scores[5] < 1024`, `open_extension_factor = 0`
   unprobed). Optionally warm-start from C1 instead of HEAD-seed
   (HEAD-seed at trial #0 in C2 produced the worst result, -41.89
   Elo). Resumable study at `/tmp/phase_28c/2/study.db` — Optuna
   can extend with new sampler / bounds. Convergence early-stop
   (design.md §3 rule) cheap to wire.
-- **28D-B — Opening-diversity library + harness wiring**: deferred
-  B-1.3 + B-1.4 from Phase 28B C-DEFERRED. Replace the
-  `NotImplementedError` in `run_match` / `run_match_parallel`,
-  add `opening_moves` field to `GameConfig`, round-robin in
-  `build_game_configs`, opening-replay loop in `play_one_game`
-  after `reset`. Append 12-20 HeXO opening positions to
-  `benches/fixtures/positions.json` tagged `screen` / `validate`.
-  Pure Python, ~150 LOC + ~10-20 fixtures, bench-quick must be
-  NPS-neutral. Unblocks all future diversity A/Bs.
-- **28D-C — Tempo proxy investigation**: deferred from Phase 28B
-  retro (I1 § 3 cited TT p. 11 "tempo is the most important
+- **28D-2-B — Opening-diversity library + harness wiring**:
+  now relevant for A/B vs new `.bestref`. Deferred B-1.3 + B-1.4
+  from Phase 28B C-DEFERRED. Replace the `NotImplementedError`
+  in `run_match` / `run_match_parallel`, add `opening_moves`
+  field to `GameConfig`, round-robin in `build_game_configs`,
+  opening-replay loop in `play_one_game` after `reset`. Append
+  12-20 HeXO opening positions to `benches/fixtures/positions.json`
+  tagged `screen` / `validate`. Pure Python, ~150 LOC + ~10-20
+  fixtures, bench-quick must be NPS-neutral. Unblocks all future
+  diversity A/Bs.
+- **28D-2-C — Tempo proxy investigation**: deferred from Phase
+  28B retro (I1 § 3 cited TT p. 11 "tempo is the most important
   currency" as strongest PDF evidence for any deferred item).
   Structurally different from value tuning — requires detector
   revival or proxy invention.
-- **28D-D — 800g promote-match at HEAD vs `.bestref`**: no eval
-  change, pure measurement. C1 implied +57.5 Elo from additive
-  chain; 800g CI half-width ≈ ±24 Elo. If C1 truly sits where
-  the additive measurement places it, an 800g strict-gate match
-  would clear comfortably and finally advance `.bestref` for the
-  first time since Phase 25.5. Natural cycle-breaker after three
-  consecutive Phase-27-shape outcomes (27, 28B, 28C).
+- **28D-2-D — External arena (SealBot)**: PRIORITY per Outcome C
+  dispatch column. Cross-engine independent signal confirms
+  cumulative work is real strength, not within-engine harness
+  artifact.
+- **28D-2-E — Promote-harness commit-bug fix**: high-priority
+  follow-up logged from Phase 28D-1 D1-RUN. Trivial fix in
+  `hammerhead/hammerhead/promote.py` (reorder `-m` before `--`).
+  Bundle with `SPEC_BENCHMARKS.md § [promote]` section addition.
+- **NOT NEEDED**: 1600g promote-match (Outcome C already cleared
+  at 800g). **DEFER**: search-side tuning revival (harness floor
+  unchanged by new `.bestref`).
 
 ## Phase 26 candidates (deferred follow-ups)
 
