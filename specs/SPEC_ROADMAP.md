@@ -36,6 +36,8 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 28C-0 | subset verification (2³ factorial); reverted B-2.3 + B-2.5 per non-replication | ✅ done |
 | 28C-1 | BO sprint (60 trials × 200g, GPSampler); winner reverted on 400g validation | ✅ done |
 | 28D-1 | 800g cycle-break match HEAD vs `.bestref`; Outcome C, `.bestref` 932c5d8 → 5bd89648 | ✅ done |
+| 28D-3 | eval revival (S1 detection: open_3 / closed_3 / open_2) + I3 bug sweep; KEEP commits, no `.bestref` advance | ✅ done |
+| 28E-0 | per-stone time-fix + SDK SearchStats + fixed-depth + engine audit (1 MAJOR + 1 MINOR); KEEP, no `.bestref` advance | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
@@ -988,35 +990,120 @@ Full retrospective: `/tmp/phase_28d/PHASE_28D_3_RETRO.md` (gitignored
 per Phase 25.5 repo hygiene). Per-sub-phase reports under
 `/tmp/phase_28d/3/{diag,infra,A.{1,2,3},B.{1,2,3,4},gate}/`.
 
-## Phase 28E candidates (updated post-28D-3)
+## Phase 28E-0 — Time-Fix + SDK + Audit (KEEP commits, no .bestref advance)
 
-Phase 28D-3 D3-RETRO updated. Gap #1 (window pattern table redesign)
-PRIORITIZED based on Layer-1 length-3 collision finding from
-A.1/A.2/A.3.
+2026-05-24. Four sub-waves: TIME-DIAG + TIME-FIX (per-stone vs
+per-turn budget mechanism correction), SDK-DESIGN + SDK-IMPL (opt-in
+`SearchStats` observability + `depth=N` fixed-depth kwarg + arena
+adapter consumption), AUDIT + AUDIT-FIX (engine-wide 6-area bug sweep,
+1 MAJOR + 1 MINOR landed), VERIFY (100g external + 400g internal final
+read). 5 code/spec commits on master + 3 on hexo-arena main + 2 doc
+this retro.
 
-- **28E-A — Gap #1 (window pattern table redesign) — PRIORITY**: make
-  Layer-1 length-3 and length-2 disjoint from S1 detection. Option (a)
-  diagnostic: zero `window_k_scores[3]` and re-sweep open_3 / closed_3
-  weights against the disjoint baseline. If positive cells appear post-
-  zero, double-counting hypothesis is experimentally confirmed and tuned
-  weights become real signal. Option (b) substantive: replace
-  `window_k_scores` bucket with a 729-entry continuous pattern table per
-  axis (SB-perf style — addresses D3-DIAG Gap #2 magnitude-resolution
-  finding). Recommend (a) first as the diagnostic; (b) follows.
-- **28E-B — Tempo proxy investigation**: deferred 28B → 28C → 28D-1 →
-  28D-3. Detector revival or proxy invention. TT p.11 "tempo is the
-  most important currency" — strongest PDF evidence of any deferred
-  item.
-- **28E-C — Opening-diversity library + harness wiring**: deferred
+**Outcome: KEEP all 5 commits on master; `.bestref` NOT advanced.**
+External arena flat (VERIFY 100g 2.0% [0.5, 7.0] vs D3 GATE baseline
+4.5% [2.4, 8.4], CIs overlap); internal +40 Elo center shift vs D3
+(51.12% / +7.8 Elo [-26.2, +41.8] vs D3 45.25% / -33.1 Elo [-67.3,
++1.0]) but CI spans 0 → REJECT (no strict-positive advance). `.bestref`
+stays at `5bd89648`.
+
+### Per-sub-phase summary
+
+| Sub-phase | Commits | Outcome | Notes |
+|---|---|---|---|
+| E0-TIME-DIAG | (no commit) | CONFIRMED Hypothesis A | Root cause: `engine.rs:106` `split_budget(t, halfmove, stone1_time_pct)` halved per-stone budget (60/40 stone1/stone2 split applied to incoming per-stone time). SDK + arena always passed per-stone; engine re-divided. Mean per-stone utilisation 50.5%. |
+| E0-TIME-FIX | `1f10f6c` | mechanism corrected; arena NEUTRAL | Drop `split_budget` + `stone1_time_pct`; wire `local.time_ms = provided_time;` directly. Post-fix utilisation 100.2%. 50g cross-checks (Cond A 4.0%, Cond B 0.0%) within ±5pp of D3 baselines. Confirms 28D-3 retro eval-gap hypothesis: deficit dominated by Layer-1 length-3 double-count, not time budget. |
+| E0-SDK-DESIGN | (no commit) | A4 + B2 chosen | Bundled `SearchStats` dataclass via opt-in `return_stats=True` (A4 over A3 cached-property hazard). `depth=N` as kwarg on `suggest` (B2 over B3 separate method). |
+| E0-SDK-IMPL | `7c53fd7`, `c799f57` | additive surface live | `SearchStats(max_depth_reached, nodes, nps, time_ms, score)`; `Bot.suggest(time_ms=T, depth=N, return_stats=True)`. Default callers byte-identical. 12 new tests in `test_bot_stats.py`. Arena adapter (`5fd77f3`) consumes both; `--depth N` works end-to-end. No PyO3 changes (reused `bench_best_move` 6-tuple). |
+| E0-AUDIT | (no commit) | 1 MAJOR + 1 MINOR + 5 areas clean | 6 focus areas A-F. 12 confirm/refute scratch tests (10 pass / 2 fail-confirm D-1). |
+| E0-AUDIT-FIX | `34fa870`, `012c327` | MAJOR + MINOR landed | D-1: `Board::undo` re-derives winner from axes via `#[cold] rederive_winner(player)`. Silent since Phase 4; hot search path insulated by `pvs_node` entry-guard. NPS Δ -3.2% (within ±5% threshold). MINOR: `search.rs:304` aspiration widen-count doc comment off-by-one. |
+| E0-VERIFY | (no commit) | KEEP commits, no `.bestref` | 100g HH vs SB-perf 500ms: 2/100 = 2.0% [0.5, 7.0]; D3 baseline 4.5% [2.4, 8.4] (CI overlap). 400g internal HH vs `.bestref`: 51.12% / +7.8 Elo [-26.2, +41.8] vs D3 45.25% / -33.1 Elo [-67.3, +1.0] (+40 Elo center shift). |
+
+### Methodology finding (load-bearing)
+
+Pre-`1f10f6c`, Phase 28 arena measurements ran at ~50% intended HH
+wall-clock per stone. Cross-phase arena winrate comparisons across the
+entire Phase 28 arc are not directly comparable. The INTEGRATION_NOTES
+"at `--time T`, HH gets 2T per turn vs SB-perf's T per turn"
+characterization was inaccurate for vendored HH SHAs pre-fix and is now
+accurate again. E-1 baseline measurements must be re-taken at the post-
+fix HH effective time. D3 within-condition findings (Layer-1 length-3
+collision pattern, open_2 counter-example) hold; absolute external
+winrates do not transfer.
+
+### Commits (5 atomic on hammerhead master + 2 doc this retro)
+
+| SHA | Subject |
+|---|---|
+| `1f10f6c` | `search: fix per-stone vs per-turn time budget` |
+| `7c53fd7` | `sdk: add SearchStats + depth/return_stats kwargs to suggest` |
+| `c799f57` | `spec(api): document SearchStats + depth/return_stats kwargs` |
+| `34fa870` | `board: re-derive winner on undo of cached-winner stone (D-1)` |
+| `012c327` | `search: fix aspiration widen count doc comment (MINOR)` |
+| (prev) | `bench: HOTSPOTS Phase 28E-0 time-fix + SDK + audit` |
+| (this commit) | `spec: mark Phase 28E-0 done in roadmap` |
+
+Plus 3 on hexo-arena main: `e47e5c0` (vendor refresh), `fe7b775`
+(`--time-a/--time-b` asymmetric CLI), `5fd77f3` (adapter consumes
+SearchStats + fixed-depth).
+
+### Honest assessment
+
+External arena DID NOT MOVE. Time-fix mechanism corrected; eval-gap
+hypothesis from 28D-3 confirmed. Internal +40 Elo center shift is real
+but does not clear strict-positive advance gate. One MAJOR audit bug
+(D-1) silent since Phase 4 is fixed. SDK observability + fixed-depth
+surface ready for E-1 measurement work. Methodology finding
+(50%-utilization implicit calibration error across all of Phase 28)
+re-frames the prior arc and carries forward to E-1 baseline
+documentation. Phase 28E-1 Gap #1 (window pattern table redesign) is
+the next substantive lever.
+
+Full retrospective: `/tmp/phase_28e/PHASE_28E_0_RETRO.md` (gitignored
+per Phase 25.5 repo hygiene). Per-sub-phase reports under
+`/tmp/phase_28e/0/{time_diag,time_fix,sdk_design,sdk_impl,audit,audit_fix,verify}.md`.
+
+## Phase 28E candidates (updated post-28E-0)
+
+Phase 28E-0 closed: time-fix mechanism corrected, SDK observability
+landed, audit clean, methodology recalibration documented. E-1 picks up
+Gap #1 with the new SearchStats surface.
+
+### Phase 28E-1 candidates
+
+- **28E-1 — Gap #1 (window pattern table redesign) — PRIORITY**: make
+  Layer-1 length-3 and length-2 disjoint from S1 detection.
+  - **Step (a) diagnostic**: zero `window_k_scores[3]` and measure with
+    the new `SearchStats` surface. If `window_k_scores[3] = 0` produces
+    positive internal Elo + closes external gap, double-counting
+    hypothesis is experimentally confirmed and tuned open_3 / closed_3
+    weights become real signal.
+  - **Step (b) substantive**: replace `window_k_scores` bucket with a
+    729-entry continuous pattern table per axis (SB-perf style —
+    addresses D3-DIAG Gap #2 magnitude-resolution finding). Recommend
+    (a) first as the diagnostic; (b) follows if confirmed.
+  - E-1 baseline measurements should be re-taken at the post-fix HH
+    effective time (per E0-VERIFY methodology finding).
+
+### Phase 28E-2+ candidates
+
+- **28E-2+ — Tempo proxy investigation**: deferred 28B → 28C → 28D-1 →
+  28D-3 → 28E-0. Detector revival or proxy invention. TT p.11 "tempo is
+  the most important currency" — strongest PDF evidence of any
+  deferred item.
+- **28E-2+ — Opening-diversity library + harness wiring**: deferred
   B-1.3 / B-1.4 from Phase 28B. Library doesn't exist;
   `promote.py:372-376` + `:553-557` still raise `NotImplementedError`.
   ~150 LOC Python + 10-20 fixture entries.
-- **28E-D — Per-stone vs per-turn time-split A/B**: D3-GATE n=200
-  showed Cond A (per-turn-equiv) 7.0% > Cond B (per-stone equal) 4.5%.
-  HH 60/40 stone1/stone2 split may be suboptimal vs whole-turn-planning
-  opponents (SB-perf plans whole turns jointly). Cheap A/B (vary
-  `stone1_fraction` only).
-- **28E-E — Promote-harness commit-bug fix**: trivial reorder
+- **28E-2+ — Per-turn-joint vs per-stone-split scheduling A/B**:
+  re-scoped from defunct `stone1_fraction` A/B (the split fraction
+  concept no longer applies post-TIME-FIX — `stone1_time_pct` is
+  removed). SB-perf plans whole turns jointly in a single
+  `MinimaxBot.get_move` call; HH plans per-stone. Investigate whether
+  HH benefits from a per-turn-joint scheduling mode (sharing TT state
+  + time budget across two stones in one call) for arena gate symmetry
+  with SB.
+- **28E-2+ — Promote-harness commit-bug fix**: trivial reorder
   `-m <msg> --only -- <path>` in `promote.py` auto-commit branch.
   Bundle with next phase that touches `promote.py`. Carried from
   Phase 28D-1.
