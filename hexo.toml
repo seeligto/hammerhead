@@ -37,7 +37,7 @@ closed_4 = 20_000
 # means zero behaviour change at this stage.
 open_3   = 90_000
 closed_3 = 11250
-open_2   = 0
+open_2   = 11250
 
 # Layer 1 (window scan) — score by count of own stones in 6-cell window.
 # Index 0..=6. Index 6 maps to mate_score.
