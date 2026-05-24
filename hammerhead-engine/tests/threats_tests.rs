@@ -465,3 +465,116 @@ fn closed_three_per_player_isolation() {
     assert_eq!(tx.counts.closed_3, 1);
     assert_eq!(to.counts.closed_3, 1);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1 — open-2 (Phase 28D-3 D3-A.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn open_two_axis_q() {
+    // _XX_ on the q axis, both 2-beyond cells empty → open-2.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 1);
+    // S1 shapes do not surface as ThreatInstance entries.
+    assert!(t.s0_instances.is_empty());
+}
+
+#[test]
+fn open_two_axis_r() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (0, 1)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 1);
+}
+
+#[test]
+fn open_two_axis_s() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, -1)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 1);
+}
+
+#[test]
+fn open_two_blocked_on_one_side_is_not_open_two() {
+    // OXX_ — left neighbour is opp, so open_ends == 1; this is a
+    // closed-2 (not in scope for A.3 detection), not an open-2.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(-1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+}
+
+#[test]
+fn open_two_2beyond_blocked_left_is_not_open_two() {
+    // O_XX_ — both immediate neighbours empty, but left 2-beyond
+    // is opp. Extending left gives _XXX_-against-O which dies as
+    // a boxed 3 with no winning-6 path. Conservative gate skips.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(-2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+}
+
+#[test]
+fn open_two_2beyond_blocked_right_is_not_open_two() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(3, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+}
+
+#[test]
+fn open_two_2beyond_own_stone_still_counts() {
+    // X_XX_ — own 2-beyond stone is not opp; viability gate is
+    // "non-opp", not "empty", so this still registers. Mirrors
+    // the open-3 analogous case.
+    let mut b = fresh();
+    x(&mut b, &[(-2, 0), (0, 0), (1, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 1);
+}
+
+#[test]
+fn open_two_does_not_fire_for_length_three() {
+    // Length-3 with both ends open is open_3, not open_2.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+    assert_eq!(t.counts.open_3, 1);
+}
+
+#[test]
+fn open_two_does_not_fire_for_single_stone() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+}
+
+#[test]
+fn open_two_surrounded_by_opp_is_not_open_two() {
+    // OXXO — both ends blocked, open_ends == 0, no S1 fire.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(-1, 0), (2, 0)]);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.open_2, 0);
+}
+
+#[test]
+fn open_two_per_player_isolation() {
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0)]);
+    o(&mut b, &[(0, 5), (1, 5)]);
+    let tx = compute(&b, Player::X);
+    let to = compute(&b, Player::O);
+    assert_eq!(tx.counts.open_2, 1);
+    assert_eq!(to.counts.open_2, 1);
+}

@@ -21,11 +21,11 @@ use smallvec::SmallVec;
 /// 255 by the detection loop (deep enough never to be reached in legal
 /// play).
 ///
-/// S0 fields (`open_5`, `closed_5`, `open_4`, `closed_4`) are populated
-/// by [`walk_linear_runs`]. S1 fields (`open_3`, `closed_3`, `open_2`)
-/// were revived as types in Phase 28D-3 D3-INFRA; the corresponding
-/// detectors land in sub-phases D3-A.1 / A.2 / A.3 and the counts stay
-/// at zero until then.
+/// S0 fields (`open_5`, `closed_5`, `open_4`, `closed_4`) and S1
+/// fields (`open_3`, `closed_3`, `open_2`) are all populated by
+/// [`walk_linear_runs`]. The S1 trio was revived as types in
+/// Phase 28D-3 D3-INFRA; detectors landed in D3-A.1 (`open_3`),
+/// D3-A.2 (`closed_3`), and D3-A.3 (`open_2`).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThreatCounts {
     /// `_XXXXX_` (both ends empty).
@@ -308,6 +308,24 @@ fn classify_linear_run(
             };
             if !board.axes().is_player(open_cell_beyond, opp) {
                 bump_s1(out, |c| c.closed_3 = c.closed_3.saturating_add(1));
+            }
+        }
+        (2, 2) => {
+            // Open-2 (S1, Phase 28D-3 D3-A.3): `_XX_` with BOTH
+            // immediate neighbours empty AND both 2-cells-beyond
+            // non-opp. The 2-beyond gate mirrors open-3's growth
+            // check — `O_XX_O` would extend to `_XXX_` already
+            // boxed on both sides by O, dying as a dead 3 with no
+            // path to a winning 6. Conservative gate applied
+            // symmetrically since open-2 needs viability on both
+            // ends. Closed-2 (`OXX_`) is intentionally NOT in
+            // scope: lowest-value S1 shape, single-sided viability
+            // adds noise without commensurate signal per D3-DIAG.
+            let beyond_left = coord_at(axis, line_id, start_pos - 2);
+            let beyond_right = coord_at(axis, line_id, end_pos + 2);
+            let bm = board.axes();
+            if !bm.is_player(beyond_left, opp) && !bm.is_player(beyond_right, opp) {
+                bump_s1(out, |c| c.open_2 = c.open_2.saturating_add(1));
             }
         }
         _ => {}
