@@ -65,6 +65,9 @@ class SearchStats:
     nps: float
     time_ms: float
     score: int
+    best_move_rank: int = 0
+    qsearch_nodes: int = 0
+    qsearch_max_depth: int = 0
 
 
 SuggestResult = Union[Move, Tuple[Move, SearchStats]]
@@ -335,7 +338,7 @@ class Bot:
         else:
             budget = time_ms
         if return_stats:
-            q, r, score, dr, nodes, tms = self._engine.bench_best_move(
+            q, r, score, dr, nodes, tms, rank, qn, qd = self._engine.bench_best_move(
                 time_ms=budget, depth=depth,
             )
             nps = (nodes / (tms / 1000.0)) if tms > 0 else 0.0
@@ -345,6 +348,9 @@ class Bot:
                 nps=float(nps),
                 time_ms=float(tms),
                 score=int(score),
+                best_move_rank=int(rank),
+                qsearch_nodes=int(qn),
+                qsearch_max_depth=int(qd),
             )
             return (int(q), int(r)), stats
         q, r = self._engine.best_move(time_ms=budget, depth=depth)

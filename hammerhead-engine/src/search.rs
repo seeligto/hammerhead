@@ -56,6 +56,19 @@ pub struct SearchScratch {
     pub buckets: Box<[Vec<u8>; MAX_PLY]>,
     /// Per-ply qsearch threat sub-list (filtered subset of `moves`).
     pub threats: Box<[Vec<Coord>; MAX_PLY]>,
+    /// TEMP (Phase 28F-3-0.5): rank (0-based) of the move that set the
+    /// final best-move at ply 0 during the current ID iteration. Reset
+    /// to 0 at the start of each iteration; updated by `try_one_move`
+    /// whenever `ply == 0` and `best_move` is overwritten.
+    pub last_root_best_idx: u32,
+    /// TEMP (Phase 28F-3-0.5): cumulative nodes visited inside
+    /// `quiescence_node` during the current `search_root` call. Reset
+    /// at the top of `search_root`; copied into `SearchResult` on exit.
+    pub qsearch_nodes: u64,
+    /// TEMP (Phase 28F-3-0.5): maximum `q_ply` reached inside
+    /// `quiescence_node` during the current `search_root` call. Reset
+    /// at the top of `search_root`; copied into `SearchResult` on exit.
+    pub qsearch_max_depth: u32,
 }
 
 impl Default for SearchScratch {
@@ -76,6 +89,9 @@ impl SearchScratch {
             scored: Box::new(std::array::from_fn(|_| Vec::new())),
             buckets: Box::new(std::array::from_fn(|_| Vec::new())),
             threats: Box::new(std::array::from_fn(|_| Vec::new())),
+            last_root_best_idx: 0,
+            qsearch_nodes: 0,
+            qsearch_max_depth: 0,
         }
     }
 
@@ -161,6 +177,16 @@ pub struct SearchResult {
     pub nodes: u64,
     /// Wall-clock time consumed in milliseconds.
     pub time_ms: u64,
+    /// TEMP (Phase 28F-3-0.5): rank (0-based) of the move that set the
+    /// final best-move at ply 0 during the last completed ID iteration.
+    /// 0 when the TT-move was chosen or there was a single root move.
+    pub best_move_rank: u32,
+    /// TEMP (Phase 28F-3-0.5): cumulative nodes visited inside
+    /// `quiescence_node`. Subset of `nodes`.
+    pub qsearch_nodes: u64,
+    /// TEMP (Phase 28F-3-0.5): maximum quiescence ply (extension depth
+    /// past main-search bottom) reached during the call.
+    pub qsearch_max_depth: u32,
 }
 
 impl Default for SearchResult {
@@ -171,6 +197,9 @@ impl Default for SearchResult {
             depth_reached: 0,
             nodes: 0,
             time_ms: 0,
+            best_move_rank: 0,
+            qsearch_nodes: 0,
+            qsearch_max_depth: 0,
         }
     }
 }
@@ -207,6 +236,9 @@ pub fn search_root(
     ordering.reset_killers(); // R-08-A: per-`best_move()` killer hygiene.
     ordering.decay_history();
     search_stats::reset();
+    // TEMP (Phase 28F-3-0.5): per-call qsearch counters live on scratch.
+    scratch.qsearch_nodes = 0;
+    scratch.qsearch_max_depth = 0;
 
     let mut result = SearchResult::default();
     // Prime the fallback so a depth-1 timeout still returns *some* legal
@@ -249,13 +281,16 @@ pub fn search_root(
             deadline,
             &mut node_count,
         ) {
-            Ok((score, best_move)) => {
+            Ok((score, best_move, best_rank)) => {
                 result = SearchResult {
                     best_move,
                     score,
                     depth_reached: depth,
                     nodes: node_count,
                     time_ms: elapsed_ms(start),
+                    best_move_rank: best_rank,
+                    qsearch_nodes: 0,
+                    qsearch_max_depth: 0,
                 };
                 prev_score = Some(score);
             }
@@ -271,6 +306,9 @@ pub fn search_root(
     }
     result.time_ms = elapsed_ms(start);
     result.nodes = node_count;
+    // TEMP (Phase 28F-3-0.5): publish qsearch counters into the result.
+    result.qsearch_nodes = scratch.qsearch_nodes;
+    result.qsearch_max_depth = scratch.qsearch_max_depth;
     search_stats::dump_stderr();
     result
 }
@@ -288,8 +326,9 @@ fn iterate_at_depth(
     prev_score: Option<i32>,
     deadline: Option<Instant>,
     node_count: &mut u64,
-) -> Result<(i32, Coord), SearchError> {
+) -> Result<(i32, Coord, u32), SearchError> {
     let root_hash = board.hash();
+    scratch.last_root_best_idx = 0;
     let widen = i32::try_from(cfg.asp_window_widen_factor.max(2)).unwrap_or(2);
     let mut delta = cfg.asp_window_initial.max(1);
 
@@ -326,7 +365,7 @@ fn iterate_at_depth(
         search_stats::note_asp_iter(fail_low, fail_high, at_full_window);
         if (!fail_low && !fail_high) || at_full_window {
             let best = tt.probe(root_hash).map_or(ORIGIN, |entry| entry.best_move);
-            return Ok((score, best));
+            return Ok((score, best, scratch.last_root_best_idx));
         }
         attempt += 1;
         if attempt >= 2 {
@@ -764,6 +803,9 @@ fn try_one_move(
         if score > *best_score {
             *best_score = score;
             *best_move = m;
+            if ply == 0 {
+                scratch.last_root_best_idx = move_idx as u32;
+            }
         }
         if score > *alpha {
             *alpha = score;
@@ -772,6 +814,9 @@ fn try_one_move(
         if score < *best_score {
             *best_score = score;
             *best_move = m;
+            if ply == 0 {
+                scratch.last_root_best_idx = move_idx as u32;
+            }
         }
         if score < *beta {
             *beta = score;
@@ -805,6 +850,11 @@ fn quiescence_node(
     node_count: &mut u64,
 ) -> SearchScore {
     bump_and_check_deadline(node_count, cfg, deadline)?;
+    // TEMP (Phase 28F-3-0.5): split qsearch nodes out of the total counter.
+    scratch.qsearch_nodes += 1;
+    if u32::from(q_ply) > scratch.qsearch_max_depth {
+        scratch.qsearch_max_depth = u32::from(q_ply);
+    }
     if let Some(winner) = board.winner() {
         return Ok(terminal_score(winner, ply));
     }
