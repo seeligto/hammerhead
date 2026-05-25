@@ -1,3 +1,117 @@
+# Hotspots — Sprint 1 (Free-wins bundle: iai-callgrind + PGO + TT prefetch)
+
+## Sprint 1 status (2026-05-25)
+
+3-item bundle from `analysis/baseline_ae539b7/verdict.md` (Free Wins
+group). All three landed; `.bestref` advanced.
+
+**Headline:** +7.4% bench-quick NPS (622k → 668k @ 500 ms midgame_12)
+cumulative across the sprint. 200 g vs `.bestref` (cfefb3b @ 500 ms):
+115-85-0, **Elo +52.5, Wilson CI [+4.0, +101.1]**. SPRT inconclusive
+(llr +0.822 inside ±2.944), but the Wilson lower-bound > 0 criterion
+(plan § 7.3) cleared, so manual promote per plan § 8.3. `.bestref`
+advanced cfefb3b → `cac186e`.
+
+### 1A — iai-callgrind deterministic gate
+
+Adds `hammerhead-engine/benches/iai_search.rs`: two fixtures (midgame_12,
+midgame_30) at depth 6, instrumented under valgrind callgrind. Two
+consecutive runs **byte-identical** (3,041,711,776 ins midgame_12 / 542,394,020
+ins midgame_30). Resolves sub-1% regressions in 40 s vs the multi-hour
+arena previously required (Phase 26.5 / 28F-2 noise-bound at 200 g × 500 ms).
+
+Host caveat: `target-cpu=native` on Zen2+ emits sha-ni / rdpru / etc. which
+valgrind 3.25.1 cannot translate (SIGILL). `make bench-iai` overrides
+`RUSTFLAGS=-C target-feature=+avx2,+bmi2,+fma,+popcnt,+sse4.2`. AVX2-baseline
+codegen differs slightly from the deployed binary; iai is for *relative*
+regression detection, not absolute modelling.
+
+Commits: `75899b3` (spec), `caf6cf3` (bench + Cargo.toml + Makefile).
+
+### 1B — PGO shipped
+
+`make pgo` now the canonical release build path. Re-runs the 4-pass
+instrumented → training → merge → optimized pipeline (~3 min wall-clock).
+`scripts/pgo_build.sh` patched to export `CARGO_TARGET_DIR=hammerhead-engine/target-pgo`,
+isolating PGO builds from the main `target/` (used by `make build`,
+`make bench-iai`). Merged profile is 5.6 MB.
+
+**+5.0% bench-quick NPS** (622k → 653k mean of 3 runs). Verdict predicted
++5.4%; observed +5.0% — in band. Reference node counts byte-identical
+(PGO doesn't change algorithm, only codegen). 100 g vs .bestref: +52.5 Elo,
+CI lower -15.9 (gate ≥ -50, clears comfortably).
+
+Worktree-PGO opt-in skipped per plan § 11 fallback. `pgo_build.sh`
+hardcodes `.venv` (worktree uses `.venv-best`), and the worktree at
+cfefb3b has no `rust-toolchain.toml`. Cross-version invocation too
+fragile for sprint scope. Worktree stays non-PGO; documented ~+3 Elo
+asymmetric bias toward HEAD in time-budgeted arena.
+
+Commits: `8320aa1` (spec), `a69ed56` (script + gitignore).
+`make pgo` target already existed (Phase 14, Makefile:117), no new commit.
+
+### 1C — TT prefetch on child probe
+
+Added `TranspositionTable::prefetch(hash)` → `_mm_prefetch::<_MM_HINT_T0>`
+on the bucket pointer (x86_64 only, no-op stub elsewhere). Hint-only;
+cannot fault, cannot race, cannot alter correctness. Wired at all
+three post-`board.place(m)` sites in `search.rs`:
+
+1. `try_one_move` (PVS main move loop)
+2. `quiescence_node` (qsearch TT-move attempt)
+3. `quiescence_node` (qsearch threat-move loop)
+
+Phase-25 guardrail satisfied: `cargo asm` confirms **3 `prefetcht0`
+instructions** across `try_one_move` (1) + `quiescence_node` (2). LLVM
+did not elide the intrinsic.
+
+**+2.3% bench-quick NPS** vs 1B PGO baseline (653k → 668k). Verdict
+predicted +1.5-3%; observed +2.3% — in band. iai-callgrind midgame_12:
+**LL hits -1.4%** (the DRAM-hiding signal), instructions +488 k (the
+prefetch ops themselves). Reference node counts byte-identical.
+100 g arena: +63.2 Elo, CI lower -5.6 (clears -50 gate).
+
+Commits: `33ebb3c` (spec), `cac186e` (impl).
+
+### Aggregate
+
+| Phase     | bench-quick NPS | Δ vs Phase 0 | Δ step |
+|-----------|----------------:|-------------:|-------:|
+| baseline  | 622 k          | —            | —      |
+| post-1A   | 623 k          | +0.2%        | —      |
+| post-1B   | 653 k          | +5.0%        | +5.0%  |
+| post-1C   | **668 k**      | **+7.4%**    | +2.3%  |
+
+| Bench (post-1C iai)    | ins         | LL hits   | RAM hits | Est cyc      |
+|------------------------|------------:|----------:|---------:|-------------:|
+| midgame_12             | 3,042,199,968 | 3,383,540 | 44,434  | 3,897,481,285 |
+| midgame_30             | 542,468,100   | 594,353   | 10,642  | 696,573,982   |
+
+### `.bestref` decision
+
+**ADVANCE** cfefb3b → `cac186e`. Manual promote per plan § 8.3
+(SPRT was INCONCLUSIVE; Wilson lower-bound was the binding criterion).
+
+### Sprint 2 handoff (ranked)
+
+Ordered by Elo lever, not NPS lever. Sprint 1 was NPS-only; Sprint 2 is
+the Elo-aimed sweep.
+
+1. **Proximity bundle** (D #1, A P-1/P-2, B #1, B #3 from
+   `analysis/baseline_ae539b7/`). The hot ordering / candidate-buffer
+   path is the largest single self-time sink per HOTSPOTS Phase 28E-2.
+2. **eval_cache `repr(align(64))` split** — false-sharing audit on the
+   inner-loop eval cache lines. Verdict #12c.
+3. **LMR retune** — Sprint 1 unblocks this by providing the iai gate
+   needed for sub-1% Elo measurement on individual reduction-bucket
+   tweaks.
+4. **RefCell unsafe shortcut** (E #1) — small NPS win, surveying-only.
+
+Out of Sprint 1 scope per plan § 10: symmetry/canonicalisation,
+opening book, mate DB, BOLT (still deferred per verdict).
+
+---
+
 # Hotspots — Phase 28E-2 (cluster shape falsification + opening diversity)
 
 ## Phase 28E-2 status (2026-05-25)
