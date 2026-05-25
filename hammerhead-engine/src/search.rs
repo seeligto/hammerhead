@@ -438,7 +438,9 @@ fn pvs_node(
     }
 
     if depth <= 0 {
-        return quiescence_node(board, scratch, cfg, alpha, beta, ply, 0, deadline, node_count);
+        return quiescence_node(
+            board, tt, scratch, cfg, alpha, beta, ply, 0, deadline, node_count,
+        );
     }
 
     // ── R-01 staged move iteration ──────────────────────────────────────────
@@ -837,9 +839,15 @@ fn try_one_move(
 /// Threat-only quiescence. Stand-pat with the cached static eval; only
 /// recurse on moves that create an own S0, block an opponent S0, or make
 /// a 6-in-row. Hard-capped at `cfg.qsearch_max_plies`.
-#[allow(clippy::too_many_arguments)]
+///
+/// `_tt` is plumbed in for Phase 28F-3.4 (qsearch TT probe + store); the
+/// commit that adds it is pure plumbing — the parameter is unused at
+/// this commit and the underscore prefix marks that intent. The next
+/// commit drops the prefix and writes through the TT.
+#[allow(clippy::too_many_arguments, clippy::used_underscore_binding)]
 fn quiescence_node(
     board: &mut Board,
+    _tt: &mut TranspositionTable,
     scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     mut alpha: i32,
@@ -910,6 +918,7 @@ fn quiescence_node(
             .expect("ordered threat must be legal in qsearch");
         let r = quiescence_node(
             board,
+            _tt,
             scratch,
             cfg,
             alpha,
