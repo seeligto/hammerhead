@@ -184,9 +184,17 @@ deterministic to within tens of instructions, runs in seconds.
 - **File:** `hammerhead-engine/benches/iai_search.rs`. Two fixtures
   (`midgame_12`, `midgame_30`) at fixed depth 6, calling `search_root`
   directly. No timeout; the search runs to completion.
-- **Dep:** `iai-callgrind = "0.16"` under `[dev-dependencies]`.
-- **Invocation:** `cargo bench --bench iai_search`. Requires `valgrind`
-  (Arch: `pacman -S valgrind`).
+- **Dep:** `iai-callgrind = "0.16"` under `[dev-dependencies]`. Runner
+  binary at `~/.cargo/bin/iai-callgrind-runner` (`cargo install
+  iai-callgrind-runner --version 0.16.1` if missing).
+- **Invocation:** `make bench-iai`. Requires `valgrind` (Arch:
+  `pacman -S valgrind`). The make target sets
+  `RUSTFLAGS=-C target-feature=+avx2,+bmi2,+fma,+popcnt,+sse4.2` to
+  override the `.cargo/config.toml` `target-cpu=native` default —
+  `target-cpu=native` on Zen2+ emits `sha-ni` / `rdpru` / etc. which
+  valgrind 3.25.1 cannot translate (SIGILL). The AVX2 baseline differs
+  slightly from the deployed binary's codegen but is byte-stable
+  across runs.
 - **Determinism bar:** two consecutive runs must agree to ≤ 50
   instructions per bench. Any drift beyond that is a host-state bug
   (background load, CPU pinning, perf-paranoid setting), not a code

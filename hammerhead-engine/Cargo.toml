@@ -47,10 +47,11 @@ toml = { version = "0.9", default-features = false, features = ["parse", "serde"
 # bench_drain is an `[[example]]` (not `[[bin]]`) so it can use these
 # dev-deps without bloating the production cdylib.
 [dev-dependencies]
-criterion   = { version = "0.7", features = ["html_reports"] }
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-chrono      = { version = "0.4", default-features = false, features = ["clock"] }
+criterion     = { version = "0.7", features = ["html_reports"] }
+serde         = { version = "1", features = ["derive"] }
+serde_json    = "1"
+chrono        = { version = "0.4", default-features = false, features = ["clock"] }
+iai-callgrind = "0.16"
 
 [profile.release]
 opt-level     = 3
@@ -119,6 +120,10 @@ harness = false
 
 [[bench]]
 name = "bench_search"
+harness = false
+
+[[bench]]
+name = "iai_search"
 harness = false
 
 [[example]]

@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help build build-tt-stats clean rebuild test lint fmt check vs \
         promote install bench bench-quick bench-perf bench-micro \
-        bench-micro-quick bench-diff bench-baseline flamegraph pgo \
+        bench-micro-quick bench-iai bench-diff bench-baseline flamegraph pgo \
         tune tune-smoke
 
 ENGINE    := hammerhead-engine
@@ -101,6 +101,16 @@ bench-micro: ## criterion benches for one TARGET (default: all) + drain
 bench-micro-quick: ## [Phase 16] fast criterion for one TARGET (~5-10s, no drain)
 	@cd $(ENGINE) && cargo bench --bench bench_$(TARGET) -- \
 	    --sample-size 10 --measurement-time 1 --warm-up-time 0.5
+
+# iai-callgrind deterministic gate (Sprint 1A). Requires valgrind.
+# `target-cpu=native` emits sha-ni / rdpru / etc. on Zen2+ which
+# valgrind 3.25.1 cannot translate → SIGILL. Override with an AVX2
+# baseline that valgrind handles cleanly. Codegen differs slightly from
+# the deployed binary; iai is for *relative* regression detection.
+bench-iai: ## [Sprint 1A] deterministic instruction-count gate (~40s, requires valgrind)
+	@cd $(ENGINE) && \
+	    RUSTFLAGS='-C target-feature=+avx2,+bmi2,+fma,+popcnt,+sse4.2' \
+	    cargo bench --bench iai_search
 
 bench-diff: ## diff two run JSONs (use A= and B=, names resolved under benches/results/)
 	@$(VPY) -m hammerhead.cli bench diff $(A) $(B)
