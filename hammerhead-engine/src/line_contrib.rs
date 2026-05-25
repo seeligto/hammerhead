@@ -64,7 +64,11 @@ impl LineContrib {
     #[inline]
     pub(crate) fn invalidate(&mut self, axis: Axis, line_id: i16) {
         let idx = slot_index(axis, line_id);
-        self.slots[idx] = SENTINEL;
+        debug_assert!(idx < self.slots.len(), "slot_index {idx} out of range");
+        // SAFETY: `slot_index` debug-asserts `line_id` ∈ window bounds,
+        // and `self.slots.len() == NUM_AXES * LINE_ID_RANGE` by ctor;
+        // therefore `idx < self.slots.len()` for every legal `line_id`.
+        unsafe { *self.slots.get_unchecked_mut(idx) = SENTINEL };
     }
 
     /// Mark the 3 lines (Q, R, S) through `c` as dirty. Called from
