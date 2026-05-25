@@ -1132,6 +1132,74 @@ per Phase 25.5 repo hygiene). Per-stage reports under
 `/tmp/phase_28e/2/{stage-0,stage-1}/{implementer,review}.md`. Sweep
 outputs at `benches/results/tune/rhombus/B/{20260524T210750,20260524T225139,20260525T013817}/*.json`.
 
+## Phase 28F-3.1 — Qsearch cap raise (REVERT, .bestref unchanged)
+
+2026-05-25. Single-constant experiment to test the dispatcher's
+sub-phase 0 finding: 92.9% of cluster decisive positions hit HH's
+qsearch cap of 8. Cap-raise to 16 brings parity with SB-perf's
+`MAX_QDEPTH = 16` (`engine/constants.h:50`). Tried cap=16, then
+cap=12 fallback.
+
+**Outcome: REVERT. `.bestref` unchanged at `5bd89648`.** Hypothesis
+fully falsified.
+
+### Results
+
+| Variant | Internal vs cap=8 (200g, 500ms) | External vs SB-perf (200g, 500ms) |
+|---|---|---|
+| cap=16 | −63.2 Elo (CI −112 to −14) | (not run; internal failed gate) |
+| cap=12 | −20.9 Elo (CI −69 to +27) | 0/200 (0.0%, baseline 2–5%) |
+
+### Why the smoking gun misled us
+
+The 92.9% cap-hit rate measured **cap reach**, not **truncated
+useful resolution**. Many cap hits occur on lines already resolved
+at stand-pat, or where further extension would not flip the score.
+Raising the cap pays the cost on all of these without proportional
+signal gain.
+
+`bench-quick` on quiet fixture `midgame_12` was deceptive: NPS
+unchanged, qsearch_max_depth utilized, qsearch_nodes_mean nearly
+flat. Real games hit forcing positions where qsearch DOES expand
+much more under cap=12/16, propagating cost across main search
+and reducing effective depth.
+
+### Cross-cut: SB-perf parity does not transfer
+
+SB-perf cap=16 works for SB-perf because of properties HH lacks
+(TT/ordering/eval-stability at depth). Matching the constant
+without matching the surrounding design is net-negative.
+
+### Commits
+
+| SHA | Subject |
+|---|---|
+| `99afbeb` | `qsearch: raise max_plies cap from 8 to 16` (kept for history) |
+| `2a9bc84` | `qsearch: try cap=12 after cap=16 lost -63 Elo internally` (kept for history) |
+| `64c1e34` | `qsearch: revert cap to 8 — raise to 12/16 falsified (28F-3.1)` |
+| `1d82e13` | `Revert "TEMP bench: consume 9-tuple from bench_best_move..."` |
+| `9d48986` | `Revert "Reapply 'TEMP search: add rank + qsearch stats...'"` |
+
+Bench/match raw outputs under `/tmp/phase_28f/3/1/` (gitignored).
+
+### 28F-3.2 seed
+
+Cluster bucket still search-bound (per Phase 28F-3 sub-phase 0).
+Three branches in priority order:
+
+1. **Diagnose why qsearch deeper-than-8 is *worse* in HH.** Does
+   qsearch at depth 9–16 generate *wrong* stand-pat scores that
+   propagate into main search? Temporary per-ply qsearch-result
+   distribution vs shallow-search ground truth on cluster
+   positions. Cheapest, no code change.
+2. **Pivot to a different search-side lever.** Sub-phase 0 ruled
+   out root ordering (100% rank 0). Next candidates: TT collision
+   rate at depth, killer-move hit rate, PVS re-search rate.
+3. **Selective extension on forced-only paths** (dispatcher option
+   3). No global cap; extend unbounded where branching factor ≤ 2.
+   Avoids global cost-blowup that killed cap=12/16. Most expensive,
+   regression risk.
+
 ## Phase 28E candidates (updated post-28E-2)
 
 Phase 28E-0 closed: time-fix mechanism corrected, SDK observability
