@@ -1451,5 +1451,187 @@ mod tests {
             }
         }
     }
+
+    // ── qsearch filter mode tests ────────────────────────────────────────
+
+    /// Build a board with `count` X stones in a row starting at (start, 0).
+    fn x_open_row(start: i16, count: i16) -> Board {
+        let mut b = Board::new();
+        for q in start..(start + count) {
+            b.place_for_test(Coord::new(q, 0), Player::X);
+        }
+        b
+    }
+
+    /// Resolution excludes a move that only `creates_s0` (no win, no opp S0 block).
+    /// X has 3-in-a-row; extending to 4 at (3,0) creates an open-4 (S0).
+    #[test]
+    fn resolution_excludes_creates_s0_only() {
+        let b = x_open_row(0, 3);
+        let m = Coord::new(3, 0);
+        let side = Player::X;
+
+        assert!(
+            ordering::creates_s0(&b, m, side),
+            "test setup: (3,0) must create S0 for X"
+        );
+        assert!(
+            !ordering::would_make_six(&b, m, side),
+            "test setup: (3,0) must not win"
+        );
+        assert!(
+            !ordering::blocks_opp_s0(&b, m, side),
+            "test setup: no opp S0 to block"
+        );
+
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Current),
+            "Current must include creates_s0 move"
+        );
+        assert!(
+            !is_threat_move(&b, m, side, QsearchFilterMode::Resolution),
+            "Resolution must exclude creates_s0-only move"
+        );
+        assert!(
+            !is_threat_move(&b, m, side, QsearchFilterMode::Urgent),
+            "Urgent must exclude creates_s0-only move"
+        );
+    }
+
+    /// Urgent excludes a `blocks_opp_s0` move when opponent has only open-4
+    /// (not an immediate six). O has 4-in-a-row; (4,0) blocks S0 but doesn't
+    /// complete O's 6-in-row (O only has 4 stones, not 5).
+    #[test]
+    fn urgent_excludes_blocks_opp_s0_non_immediate_win() {
+        let mut b = Board::new();
+        for q in 0..4_i16 {
+            b.place_for_test(Coord::new(q, 0), Player::O);
+        }
+        let m = Coord::new(4, 0);
+        let side = Player::X;
+        let opp = Player::O;
+
+        assert!(
+            ordering::blocks_opp_s0(&b, m, side),
+            "test setup: (4,0) must block O's S0"
+        );
+        assert!(
+            !ordering::would_make_six(&b, m, side),
+            "test setup: X has no run near (4,0)"
+        );
+        assert!(
+            !ordering::would_make_six(&b, m, opp),
+            "test setup: O has 4; placing at (4,0) extends to 5 not 6"
+        );
+
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Current),
+            "Current must include blocks_opp_s0 move"
+        );
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Resolution),
+            "Resolution must include blocks_opp_s0 move"
+        );
+        assert!(
+            !is_threat_move(&b, m, side, QsearchFilterMode::Urgent),
+            "Urgent must exclude blocks_opp_s0 when opp lacks immediate 6"
+        );
+    }
+
+    /// Urgent includes the cell that completes an opponent open-5 (immediate six).
+    /// O has 5-in-a-row; (5,0) would give O a 6-in-row — all modes must include it.
+    #[test]
+    fn urgent_includes_block_of_opponent_immediate_six() {
+        let mut b = Board::new();
+        for q in 0..5_i16 {
+            b.place_for_test(Coord::new(q, 0), Player::O);
+        }
+        let m = Coord::new(5, 0);
+        let side = Player::X;
+        let opp = Player::O;
+
+        assert!(
+            ordering::would_make_six(&b, m, opp),
+            "test setup: (5,0) must complete O's 6-in-row"
+        );
+        assert!(
+            !ordering::would_make_six(&b, m, side),
+            "test setup: X has no run near (5,0)"
+        );
+
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Current),
+            "Current must include opp-immediate-six block"
+        );
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Resolution),
+            "Resolution must include opp-immediate-six block (blocks_opp_s0)"
+        );
+        assert!(
+            is_threat_move(&b, m, side, QsearchFilterMode::Urgent),
+            "Urgent must include opp-immediate-six block (would_make_six(opp))"
+        );
+    }
+
+    /// Current is the union of all three predicates.
+    /// Three moves: A = X wins (`would_make_six` only), B = `creates_s0` only,
+    /// C = `blocks_opp_s0` only (opp open-4, not immediate six).
+    #[test]
+    fn current_is_union_of_all_predicates() {
+        let mut b = Board::new();
+        // X 5-in-a-row at (10..14,0). Move A=(15,0) wins.
+        for q in 10..15_i16 {
+            b.place_for_test(Coord::new(q, 0), Player::X);
+        }
+        // X 3-in-a-row at (0..2,0). Move B=(3,0) creates S0 (open-4).
+        for q in 0..3_i16 {
+            b.place_for_test(Coord::new(q, 0), Player::X);
+        }
+        // O 4-in-a-row at (20..23,0). Move C=(19,0) blocks O's S0.
+        for q in 20..24_i16 {
+            b.place_for_test(Coord::new(q, 0), Player::O);
+        }
+
+        let side = Player::X;
+        let move_a = Coord::new(15, 0);
+        let move_b = Coord::new(3, 0);
+        let move_c = Coord::new(19, 0);
+
+        assert!(
+            ordering::would_make_six(&b, move_a, side),
+            "move_a must be a winning move for X"
+        );
+        assert!(
+            ordering::creates_s0(&b, move_b, side),
+            "move_b must create S0 for X"
+        );
+        assert!(
+            !ordering::would_make_six(&b, move_b, side),
+            "move_b must not win"
+        );
+        assert!(
+            ordering::blocks_opp_s0(&b, move_c, side),
+            "move_c must block O's S0"
+        );
+        assert!(
+            !ordering::would_make_six(&b, move_c, side),
+            "move_c must not win for X"
+        );
+
+        // Current: all three.
+        assert!(is_threat_move(&b, move_a, side, QsearchFilterMode::Current));
+        assert!(is_threat_move(&b, move_b, side, QsearchFilterMode::Current));
+        assert!(is_threat_move(&b, move_c, side, QsearchFilterMode::Current));
+
+        // Resolution: win + block; excludes creates_s0-only.
+        assert!(is_threat_move(&b, move_a, side, QsearchFilterMode::Resolution));
+        assert!(!is_threat_move(&b, move_b, side, QsearchFilterMode::Resolution));
+        assert!(is_threat_move(&b, move_c, side, QsearchFilterMode::Resolution));
+
+        // Urgent: win only; O's open-4 is not immediate six so move_c excluded.
+        assert!(is_threat_move(&b, move_a, side, QsearchFilterMode::Urgent));
+        assert!(!is_threat_move(&b, move_b, side, QsearchFilterMode::Urgent));
+        assert!(!is_threat_move(&b, move_c, side, QsearchFilterMode::Urgent));
+    }
 }
 
