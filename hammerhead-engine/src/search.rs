@@ -836,18 +836,30 @@ fn try_one_move(
 // Quiescence
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Depth convention for qsearch TT entries. Stored as `i8 = -1` so the
+/// two-bucket replacement (`depth >= a.depth`, signed compare) NEVER
+/// evicts a main-search entry (`depth >= 0`) from the depth-preferred
+/// slot. `TTEntry::EMPTY.depth == -1` is disambiguated by
+/// `flag == Empty` — a stored qsearch entry has a non-Empty flag, so
+/// probes correctly distinguish "stored at depth -1" from "empty slot".
+const QSEARCH_NODE_DEPTH: i8 = -1;
+
 /// Threat-only quiescence. Stand-pat with the cached static eval; only
 /// recurse on moves that create an own S0, block an opponent S0, or make
 /// a 6-in-row. Hard-capped at `cfg.qsearch_max_plies`.
 ///
-/// `_tt` is plumbed in for Phase 28F-3.4 (qsearch TT probe + store); the
-/// commit that adds it is pure plumbing — the parameter is unused at
-/// this commit and the underscore prefix marks that intent. The next
-/// commit drops the prefix and writes through the TT.
-#[allow(clippy::too_many_arguments, clippy::used_underscore_binding)]
+/// Phase 28F-3.4: when `cfg.qsearch_tt_enabled` is true, stores a TT
+/// entry at function tail iff at least one threat move was recursed.
+/// Stand-pat-only / cap / no-threat early-returns DO NOT store — the
+/// store is a search-derived bound, not an eval-derived one. The flag
+/// is computed from `(best_score, alpha_orig, beta_orig)` snapshotted
+/// at function entry (NOT from the in-flight `alpha` / `beta` refined
+/// by stand-pat) so Lower / Upper / Exact classification mirrors
+/// `pvs_node` exactly.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn quiescence_node(
     board: &mut Board,
-    _tt: &mut TranspositionTable,
+    tt: &mut TranspositionTable,
     scratch: &mut SearchScratch,
     cfg: &SearchConfig,
     mut alpha: i32,
@@ -862,10 +874,20 @@ fn quiescence_node(
         return Ok(terminal_score(winner, ply));
     }
 
+    // Snapshot original window for bound-type classification at the
+    // function-tail TT store. MUST stay frozen across stand-pat
+    // refinement and recursive `alpha` / `beta` tightening — using the
+    // in-flight values would mis-classify Lower / Upper bounds (R2).
+    let alpha_orig = alpha;
+    let beta_orig = beta;
+
     let side = board.to_move();
     let maximize = matches!(side, Player::X);
     let static_eval = board.cached_eval();
 
+    // Stand-pat early-returns do NOT store to TT (I5): the bound is
+    // eval-derived, not search-derived. Storing them would pollute the
+    // TT with redundant `cached_eval` copies.
     if maximize {
         if static_eval >= beta {
             return Ok(beta);
@@ -911,6 +933,9 @@ fn quiescence_node(
     }
 
     let mut best = if maximize { alpha } else { beta };
+    let mut best_score_for_tt = best;
+    let mut qs_best_move: Coord = ORIGIN;
+    let mut searched_any_move = false;
     for i in 0..threat_count {
         let m = scratch.threats[ply_idx][i];
         board
@@ -918,7 +943,7 @@ fn quiescence_node(
             .expect("ordered threat must be legal in qsearch");
         let r = quiescence_node(
             board,
-            _tt,
+            tt,
             scratch,
             cfg,
             alpha,
@@ -930,8 +955,20 @@ fn quiescence_node(
         );
         board.undo().expect("undo own placement in qsearch");
         let score = r?;
+        searched_any_move = true;
+        // Track the unclamped best score for the TT store. `best` is
+        // initialised from clamped alpha/beta and can never fall below
+        // its starting value; for fail-low/exact classification we need
+        // the score actually returned by recursion.
         if maximize {
+            if score > best_score_for_tt {
+                best_score_for_tt = score;
+                qs_best_move = m;
+            }
             if score >= beta {
+                qs_store(
+                    tt, cfg, board, ply, best_score_for_tt, alpha_orig, beta_orig, qs_best_move,
+                );
                 return Ok(beta);
             }
             if score > best {
@@ -941,7 +978,14 @@ fn quiescence_node(
                 alpha = score;
             }
         } else {
+            if score < best_score_for_tt {
+                best_score_for_tt = score;
+                qs_best_move = m;
+            }
             if score <= alpha {
+                qs_store(
+                    tt, cfg, board, ply, best_score_for_tt, alpha_orig, beta_orig, qs_best_move,
+                );
                 return Ok(alpha);
             }
             if score < best {
@@ -952,7 +996,47 @@ fn quiescence_node(
             }
         }
     }
+    if searched_any_move {
+        qs_store(
+            tt, cfg, board, ply, best_score_for_tt, alpha_orig, beta_orig, qs_best_move,
+        );
+    }
     Ok(best)
+}
+
+/// TT store helper for `quiescence_node`. Gated by
+/// `cfg.qsearch_tt_enabled`. Classifies the bound from
+/// `(best_score, alpha_orig, beta_orig)` and writes at
+/// `QSEARCH_NODE_DEPTH = -1` with mate-distance re-anchored score.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn qs_store(
+    tt: &mut TranspositionTable,
+    cfg: &SearchConfig,
+    board: &Board,
+    ply: u8,
+    best_score: i32,
+    alpha_orig: i32,
+    beta_orig: i32,
+    best_move: Coord,
+) {
+    if !cfg.qsearch_tt_enabled {
+        return;
+    }
+    let flag = if best_score <= alpha_orig {
+        TTFlag::UpperBound
+    } else if best_score >= beta_orig {
+        TTFlag::LowerBound
+    } else {
+        TTFlag::Exact
+    };
+    tt.store(
+        board.hash(),
+        QSEARCH_NODE_DEPTH,
+        score_to_tt(best_score, ply),
+        flag,
+        best_move,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1650,6 +1734,78 @@ mod tests {
         assert!(is_threat_move(&b, move_a, side, QsearchFilterMode::Urgent));
         assert!(!is_threat_move(&b, move_b, side, QsearchFilterMode::Urgent));
         assert!(!is_threat_move(&b, move_c, side, QsearchFilterMode::Urgent));
+    }
+
+    // ── Phase 28F-3.4 qsearch TT probe + store tests ──────────────────────
+
+    /// T1. After a qsearch beta cutoff, the TT must hold a `LowerBound`
+    /// entry at `QSEARCH_NODE_DEPTH = -1` for the qsearch entry hash.
+    /// Set-up: X has 5-in-a-row, X to move. The stand-pat eval already
+    /// reflects the 5-in-row, so we tune `beta` to JUST above stand-pat:
+    /// stand-pat does not fail-high (avoids the I5 no-store path) but
+    /// the threat move `(5, 0)` recurses, hits a terminal win, and the
+    /// returned mate-class score >= beta → fail-high → TT store.
+    #[test]
+    fn qsearch_stores_lower_bound_on_beta_cutoff() {
+        let mut b = Board::new();
+        x_row(&mut b, 0, 5);
+        b.force_parity_for_test(Player::X, 0);
+        let entry_hash = b.hash();
+        // Probe the stand-pat baseline so we can tune `beta` to sit
+        // strictly above it (avoid I5 stand-pat fail-high) yet below
+        // mate (so the recursion-derived mate score >= beta).
+        let standpat = b.cached_eval();
+        let beta: i32 = standpat.saturating_add(1);
+        assert!(
+            beta < MATE_SCORE - 64,
+            "test sanity: beta must leave headroom below mate"
+        );
+
+        let mut tt = TranspositionTable::new(16);
+        let mut scratch = SearchScratch::new();
+        let cfg = SearchConfig::default();
+        assert!(cfg.qsearch_tt_enabled, "test assumes default-true gate");
+
+        let alpha = -INF;
+        let mut nodes: u64 = 0;
+
+        let score = quiescence_node(
+            &mut b,
+            &mut tt,
+            &mut scratch,
+            &cfg,
+            alpha,
+            beta,
+            0,
+            0,
+            None,
+            &mut nodes,
+        )
+        .expect("no timeout configured");
+
+        // Fail-high must have occurred: the winning move is mate-class.
+        assert!(
+            score >= beta,
+            "test setup did not fail-high: score={score} beta={beta} standpat={standpat}"
+        );
+
+        let entry = tt
+            .probe(entry_hash)
+            .expect("qsearch must store at function tail when a move was recursed");
+        assert!(
+            matches!(entry.flag, TTFlag::LowerBound),
+            "fail-high must store TTFlag::LowerBound, got {:?}",
+            entry.flag
+        );
+        assert_eq!(
+            entry.depth, QSEARCH_NODE_DEPTH,
+            "qsearch TT entries must use QSEARCH_NODE_DEPTH = -1"
+        );
+        assert_ne!(
+            entry.best_move, ORIGIN,
+            "qsearch TT best_move on fail-high must be the winning threat move, \
+             not ORIGIN sentinel"
+        );
     }
 }
 
