@@ -22,7 +22,14 @@ if [[ "${HEXO_SKIP_PGO:-0}" == "1" ]]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PGO_DATA="${REPO_ROOT}/hammerhead-engine/target/pgo"
+
+# Sprint 1B — isolate PGO target dir so the instrumented + optimized
+# builds don't pollute the main `target/` (used by `make build`,
+# `make bench-iai`, etc.). Cargo respects CARGO_TARGET_DIR via env;
+# maturin picks it up transparently.
+PGO_TARGET_DIR="${REPO_ROOT}/hammerhead-engine/target-pgo"
+export CARGO_TARGET_DIR="${PGO_TARGET_DIR}"
+PGO_DATA="${PGO_TARGET_DIR}/pgo-data"
 
 # Sanity-check toolchain. Prefer rustup's bundled llvm-profdata when
 # available — its format version matches rustc's bundled LLVM, which

@@ -1,4 +1,5 @@
 target/
+target-pgo/
 __pycache__/
 *.so
 *.pyd
