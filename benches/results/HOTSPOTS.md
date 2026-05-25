@@ -1,3 +1,233 @@
+# Hotspots — Sprint 2 (Proximity bundle + supporting items)
+
+## Sprint 2 status (2026-05-25)
+
+Six-item Elo-aimed sweep from the Sprint 1 handoff verdict. Three
+landed (D bounds-elim bundle, E SparseCellSet u16 slot, G EvalCache
+align). Three aborted (C outer-halo skip, F row-major reorder, H
+RefCell unsafe shortcut) — each by its own falsification branch, not
+by surprise. `.bestref` UNCHANGED (`cac186e`); Outcome C of plan
+§ I.5 (partial — keep commits, no `.bestref` advance).
+
+**Headline:** +3.3% bench-quick NPS cumulative (672 k → 694 k mean @
+500 ms midgame_12). 200 g vs `.bestref`: 96-103-1, **Elo -12.2,
+Wilson CI [-60.2, +35.9], SPRT continuing/INCONCLUSIVE**. Phase B
+correction (-10 Elo for residual worktree-PGO NPS handicap) → -22
+Elo corrected mean; CI [-70, +26] crosses zero. iai-callgrind
+midgame_12 -7.0 % instructions (3.04 G → 2.83 G), midgame_30 -5.6 %
+(542 M → 512 M), -1366 ins/node — the iai win is real and
+deterministic; the arena landing in the noise mid-zone is consistent
+with a behaviour-preserving change at +3.3 % NPS giving no
+statistically demonstrable Elo movement.
+
+The big asterisk this sprint: **Phase B hypothesis check**
+disambiguated Sprint 1's +52 Elo result. With both sides PGO-built
+at identical source code, the residual gap is +10.4 Elo
+(INCONCLUSIVE at 200 g), placing Sprint 1's +52 firmly in the H2
+(artefact) bucket. Sprint 1 produced a real ~+12 Elo of code-side
+gain (PGO + TT prefetch on this codebase), not the headline +52.
+The Sprint 1 retro NPS / PGO methodology stands; the Elo
+interpretation should be recalibrated. All Sprint 2+ arena
+measurements apply a **-10 Elo correction** to extract code-side
+delta from the persistent worktree-PGO NPS-only asymmetry.
+
+### 2A — Worktree-PGO opt-in (Sprint 1B deferral closed)
+
+Wires `HEXO_PGO=1` through `setup_worktree.sh` → `pgo_build.sh`
+(parameterised via `HEXO_PGO_ROOT` / `HEXO_PGO_VENV` /
+`HEXO_PGO_ENGINE_DIR` / `HEXO_PGO_TARGET_DIR`). Default ON for
+`make vs` / `make promote`. Plus a `cp -f` workaround for pip 26's
+wheel-skip behaviour (maturin's `install` step silently no-ops on
+unchanged version → installed .so doesn't get the PGO bytes). All
+Sprint 2+ arena measurements are now PGO-symmetric, give or take
+PGO training non-determinism (~7 % NPS swing run-to-run on
+identical source — Phase A measured 668 k main vs 620 k worktree).
+
+Commits: `6ba9432` (pgo_build.sh parameterise), `0a56db2`
+(setup_worktree opt-in), `beef469` (Makefile HEXO_PGO=1 default).
+
+### 2B — Hypothesis check (no commits, measurement only)
+
+200 g PGO-vs-PGO arena at identical `.bestref` source: **+10.4
+Elo, CI [-37.6, +58.4], INCONCLUSIVE**. Verdict: H2 (artefact)
+dominates. Sprint 1's headline +52 reduces to ~+12 Elo code-side
+gain after applying the worktree-handicap correction.
+
+Apply -10 Elo correction to all future arena measurements vs
+`.bestref` (until a future re-bench measures the residual at a
+different value).
+
+### 2C — `place_for_search` outer-halo skip — **REJECTED**
+
+Implemented the `place_for_search` / `undo_for_search` variants
+that skip the r=8 outer-halo walk per the D #1 verdict from
+`analysis/baseline_ae539b7/D_algorithmic.md`. Initial iai showed
+**-27.7 % midgame_12 instructions**, bench-quick **+37 % NPS** —
+far above the +6.7 % predicted. Then the gate hit:
+
+- Reference node counts: midgame_12 / midgame_30 / single_origin
+  byte-identical; **empty fixture deviated** 1-8 % at depths 4-8.
+- 100 g light arena vs `.bestref`: **40-60-0, -70.4 Elo, CI
+  [-139.5, -1.4]**. Hard fail.
+
+Root cause: `is_legal` reads `proximity.outer_at` inside search
+(TT-move probe at search.rs:461, killer-move probe at search.rs:493,
+qsearch TT-move at search.rs:954). With the outer walk skipped, the
+count is stale-relative-to-search-state. Even with an `is_legal`
+fallback to `inner_at` (which catches r ≤ 2 of search-added pieces),
+TT / killer moves at r = 3..r = 8 of search-added pieces fall into
+the falsely-rejected bucket. Fixed-depth reference fixtures don't
+trigger this on midgame positions (the top-level halo already
+covers the search frontier), but real game play does, because TT
+entries persist across game turns and reference moves that may now
+sit outside any current piece's top-level halo.
+
+Reverted all changes; no commits landed. Sprint 3 reattempt
+candidate — see § handoff below for design.
+
+### 2D — Bounds-elim + inline bundle (A P-1/P-2/B-4, LC-1)
+
+Three commits unchecking the proximity / line_contrib hot-path
+indexing + forcing `for_each_in_range` to `#[inline(always)]`:
+
+- `1e8d439` `proximity: unchecked indexing on SparseCellSet + counts`
+- `4ea2435` `line_contrib: unchecked invalidate`
+- `e54c4f5` `coords: for_each_in_range inline(always)`
+
+`Board::place` body lost 6 of ~10 panic_bounds_check stubs (4
+remaining trace to `AxisBitmaps::is_occupied` — out-of-scope, filed
+for Sprint 3). iai-callgrind delta vs Sprint 1 close:
+
+| Bench | Sprint 1 ins | Phase D ins | Δ ins/node |
+|-------|-------------:|------------:|-----------:|
+| midgame_12 d6 (155 k nodes) | 3,042 M | 2,830 M | **-1,366** |
+| midgame_30 d6 (20 k nodes) | 542 M | 512 M | -1,488 |
+
+100 g light arena: **+41.9 Elo, CI [-26.3, +110.0]** — within the
+±50 acceptance band (gate cleared comfortably). Reference node
+counts byte-identical for all 4 fixtures.
+
+### 2E — `SparseCellSet.slot` u32 → u16
+
+Single commit (`ac9f245`). Halves the per-set slot footprint
+(290 KB → 145 KB at `ZOBRIST_WINDOW=127`); both sides' candidate
+sets now total 580 KB vs 1.16 MB — comfortably L2-resident with
+proximity counts + threat scratch on neighbouring lines. Range
+audit: `members.len()` is bounded by live cells, peaks well under
+u16 capacity (65,535) on realistic boards. `insert` debug-asserts
+the pre-bump length to catch any future config bump (e.g.
+`ZOBRIST_WINDOW=255`) that would invalidate the assumption.
+
+bench-quick +2.2 % over Phase D, reference byte-identical.
+
+### 2F — `for_each_in_range` row-major reorder — **ABORTED at F.1**
+
+Falsification branch fired at the asm-pre-check step. The D
+verdict's "271-byte stride per inner step" claim assumed a
+transposed `prox_idx` layout. The actual layout is
+`q * 271 + r` — outer dq / inner dr already walks **row-major
+with stride-1 within rows**. Swapping dq/dr would have produced
+the **column-major** (stride-271) pattern the verdict was trying
+to avoid. No code change; documented in Sprint 3 handoff as
+resolved-as-no-op for a simple loop swap.
+
+### 2G — `EvalCache repr(align(64))` (verdict #12c)
+
+Wraps `Board::eval_cache` in a 64-byte-aligned `EvalCache` struct
+so it doesn't share a cache line with frequently-mutated neighbours
+(`threats_dirty`, `line_contrib`). Cleanup-pass cachegrind verdict
+attributed 18.3 % of all D1 read misses to `Board::cached_eval`
+reads — the line was flushing on every `place`/`undo`.
+
+bench-quick flat at noise (-0.1 % vs Phase E), iai flat at +0.02 %
+ins (the canonical fixtures don't reproduce the cachegrind miss
+pattern). Reference byte-identical. The win is location-specific
+cache locality, visible only in cachegrind. Commit `e9b9eff`
+documents the layout intent; future cachegrind regressions on
+`cached_eval` are now structurally prevented.
+
+### 2H — RefCell unsafe shortcut — **REJECTED**
+
+Replaced `Ref<'_, ThreatSet>` with `&ThreatSet` via
+`&*self.threats_x.as_ptr()` to bypass `BORROW_FLAG` inc/dec.
+`cargo asm` confirmed 0 borrow_inc/dec/panic_borrow stubs in the
+eval hot path (down from 4-6 baseline). iai measured a real but
+tiny win: -0.15 % instructions, -2.8 % LL hits. Both fixtures
+showed -0.11 % cycles.
+
+100 g light arena: **-20.9 Elo, CI [-88.7, +46.9]** — CI lower
+crossed the -50 acceptance floor. Per the strict-revert clause
+("any Elo drift on behaviour-preserving change = UB leak"),
+reverted entirely. No commits landed.
+
+The -20.9 point estimate is consistent with single-100 g noise
+(±25 Elo half-width), and the iai delta says the change was
+genuinely effect-free on asm-level hot work. But the gate is what
+it is. Sprint 3 reattempt: use 200 g (not 100 g) light arena;
+gate behind `#[cfg(feature = "fast_threats")]` for a longer
+validation window; run miri to rule out UB.
+
+## Flamegraph diff vs Sprint 1 close
+
+Captured `flamegraph-2026-05-25T21-20-16-e9b9eff.svg` post-Sprint-2.
+
+**Proximity bundle still visible**: `for_each_in_range
+<remove_proximity::closure>` and `<add_proximity::closure>` remain
+among the hot frames (Sprint 1 close had them in the top 5).
+Phase C would have moved them out; Phase D reduced per-call cost
+(-7 % ins) but didn't remove the calls.
+
+**New top-of-flame**:
+- Layer-1 window-scan + `encode_ternary_8` is now a visible
+  fraction (eval.rs:layer1_window_scan_8cell). Sprint 1's PGO
+  shrunk it but it's still in the top user-space hot path.
+- Ordering history map (`record_cutoff` → `rustc_entry::find` on
+  `FxHashMap`) is hot. The history table touches at every cutoff,
+  one FxHashMap probe + insert per visit. Sprint 3 candidate
+  (move to a flat `[u32; INNER_HALO_SIZE × players]` table or
+  similar bounded structure — see ordering.rs `record_cutoff`).
+- `tried.contains` (SmallVec scan in `pvs_node`) is hot at depth
+  ≥ 5. `tried` holds ≤ 3 elements; linear scan IS the right
+  choice, but the leaf shows up because it's called 30+ times per
+  node. Probably not worth optimising further on its own.
+
+Self-time bands (qualitative, perf-noisy):
+- Proximity walk: still ~5-7 % of cycles (was ~8 % at Sprint 1
+  close; Phase D shaved ~1 %)
+- Layer-1 eval: ~10-15 % of cycles (post-PGO band, unchanged)
+- TT probe / FxHashMap-on-ordering: ~5-8 % of cycles
+- Threats reconcile: ~10 % (cold-path)
+
+## Sprint 3 handoff (ranked by Elo lever)
+
+1. **Place-for-search reattempt** — Phase 2C showed +37 % NPS upside;
+   the failure mode was `is_legal` reading stale `proximity.outer`.
+   A clean reattempt needs an architectural change: either drop
+   `outer_candidates` from `Board` entirely (and rework `is_legal`
+   to a direct piece-distance check), or maintain a search-internal
+   secondary count.
+2. **Ordering history flat table** — flamegraph confirms the
+   `record_cutoff` → FxHashMap pattern is now in the top user-space
+   slots. The history is per-(coord, player) → u32. Coord is bounded
+   to the proximity field; could move to a flat array indexed by
+   `prox_idx + player_offset`. Cost: ~140 KB per board × 2 players.
+3. **AxisBitmap unchecked indexing** — `is_occupied`'s 2 bounds
+   checks per call survive Phase 2D's elim pass. Estimated
+   +1-2 % NPS.
+4. **LMR retune** — Sprint 1 unblocks; iai gate plus Sprint 2's
+   PGO-symmetric arena lets sub-1 % Elo measurement on individual
+   reduction-bucket tweaks (was the top non-bundle candidate from
+   the original verdict).
+5. **Staged movegen stage 2.5** (D #2) — Phase 26 R-01-style
+   pattern at one level deeper. +13 % NPS predicted, +0 Elo direct
+   but depth-knock-on positive.
+6. **Threats classification cache** (D #4) — defer until 1/2 land.
+
+Out of Sprint 2 scope (re-confirm in Sprint 3 prompt):
+symmetry/canonicalisation, opening book, mate DB, BOLT.
+
+---
+
 # Hotspots — Sprint 1 (Free-wins bundle: iai-callgrind + PGO + TT prefetch)
 
 ## Sprint 1 status (2026-05-25)
