@@ -44,12 +44,27 @@ default_size_mb = 64
 default_max_depth      = 64
 default_time_ms        = 1000
 # ...
+qsearch_tt_enabled     = true    # Phase 28F-3.4: probe + store TT in qsearch
 
 [engine.board]
 max_piece_distance = 8
 ```
 
 See `hexo.toml` for the full schema.
+
+### `engine.search.qsearch_tt_enabled` (Phase 28F-3.4)
+
+Boolean. When `true`, `quiescence_node` probes the TT before stand-pat
+(returning early on `Exact` / sufficient-bound hits) and stores its
+result at `depth = -1` at the function tail iff at least one threat
+move was recursed (the TT-suggested move counts). When `false`,
+`quiescence_node` performs no TT probe and no TT store — behaviour is
+byte-identical to the pre-28F-3.4 implementation. This flag is the
+kill-switch for the qsearch-TT feature; a one-line toggle reverts.
+
+Both probe AND store are gated by this single flag. Default `true`.
+
+See `SPEC_ENGINE.md` § "Quiescence" for the full semantics.
 
 ## Rust side: build-time codegen
 

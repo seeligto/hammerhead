@@ -833,12 +833,68 @@ per-node `maximize` flag is one branch in cold code. Per node:
 Threat-only, hard-capped at `cfg.qsearch_max_plies`.
 
 1. Check deadline; return early on terminal.
-2. Stand-pat with `board.cached_eval()`. For `max`: if `static >= beta`
+2. **TT probe (Phase 28F-3.4, gated by `qsearch_tt_enabled`).** If
+   `cfg.qsearch_tt_enabled` is true, probe `tt.probe(board.hash())`
+   BEFORE stand-pat. Save `tt_move = Some(entry.best_move)` for step 6.
+   With `adjusted = score_from_tt(entry.score, ply)` and the explicit
+   depth gate `entry.depth >= -1` (always true; the gate documents
+   intent — see below for the depth convention):
+   - `Exact` → return `adjusted`.
+   - `LowerBound` and `adjusted >= beta` → return `adjusted`.
+   - `UpperBound` and `adjusted <= alpha` → return `adjusted`.
+   - else fall through to stand-pat with `tt_move` still saved.
+3. Stand-pat with `board.cached_eval()`. For `max`: if `static >= beta`
    return `beta`; else `alpha = max(alpha, static)`. Mirror for `min`.
-3. If `q_ply >= cfg.qsearch_max_plies` return alpha.
-4. Generate threat-only moves per `cfg.qsearch_filter_mode` (see below).
-5. If no threat moves remain, return alpha (the position is quiet).
-6. Recurse normally with the threat-only move list.
+   **Stand-pat early-returns DO NOT store to TT.**
+4. If `q_ply >= cfg.qsearch_max_plies` return alpha. **No TT store.**
+5. Generate threat-only moves per `cfg.qsearch_filter_mode` (see below).
+6. If `tt_move` is `Some(m)`, `m != ORIGIN`, `board.is_legal(m)`, and
+   `is_threat_move(board, m, side, mode)` — try `m` FIRST, before
+   iterating the generated list. If the TT move alone causes a beta
+   cutoff, return without iterating the generated list. The generated
+   loop skips `tt_move` to avoid double-search.
+7. If no threat moves remain after step 5 (and no TT move was tried in
+   step 6), return alpha (the position is quiet). **No TT store.**
+8. Recurse normally with the threat-only move list.
+9. **TT store (Phase 28F-3.4, gated by `qsearch_tt_enabled`).** If
+   `cfg.qsearch_tt_enabled` is true AND at least one threat move was
+   recursed (the TT move from step 6 counts), compute the bound flag
+   from `(best_score, alpha_orig, beta_orig)` snapshotted at function
+   entry (NOT from the in-flight `alpha`/`beta` refined by stand-pat
+   or by recursive calls):
+   - `best_score <= alpha_orig` → `UpperBound`.
+   - `best_score >= beta_orig` → `LowerBound`.
+   - else → `Exact`.
+   Call `tt.store(board.hash(), -1, score_to_tt(best_score, ply),
+   flag, qs_best_move)` where `qs_best_move` is the move that produced
+   `best_score`, or `ORIGIN` if no move improved over the
+   stand-pat-derived starting value.
+
+#### Qsearch TT depth convention (`-1`)
+
+All qsearch TT entries store `depth = -1`. Rationale:
+
+- `TTEntry::depth: i8` already supports negative values.
+- Two-bucket replacement uses signed `depth >= a.depth`: a qsearch
+  entry at `-1` will NEVER evict a main-search entry at `depth >= 0`
+  from the depth-preferred bucket. Main search wins replacement
+  structurally; qsearch entries land in the always-replace slot when
+  the main-search entry is depth-preferred.
+- `TTEntry::EMPTY.depth == -1` is disambiguated by `flag == Empty`;
+  a stored qsearch entry has a non-Empty flag, so probes correctly
+  distinguish "stored at depth -1" from "empty slot".
+- Mate-distance re-anchoring (`score_to_tt` / `score_from_tt`) is
+  applied identically to main-search entries.
+
+#### What is NOT stored
+
+- Stand-pat fail-high / fail-low early returns: these are eval-derived
+  bounds, not search-derived. Storing them pollutes TT with redundant
+  copies of `cached_eval`.
+- `q_ply >= cap` early returns: the cutoff is the cap, not a real
+  bound on the position.
+- `threat_count == 0` early returns (no threats and no TT move
+  recursed): static evaluation, no search.
 
 #### Filter modes (`qsearch_filter_mode`)
 
