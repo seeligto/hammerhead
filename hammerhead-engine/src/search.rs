@@ -1012,11 +1012,7 @@ fn is_threat_move(board: &Board, m: Coord, side: Player, mode: QsearchFilterMode
                 || ordering::blocks_opp_s0(board, m, side)
         }
         QsearchFilterMode::Resolution => is_threat_move_resolution(board, m, side),
-        QsearchFilterMode::Urgent => {
-            // Urgent falls back to Resolution until the dedicated
-            // function lands in the next commit.
-            is_threat_move_resolution(board, m, side)
-        }
+        QsearchFilterMode::Urgent => is_threat_move_urgent(board, m, side),
     }
 }
 
@@ -1025,6 +1021,16 @@ fn is_threat_move(board: &Board, m: Coord, side: Player, mode: QsearchFilterMode
 #[inline]
 fn is_threat_move_resolution(board: &Board, m: Coord, side: Player) -> bool {
     ordering::would_make_six(board, m, side) || ordering::blocks_opp_s0(board, m, side)
+}
+
+/// Urgent filter: tightest — win immediately or block opponent's immediate
+/// six only. `would_make_six(board, m, opp)` is a hypothetical-placement
+/// predicate (reads opp's axis bitmap without mutating the board), so
+/// passing `opp` as `side` correctly answers "would opponent win at `m`?"
+#[inline]
+fn is_threat_move_urgent(board: &Board, m: Coord, side: Player) -> bool {
+    let opp = side.opponent();
+    ordering::would_make_six(board, m, side) || ordering::would_make_six(board, m, opp)
 }
 
 /// If the just-placed move at `m` left us halfway through a `HeXO` turn
