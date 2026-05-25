@@ -83,7 +83,12 @@ pub fn within_range(a: Coord, b: Coord, range: i16) -> bool {
 /// Hex of radius `range` around `center`, inclusive of center.
 ///
 /// Allocation-free. Used by board `place`/`undo` to walk the r8 hex.
-#[inline]
+/// Sprint 2D: `#[inline(always)]` forces the loop into the proximity
+/// update sites so `panic_bounds_check` stubs can be eliminated and
+/// the per-cell idx arithmetic merges with the surrounding counter
+/// update.
+#[inline(always)]
+#[allow(clippy::inline_always)]
 pub fn for_each_in_range<F: FnMut(Coord)>(center: Coord, range: i16, mut f: F) {
     let r = range;
     let mut dq = -r;
