@@ -6,7 +6,7 @@
 
 use crate::axis_bitmap::AxisBitmaps;
 use crate::config::{MAX_PIECE_DISTANCE, MOVE_GEN_INNER_RADIUS};
-use crate::coords::{Coord, ORIGIN};
+use crate::coords::{Coord, ORIGIN, within_range};
 use crate::eval_overrides::{EvalOverrides, WINDOW_SCORE_8_LEN};
 use crate::line_contrib::LineContrib;
 use crate::proximity::{ProximityCounts, SparseCellSet, add_proximity, remove_proximity};
@@ -538,6 +538,32 @@ impl Board {
     #[inline]
     fn is_legal_internal(&self, c: Coord) -> bool {
         self.proximity.outer_at(c) > 0
+    }
+
+    /// Search-internal legality query. Does not consult
+    /// `proximity.outer` or `candidates`, which `place_for_search` /
+    /// `undo_for_search` leave frozen at the search-root state during
+    /// descent.
+    ///
+    /// O(history) — walks `history` and computes `hex_distance(c, p)`
+    /// for each placed piece. Called only on TT and killer move probes
+    /// (~3 / node), and `history.len()` is bounded by the current
+    /// piece count (~50 in mid-game).
+    ///
+    /// See `SPEC_ENGINE.md § place_for_search / undo_for_search` for
+    /// the contract.
+    #[inline]
+    #[must_use]
+    pub fn is_legal_during_search(&self, c: Coord) -> bool {
+        if !self.is_empty_cell(c) {
+            return false;
+        }
+        if self.ply == 0 {
+            return c == ORIGIN;
+        }
+        self.history
+            .iter()
+            .any(|p| within_range(c, *p, MAX_PIECE_DISTANCE))
     }
 
     /// Advance `(side_to_move, halfmove)` one stone forward and XOR the
