@@ -132,6 +132,13 @@ pgo: ## [Phase 14] profile-guided optimization build (requires llvm-tools-previe
 # Reads .bestref; builds a worktree at that SHA via scripts/setup_worktree.sh.
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Sprint 2A — `make vs` / `make promote` PGO-build both sides (current
+# `.venv` and `.worktree-best/.venv-best`) for apples-to-apples arena
+# measurement. Override by setting `HEXO_PGO=0` on the command line if
+# you want the fast dev-iteration path with non-PGO worktree binary.
+HEXO_PGO ?= 1
+export HEXO_PGO
+
 vs: ## [Phase 11] current vs best, N_GAMES games — does not advance .bestref
 	@$(VPY) -m hammerhead.cli promote --dry-run \
 	    --n $(N_GAMES) --time-ms $(TIME_MS) --test $(TEST) \
