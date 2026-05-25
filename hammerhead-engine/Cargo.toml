@@ -30,6 +30,7 @@ tt_stats       = []
 ordering_stats = []
 mimalloc       = ["dep:mimalloc"]
 simd_eval      = []
+qsearch_diag   = []
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }

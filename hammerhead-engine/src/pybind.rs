@@ -176,6 +176,33 @@ impl PyEngine {
         Ok(d)
     }
 
+    /// Qsearch diagnostics from the last `search_root` call.
+    /// Only populated when the engine is built with feature `qsearch_diag`.
+    /// Returns a dict: `total_calls`, and per-ply list of dicts with keys
+    /// `entries`, `total_threat_count`, `max_threat_count`, `eval_sum`,
+    /// `eval_abs_delta_sum`, `cap_hits`.
+    #[cfg(feature = "qsearch_diag")]
+    fn qsearch_diag_stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        use pyo3::types::PyList;
+        let diag = self.inner.qsearch_diag();
+        let d = PyDict::new(py);
+        d.set_item("total_calls", diag.total_calls)?;
+        let plies_list = PyList::empty(py);
+        for (idx, s) in diag.plies.iter().enumerate() {
+            let pd = PyDict::new(py);
+            pd.set_item("q_ply", idx)?;
+            pd.set_item("entries", s.entries)?;
+            pd.set_item("total_threat_count", s.total_threat_count)?;
+            pd.set_item("max_threat_count", s.max_threat_count)?;
+            pd.set_item("eval_sum", s.eval_sum)?;
+            pd.set_item("eval_abs_delta_sum", s.eval_abs_delta_sum)?;
+            pd.set_item("cap_hits", s.cap_hits)?;
+            plies_list.append(pd)?;
+        }
+        d.set_item("plies", plies_list)?;
+        Ok(d)
+    }
+
     /// Patch the runtime eval overrides. Partial updates allowed:
     /// missing keys retain their *current* value (not defaults — the
     /// call is incremental). Unknown keys raise `ValueError`.
