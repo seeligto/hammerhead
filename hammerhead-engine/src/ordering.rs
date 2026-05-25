@@ -11,7 +11,7 @@ use crate::config::{
     HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY, MOVE_GEN_CAP,
 };
 use crate::coords::Coord;
-use fxhash::FxHashMap;
+use crate::proximity::{PROX_FIELD_SIZE, prox_idx};
 
 // ────────────────────────────────────────────────────────────────────────
 // Killer-move state
@@ -52,6 +52,96 @@ impl KillerSlot {
     }
 }
 
+/// Flat-array `(Player, Coord)` history table. Sprint 3C replacement
+/// for the prior `FxHashMap<(Coord, Player), u32>`. Two `Box<[u32]>`
+/// arrays — one per player — indexed by `prox_idx(c)`. O(1) get / set
+/// with a single array load, no hashing. ~588 KB total at the default
+/// `ZOBRIST_WINDOW`. See `SPEC_ENGINE.md § Ordering — State`.
+pub struct HistoryTable {
+    /// `scores[Player::X as usize]` and `scores[Player::O as usize]` are
+    /// the per-player flat backing arrays, each `PROX_FIELD_SIZE` u32.
+    scores: [Box<[u32]>; 2],
+}
+
+impl Default for HistoryTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HistoryTable {
+    /// Allocate two zeroed `PROX_FIELD_SIZE` flat arrays.
+    #[must_use]
+    #[cold]
+    pub fn new() -> Self {
+        Self {
+            scores: [
+                vec![0u32; PROX_FIELD_SIZE].into_boxed_slice(),
+                vec![0u32; PROX_FIELD_SIZE].into_boxed_slice(),
+            ],
+        }
+    }
+
+    /// History score for `(c, p)`. Returns `0` for never-recorded moves.
+    #[inline]
+    #[must_use]
+    pub fn get(&self, c: Coord, p: Player) -> u32 {
+        let i = prox_idx(c);
+        // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE`, and
+        // `self.scores[p].len() == PROX_FIELD_SIZE` by ctor.
+        unsafe { *self.scores[p as usize].get_unchecked(i) }
+    }
+
+    /// Set the history score for `(c, p)`. Test/inspection only —
+    /// production writes go through `OrderingState::record_cutoff`.
+    #[inline]
+    pub fn set(&mut self, c: Coord, p: Player, v: u32) {
+        let i = prox_idx(c);
+        // SAFETY: identical to `get`.
+        unsafe {
+            *self.scores[p as usize].get_unchecked_mut(i) = v;
+        }
+    }
+
+    /// Increment `(c, p)`'s history score by `inc`, saturating at
+    /// [`HISTORY_CUTOFF_MAX`].
+    #[inline]
+    fn bump(&mut self, c: Coord, p: Player, inc: u32) {
+        let i = prox_idx(c);
+        // SAFETY: identical to `get`.
+        let cell = unsafe { self.scores[p as usize].get_unchecked_mut(i) };
+        *cell = cell.saturating_add(inc).min(HISTORY_CUTOFF_MAX);
+    }
+
+    /// Apply integer-floor decay `num/den` to every entry in both
+    /// player tables. Walks both flat arrays end-to-end; cost is
+    /// comparable to the prior `FxHashMap::retain` for a populated
+    /// history.
+    fn decay(&mut self, num: u32, den: u32) {
+        if den == 0 || num >= den {
+            return;
+        }
+        let num = u64::from(num);
+        let den = u64::from(den);
+        for arr in &mut self.scores {
+            for v in arr.iter_mut() {
+                if *v == 0 {
+                    continue;
+                }
+                let decayed = u64::from(*v) * num / den;
+                *v = u32::try_from(decayed).unwrap_or(u32::MAX);
+            }
+        }
+    }
+
+    /// Zero every entry in both player tables.
+    fn clear(&mut self) {
+        for arr in &mut self.scores {
+            arr.fill(0);
+        }
+    }
+}
+
 /// Move-ordering state owned by the search driver. One instance per
 /// search; `record_cutoff` updates it during the alpha-beta traversal,
 /// `decay_history` ages history scores between root iterations.
@@ -60,8 +150,8 @@ pub struct OrderingState {
     /// the stack.
     pub killers: Box<[KillerSlot; MAX_PLY]>,
     /// Per-`(move, side-to-move)` β-cutoff history score, saturating at
-    /// [`HISTORY_CUTOFF_MAX`].
-    pub history: FxHashMap<(Coord, Player), u32>,
+    /// [`HISTORY_CUTOFF_MAX`]. Sprint 3C: flat table, was `FxHashMap`.
+    pub history: HistoryTable,
 }
 
 impl Default for OrderingState {
@@ -71,12 +161,12 @@ impl Default for OrderingState {
 }
 
 impl OrderingState {
-    /// Fresh state: zeroed killer slots, empty history map.
+    /// Fresh state: zeroed killer slots, zeroed flat history table.
     #[must_use]
     pub fn new() -> Self {
         Self {
             killers: Box::new([KillerSlot::default(); MAX_PLY]),
-            history: FxHashMap::default(),
+            history: HistoryTable::new(),
         }
     }
 
@@ -95,26 +185,13 @@ impl OrderingState {
         }
         let d = u32::from(d);
         let inc = d.saturating_mul(d);
-        let slot = self.history.entry((m, p)).or_insert(0);
-        *slot = slot.saturating_add(inc).min(HISTORY_CUTOFF_MAX);
+        self.history.bump(m, p, inc);
     }
 
     /// Age every history entry by `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN`
-    /// (integer floor) and drop entries that floor to zero. Called once
-    /// per root iteration; the retain step keeps the map from growing
-    /// monotonically.
+    /// (integer floor). Called once per root iteration.
     pub fn decay_history(&mut self) {
-        if HISTORY_DECAY_DEN == 0 || HISTORY_DECAY_NUM >= HISTORY_DECAY_DEN {
-            return;
-        }
-        let num = u64::from(HISTORY_DECAY_NUM);
-        let den = u64::from(HISTORY_DECAY_DEN);
-        self.history.retain(|_, v| {
-            // num < den guarantees the result fits in the original u32.
-            let decayed = u64::from(*v) * num / den;
-            *v = u32::try_from(decayed).unwrap_or(u32::MAX);
-            *v > 0
-        });
+        self.history.decay(HISTORY_DECAY_NUM, HISTORY_DECAY_DEN);
     }
 
     /// Wipe killers and history. Used between top-level searches when the
@@ -159,7 +236,7 @@ pub struct OrderingContext<'a> {
     /// Killer slot for the current ply.
     pub killers: &'a KillerSlot,
     /// Global history table from [`OrderingState`].
-    pub history: &'a FxHashMap<(Coord, Player), u32>,
+    pub history: &'a HistoryTable,
     /// Defense cells of the S0 created by stone 1 of the current turn, or
     /// empty when stone-1-completion does not apply.
     pub stone1_s0_defense: &'a [Coord],
@@ -437,7 +514,7 @@ pub(crate) fn order_moves_with_buckets(
     scored.reserve(moves.len());
     for &m in moves.iter() {
         let bucket = bucket_value(ctx, m);
-        let h = ctx.history.get(&(m, ctx.side)).copied().unwrap_or(0);
+        let h = ctx.history.get(m, ctx.side);
         scored.push((priority(bucket, h, m), bucket, m));
     }
 

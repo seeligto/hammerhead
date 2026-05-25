@@ -4,7 +4,9 @@
 use hammerhead_engine_core::board::{Board, Player};
 use hammerhead_engine_core::config::{HISTORY_CUTOFF_MAX, MOVE_GEN_CAP};
 use hammerhead_engine_core::coords::Coord;
-use hammerhead_engine_core::ordering::{KillerSlot, OrderingContext, OrderingState, order_moves};
+use hammerhead_engine_core::ordering::{
+    HistoryTable, KillerSlot, OrderingContext, OrderingState, order_moves,
+};
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,7 +39,7 @@ fn ctx<'a>(
     side: Player,
     tt_move: Option<Coord>,
     killers: &'a KillerSlot,
-    history: &'a fxhash::FxHashMap<(Coord, Player), u32>,
+    history: &'a HistoryTable,
     stone1_s0_defense: &'a [Coord],
 ) -> OrderingContext<'a> {
     OrderingContext {
@@ -185,7 +187,7 @@ fn killer_beats_history_run_extender_falls_through() {
     let extender_cell = mv(2, 5);
     let mut killers = KillerSlot::default();
     killers.push(killer_cell);
-    state.history.insert((history_cell, Player::X), 42);
+    state.history.set(history_cell, Player::X, 42);
     let c = ctx(&b, Player::X, None, &killers, &state.history, &[]);
     let mut moves = list(&[history_cell, killer_cell, extender_cell]);
     order_moves(&mut moves, &c);
@@ -206,9 +208,9 @@ fn history_tiebreak_orders_bucket1() {
     let c_high = mv(20, 20);
     let c_mid = mv(22, 22);
     let c_low = mv(24, 24);
-    state.history.insert((c_high, Player::X), 1000);
-    state.history.insert((c_mid, Player::X), 500);
-    state.history.insert((c_low, Player::X), 10);
+    state.history.set(c_high, Player::X, 1000);
+    state.history.set(c_mid, Player::X, 500);
+    state.history.set(c_low, Player::X, 10);
     let killer = KillerSlot::default();
     let c = ctx(&b, Player::X, None, &killer, &state.history, &[]);
     let mut moves = list(&[c_low, c_mid, c_high]);
@@ -251,13 +253,21 @@ fn decay_history_halves_each_entry() {
     state.record_cutoff(0, mv(1, 0), Player::X, 2); // +4
     state.record_cutoff(0, mv(2, 0), Player::O, 5); // +25
 
-    let before: Vec<((Coord, Player), u32)> = state.history.iter().map(|(&k, &v)| (k, v)).collect();
-    assert!(!before.is_empty());
+    let entries: [(Coord, Player); 3] = [
+        (mv(0, 0), Player::X),
+        (mv(1, 0), Player::X),
+        (mv(2, 0), Player::O),
+    ];
+    let before: Vec<(Coord, Player, u32)> = entries
+        .iter()
+        .map(|&(c, p)| (c, p, state.history.get(c, p)))
+        .collect();
+    assert!(before.iter().all(|&(_, _, v)| v > 0));
 
     state.decay_history();
 
-    for ((coord, player), old) in before {
-        let new = state.history.get(&(coord, player)).copied().unwrap();
+    for (coord, player, old) in before {
+        let new = state.history.get(coord, player);
         assert_eq!(new, old / 2, "{coord:?} {player:?}: {old} -> {new}");
     }
 }
@@ -311,10 +321,7 @@ fn history_saturates_at_cutoff_max() {
     let mut state = OrderingState::new();
     let m = mv(7, 7);
     // Pre-seed close to the cap then push it over.
-    state.history.insert((m, Player::X), HISTORY_CUTOFF_MAX - 5);
+    state.history.set(m, Player::X, HISTORY_CUTOFF_MAX - 5);
     state.record_cutoff(0, m, Player::X, 100); // adds 10_000
-    assert_eq!(
-        state.history.get(&(m, Player::X)).copied(),
-        Some(HISTORY_CUTOFF_MAX),
-    );
+    assert_eq!(state.history.get(m, Player::X), HISTORY_CUTOFF_MAX);
 }
