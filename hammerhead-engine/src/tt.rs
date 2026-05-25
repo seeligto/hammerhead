@@ -183,6 +183,32 @@ impl TranspositionTable {
         }
     }
 
+    /// L1 prefetch for the bucket `hash` will land in (Sprint 1C).
+    /// Called from search after `board.place(m)` and before the
+    /// recursive descent so the child's TT probe lands on a warm
+    /// cache line. Hint-only: cannot fault, cannot race, cannot
+    /// affect correctness. `x86_64` only — `non-x86` builds get a
+    /// no-op (the prefetch is the only DRAM-hiding mechanism here;
+    /// other arches are not the deployed target).
+    #[inline]
+    pub fn prefetch(&self, hash: u128) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use core::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+            let idx = (hash as u64 as usize) & self.mask;
+            let ptr = self.buckets.as_ptr().wrapping_add(idx).cast::<i8>();
+            // SAFETY: `_mm_prefetch` reads no memory through `ptr` —
+            // it issues a hint to the prefetcher. Any address is
+            // accepted; a misaligned or out-of-bounds pointer cannot
+            // fault or affect program state.
+            unsafe { _mm_prefetch::<_MM_HINT_T0>(ptr) };
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let _ = hash;
+        }
+    }
+
     /// Probe `hash`. Returns the depth-preferred entry when both buckets
     /// match (the deeper or older-but-protected result wins); otherwise the
     /// matching always-replace entry; otherwise `None`.

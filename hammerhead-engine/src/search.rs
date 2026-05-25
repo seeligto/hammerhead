@@ -781,6 +781,7 @@ fn try_one_move(
     board
         .place(m)
         .expect("staged move must be legal at search depth");
+    tt.prefetch(board.hash());
     let stone1_buf = collect_stone1_defense(board, m);
 
     let score_result = pvs_dance(
@@ -960,6 +961,7 @@ fn quiescence_node(
             board
                 .place(m)
                 .expect("TT-suggested threat move must be legal in qsearch");
+            tt.prefetch(board.hash());
             let r = quiescence_node(
                 board,
                 tt,
@@ -1051,6 +1053,7 @@ fn quiescence_node(
         board
             .place(m)
             .expect("ordered threat must be legal in qsearch");
+        tt.prefetch(board.hash());
         let r = quiescence_node(
             board,
             tt,
