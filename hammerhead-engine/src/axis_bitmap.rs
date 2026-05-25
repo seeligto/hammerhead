@@ -404,7 +404,10 @@ impl AxisBitmaps {
     pub fn run_length_through(&self, c: Coord, axis: Axis, p: Player) -> u8 {
         let id = axis.line_id(c);
         let pos = axis.pos(c);
-        let Some(line) = self.lines[axis as usize][p as usize][Self::idx(id)].as_ref() else {
+        let i = Self::idx(id);
+        // SAFETY: see `is_set`. Sprint 3D.
+        let Some(line) = unsafe { self.lines[axis as usize][p as usize].get_unchecked(i) }.as_ref()
+        else {
             return 0;
         };
         if !line.get(pos) {
@@ -419,7 +422,12 @@ impl AxisBitmaps {
     #[inline]
     #[must_use]
     pub fn is_set(&self, axis: Axis, line_id: i16, pos: i16, p: Player) -> bool {
-        match self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref() {
+        let i = Self::idx(line_id);
+        // SAFETY: `Self::idx` debug-asserts `line_id` in the zobrist window;
+        // `lines[axis][p]` length is LINE_ID_RANGE by ctor (see
+        // `empty_line_slots`). Sprint 3D — Phase 25 guardrail elided
+        // bounds-check on hot read path.
+        match unsafe { self.lines[axis as usize][p as usize].get_unchecked(i) }.as_ref() {
             Some(line) => line.get(pos),
             None => false,
         }
@@ -469,7 +477,11 @@ impl AxisBitmaps {
     pub fn is_occupied(&self, c: Coord) -> bool {
         let id = Axis::Q.line_id(c);
         let pos = Axis::Q.pos(c);
-        self.occupied[Axis::Q as usize][Self::idx(id)]
+        let i = Self::idx(id);
+        // SAFETY: `Self::idx` debug-asserts in the zobrist window;
+        // `occupied[Axis::Q]` length is LINE_ID_RANGE by ctor. Sprint 3D
+        // — Phase 25 guardrail elided bounds-check on hot read path.
+        unsafe { self.occupied[Axis::Q as usize].get_unchecked(i) }
             .as_ref()
             .is_some_and(|l| l.get(pos))
     }
@@ -479,7 +491,9 @@ impl AxisBitmaps {
     #[inline]
     #[must_use]
     pub fn line(&self, axis: Axis, p: Player, line_id: i16) -> Option<&LineBitmap> {
-        self.lines[axis as usize][p as usize][Self::idx(line_id)].as_ref()
+        let i = Self::idx(line_id);
+        // SAFETY: see `is_set`. Sprint 3D.
+        unsafe { self.lines[axis as usize][p as usize].get_unchecked(i) }.as_ref()
     }
 
     /// Iterate the `line_id`s of every line that has ever been touched by
