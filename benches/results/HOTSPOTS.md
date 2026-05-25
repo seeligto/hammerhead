@@ -1,3 +1,253 @@
+# Hotspots — Phase 28E-2 (cluster shape falsification + opening diversity)
+
+## Phase 28E-2 status (2026-05-25)
+
+Phase 28E-2 ran two stages: Stage 0 (opening diversity, 20 HeXOpedia §6
+openings, harness infra) + Stage 1 (rhombus cluster detector, 3-sweep
+arc Step 0 → 1 → 3). Stages 2 (bone) + 3 (arch/trapezoid) SKIPPED per
+user direction after Stage 1 reached NO-LAND × 3 sweeps with empirical
+falsification of the cluster-detector lever. 4 code/spec commits on
+master + 1 on hexo-arena main + 2 doc this retro.
+
+**Headline: KEEP all 4 commits on master; `.bestref` NOT advanced.**
+NO weight applied (detector dormant at default `rhombus = 0`); no
+engine behavior change → no arena gate run. E-0 VERIFY baseline (HH
+2.0% per-stone 500ms vs SB-perf) stands unchanged. `.bestref` stays at
+`5bd89648` (Phase 28D-1 advance).
+
+### Stage 0 — opening diversity (HH `a1245a1` + arena `d6b91ba`)
+
+Pair-seeded curated openings (`pick_opening(i // 2)` shares opening
+across both games of pair `k`, swap colors). 20 HeXOpedia §6 entries:
+18 named (Pair, ClosedGame, ClosedMainLine, Longsword, Shortsword,
+Sword, Wrongsword, Pistol, Shotgun, Revolver, PistolSnail, IslandGambit,
+NearIsland, Marge, Eclipse, C_and_B, PairSideStep, PairCShift) + 2
+explicit control variants (`Control_A0A4`, `Control_A2A5`). Two
+`NotImplementedError` raises at `promote.py:372-376` + `:553-557`
+DELETED. Arena `python/hexo_arena/arena/opening.py` mirrors catalog as
+flat tuples + `--opening hh:curated` CLI hook. 29 new HH tests + 9 new
+arena tests. SPEC_BENCHMARKS updated.
+
+Smoke validation: 15 distinct game lengths across 20-game self-play
+(75% trajectory uniqueness); 10 distinct openings hit per full catalog
+cycle; per-pair color symmetry holds; pair-seed determinism holds.
+
+**S0-REV PASS-WITH-MINOR** (3 minor items carried to retro: docstring
+nit, INTEGRATION_NOTES operator-doc gap, optional Shotgun/Revolver
+BKE→axial fidelity).
+
+**Attribution**: Stage 0 is measurement infrastructure, NOT strength.
+No expected arena delta. Real value: unblocks DIAG-1 fixed-depth
+determinism collapse for future eval-isolated A/Bs.
+
+### Stage 1 — rhombus detector + 3-sweep arc (HH `042f020` + `6d57f8e` + `5295561`)
+
+#### Detector design
+
+`threats.rs::detect_rhombi`: pattern = 4 cells whose 6 pairwise
+distances are `{1,1,1,1,1,2}` (canonical rhombus = 3 mutually adjacent +
+4th forming parallelogram). Rotation- and reflection-invariant by
+construction; all 12 orientations covered. Algorithm: for each own piece
+anchor P, enumerate 6 adjacent-pair rotations (u, v); test `P + u + v ∈
+own_coords`; emit sorted 4-tuple. Dedup via `FxHashSet<[Coord; 4]>` (each
+rhombus emitted up to 4 times across anchors). Isolation: centroid =
+mean of 4 cells; reject if any opp piece within `rhombus_isolation_radius
+= 3` (Ring C per HeXOpedia Radius Theory). Detector gated on
+`rhombus_weight != 0` (short-circuits all work at default).
+`ThreatCounts.rhombus` field; `layer2_shapes` adds `ov.rhombus *
+c.rhombus` to existing per-axis Layer-2 sum. 13 → 15 tests across
+detector + Step 3 isolation-correctness updates.
+
+#### Sweep arc — 3 runs × 5 cells = 15 cells, NO positive cell
+
+All sweeps: Stage B, `param=rhombus`, 200 games/cell, 500ms/stone,
+10 workers, `opening_diversity=ON`.
+
+**Step 0 (vertex centroid, akra grid)** — `042f020` HEAD:
+
+| Cell  | W-L-D    | Elo   | Wilson 95% CI       |
+|------:|----------|------:|---------------------|
+| 22500 | 84-116-0 | -56.1 | [-104.7,  -7.4]     |
+| 33750 | 89-111-0 | -38.4 | [-86.7,   +9.9]     |
+| 45000 | 100-100-0|   0.0 | [-48.0,  +48.0]     |
+| 67500 | 83-117-0 | -59.6 | [-108.3, -10.9]     |
+| 90000 | 91-109-0 | -31.4 | [-79.5,  +16.8]     |
+
+V-pattern. Anchor 45000 flat at 0; both flanks negative; two cells
+statistically-significantly negative (CI fully below 0).
+
+**Step 1 (vertex centroid, neg-pos grid)** — Q2 falsification of
+double-count hypothesis:
+
+| Cell    | W-L-D    | Elo   | Wilson 95% CI       |
+|--------:|----------|------:|---------------------|
+| -22500  | 80-120-0 | -70.4 | [-119.4, -21.5]     |
+| -11250  | 76-124-0 | -85.0 | [-134.5, -35.6]     |
+|      0  | 96-104-0 | -13.9 | [-61.9,  +34.1]     |
+| +11250  | 77-123-0 | -81.4 | [-130.7, -32.1]     |
+| +22500  | 83-117-0 | -59.6 | [-108.3, -10.9]     |
+
+Symmetric-negative around 0. **Double-count REFUTED as primary
+mechanism**: if double-count were the cause, negative weights would
+cancel per-axis over-count and improve play; they degrade WORSE than
+positive (-70 to -85 vs -60 to -85). Rhombus positions are genuinely
+good; negative weight makes search AVOID strong positions.
+
+**Step 3 (cube-round centroid, akra grid)** — `5295561` HEAD,
+isolation-correctness fix per S1-REV Check 2 MAJOR. Replaced
+per-component `round_div4` (axial centroid lands on rhombus vertex,
+asymmetric Ring-C reject zone) with cube-round centroid (Red Blob Games
+§"Rounding", restores symmetric reject zone). 5 existing negative tests
+updated; 2 new tests cover asymmetric-far-side case.
+
+| Cell  | W-L-D    | Elo   | Wilson 95% CI       |
+|------:|----------|------:|---------------------|
+| 22500 | 92-108-0 | -27.9 | [-76.0,  +20.3]     |
+| 33750 | 83-117-0 | -59.6 | [-108.3, -10.9]     |
+| 45000 | 81-119-0 | -66.8 | [-115.7, -17.9]     |
+| 67500 | 81-119-0 | -66.8 | [-115.7, -17.9]     |
+| 90000 | 75-125-0 | -88.7 | [-138.3, -39.2]     |
+
+Monotonic-negative. Cross-sweep cube-round delta: cell 22500 +28, cells
+45000 -67, 90000 -57; WORSE on average than Step 0. **Isolation
+geometry REFUTED as root cause** — fixing centroid to a more
+theoretically-faithful algorithm did NOT flip any cell positive.
+
+#### Final mechanism reading
+
+Three candidate mechanisms diagnosed in sequence, each falsified:
+
+1. **Step 0 V-pattern**: consistent with "any weight disrupts; akra
+   anchor is the noise floor".
+2. **Step 1 symmetric-negative**: double-count refuted (negative
+   weights worse than positive — opposite of pure double-count
+   prediction). Note: `eval.rs:374-383` `layer2_shapes` DOES
+   structurally add `ov.rhombus * c.rhombus` to per-axis sum without
+   exclusion (S1-REV Check 3 CRITICAL: canonical rhombus generates 5
+   open_2 firings = 56250 Elo before any rhombus weight, refining
+   DIAG-2's 3-firing estimate to 5). But Step 1 refutes double-count
+   as the load-bearing mechanism.
+3. **Step 3 monotonic-negative (cube-round)**: isolation geometry
+   refuted.
+
+**Final diagnosis**: cluster-shape revival as a standalone Layer-2
+detector is empirically falsified for rhombus in current HH eval
+architecture. Per-axis S1 sum + Layer-1 buckets already implicitly
+evaluate the rhombus structure (DIAG-2 §"Layer decomposition" refined:
+rhombus reads as `5 × open_2`). Adding ANY explicit weight, at ANY
+sign, with ANY isolation algorithm, disrupts the eval balance the
+existing system encodes.
+
+### Stages 2 (bone) + 3 (arch + trapezoid) — SKIPPED
+
+A-priori: bone / arch / trapezoid share the per-axis decomposability
+mechanism with rhombus (bone = 4 open preempts + 2 triples per
+HeXOpedia §4.4; arch "functions very similarly to Rhombus" per §4.5;
+trapezoid per-axis decomposition similar to bone). Same negative result
+expected from 4-6 days of arena time across 4 sweeps. Per user direction
+post-Stage-1 falsification: SKIP. Saves 4-6 days for E-3 Path 2B work.
+
+### Self-time band shift: NONE (detector dormant at default)
+
+Detector adds eval% only when `rhombus_weight != 0` (gated). At default
+weight = 0:
+
+- `WINDOW_SCORE_8` cache + Layer-2 sum byte-identical pre/post.
+- `bench reference` node counts byte-identical (verified `make bench-diff
+  A=20260525-010119-6d57f8e.json B=20260525-002223-6d57f8e.json` — all
+  `reference / *.d*` rows = 0.0% post-`5295561`).
+- `bench-quick` post-`5295561` 558k NPS, Δ -1.0% vs prior (within ±5%
+  noise band; gated detector cannot affect hot path at weight 0).
+
+When weight ≠ 0 (sweep cells only): detector adds one extra pass over
+own-coord set + 6-rotation enum per anchor + sorted-4-tuple HashSet
+dedup, plus isolation check (centroid + Ring-C scan). Cost
+proportional to number of own pieces × 6; expected ~1-3% NPS hit at
+non-zero weight per analogy to Phase 28D-3 Layer-2 S1 revival. Not
+measured for production callers because weight stays 0.
+
+### Arena trajectory (unchanged)
+
+| State | n (HH vs SB-perf 500ms) | Winrate | Wilson 95% CI |
+|---|---:|---:|---|
+| Phase 28E-0 VERIFY (pre-E-2) | 100 | 2.0% | [0.5, 7.0] |
+| Post-Stage-0 (a1245a1) | NOT RUN | — | — |
+| Post-Stage-1 (042f020 + 6d57f8e + 5295561) | NOT RUN | — | — |
+
+No arena run because no weight applied. E-0 VERIFY 2.0% stands as
+current external-arena state.
+
+### Commits (4 atomic on hammerhead master + 1 on hexo-arena + this doc commit pair)
+
+| SHA | Subject | Type |
+|---|---|---|
+| `a1245a1` | `harness: implement opening diversity library` | Stage 0 (HH) |
+| `042f020` | `eval: implement rhombus detection with isolation` | Stage 1 detector + 13 tests |
+| `6d57f8e` | `tune: add --diversity flag to tune-sweep` | Stage 1 instrumentation |
+| `5295561` | `eval: cube-round centroid for rhombus isolation` | Stage 1 Step 3 isolation-correctness fix + 2 new tests |
+| (this commit) | `bench: HOTSPOTS Phase 28E-2 cluster falsification + diversity` | doc |
+| (next) | `spec: mark Phase 28E-2 done in roadmap` | doc |
+
+Plus 1 on hexo-arena main: `d6b91ba` (`adapter: consume opening
+diversity from HH harness`).
+
+### Phase 28E-3 handoff
+
+- **Path 2B (SB-perf 729-table port) — PRIMARY**. E-1 SYN Section C
+  ranked as Arm B; Stage 1 falsifies Arm A (Path 3). DIAG-4 + DIAG-5
+  established M effort (codegen-only, 3-5 commits, 1-3 days). Honest
+  caveat: DIAG-2 §"Implication" + DIAG-4 §"Per-axis tables" flag that
+  per-axis 729-table cannot fix the load-bearing cluster gap; Path
+  2B's expected gain is from denser per-pattern evaluation of LINEAR
+  shapes (where HH is already at 100%), not cluster recovery. May
+  move external winrate via linear-eval density refinement; will NOT
+  close the cluster gap DIAG-2 highlighted.
+- **Triangle detection** — NOT revisited. Cluster-detector mechanism
+  falsification argues against per-shape Layer-2 revival generally;
+  triangle would face same mechanism.
+- **Tempo proxy** — still pending (carried 28B → 28C → 28D-1 → 28D-3 →
+  28E-0 → 28E-2). TT p.11 "tempo is the most important currency"
+  remains strongest PDF evidence of any deferred item.
+- **Promote-harness commit bug fix** — still pending from E-0
+  (`promote.py` `-m`-after-`--` reorder, trivial).
+- **Eval architecture restructure (long-form)**: load-bearing finding
+  is per-axis S1 + Layer-1 already implicitly evaluate cluster shapes.
+  Restructuring options: (a) DISABLE per-axis S1 from cluster-positions
+  (runtime per-position S1-suppression — complex); (b) REPLACE per-axis
+  S1 with per-pattern table (≈ Path 2B). Path 2B is cheaper. Open
+  question for E-3: if Path 2B fails to move arena, the cluster gap
+  may be untouchable without ML-trained eval (Texel pipeline, L
+  effort, deferred per E-1 SYN).
+
+### Honest assessment
+
+External arena DID NOT MOVE (no weight applied → no behavior change).
+Phase 28E-2 DID empirically falsify Path 3 as a standalone lever via
+3 cleanly-diagnosed sweeps spanning vertex/cube-round centroid ×
+positive/negative weight space. That is real progress — Path 3 was the
+largest unmeasured arm in E-1 SYN's decision matrix; falsifying it
+sharpens E-3's path-2B-or-Texel choice. Opening diversity library is
+real infrastructure that future eval-isolated A/Bs benefit from
+(DIAG-1 fixed-depth determinism collapse can no longer re-trip with
+diversity ON). Rhombus detector code (~430 LOC + 15 tests) is real
+infrastructure preserved in repo for any future revisit (e.g. if eval
+is restructured to subtract per-axis S1 from cluster-positions, the
+detector can be reused as-is). Net: ~3-5 days of arena time spent for
+high-quality falsification + 2 pieces of reusable infrastructure. Not
+a winrate gain, but methodologically clean.
+
+**Artifacts** (gitignored per Phase 25.5):
+
+- `/tmp/phase_28e/PHASE_28E_2_RETRO.md` — full retrospective.
+- `/tmp/phase_28e/2/stage-0/{implementer,review}.md` — Stage 0 reports.
+- `/tmp/phase_28e/2/stage-1/{implementer,review}.md` — Stage 1 reports
+  (Step 0 + 1 + 3 arc).
+- `benches/results/tune/rhombus/B/20260524T210750/*.json` — Step 0 sweep.
+- `benches/results/tune/rhombus/B/20260524T225139/*.json` — Step 1 sweep.
+- `benches/results/tune/rhombus/B/20260525T013817/*.json` — Step 3 sweep.
+
+---
+
 # Hotspots — Phase 28E-0 (time-fix + SDK + audit)
 
 ## Phase 28E-0 status (2026-05-24)
