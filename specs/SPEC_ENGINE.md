@@ -836,10 +836,31 @@ Threat-only, hard-capped at `cfg.qsearch_max_plies`.
 2. Stand-pat with `board.cached_eval()`. For `max`: if `static >= beta`
    return `beta`; else `alpha = max(alpha, static)`. Mirror for `min`.
 3. If `q_ply >= cfg.qsearch_max_plies` return alpha.
-4. Generate threat-only moves: a move is included iff it creates own S0,
-   blocks an opponent S0, or makes a 6-in-row. Skip the rest.
+4. Generate threat-only moves per `cfg.qsearch_filter_mode` (see below).
 5. If no threat moves remain, return alpha (the position is quiet).
 6. Recurse normally with the threat-only move list.
+
+#### Filter modes (`qsearch_filter_mode`)
+
+`QsearchFilterMode` enum dispatched in the hot path. String → enum
+parsed once at config load. Three modes:
+
+| Mode | Predicate | Use case |
+|------|-----------|----------|
+| `current` | `would_make_six(self) \| creates_s0(self) \| blocks_opp_s0(self)` | Legacy. Speculative S0-creation drives BF up to ~4.7 in cluster decisive. |
+| `resolution` | `would_make_six(self) \| blocks_opp_s0(self)` | Drops speculative S0 creation. Defensive resolution only. |
+| `urgent` | `would_make_six(self) \| would_make_six(opp)` | Win or block immediate six only. Tightest filter. -22% cyc/node vs `current`. **Default since Phase 28F-3.3.** |
+
+The `would_make_six(board, m, opp)` call in `urgent` exploits the fact
+that `ordering::would_make_six` is a pure virtual-placement predicate
+that reads the appropriate axis bitmap by `side` index without
+mutating the board. Passing `opp` answers "would opp win if they
+placed a stone at empty cell `m`?" — exactly the cell HH must block.
+
+Phase 28F-3.3 selected `urgent` after 400g direct match vs `current`:
++50.7 Elo, Wilson CI [+16.4, +85.1]. External arena vs SB-perf:
++2.5pp (4.5% vs 2.0% baseline); below the strict +3pp gate but
+internally definitive.
 
 ### Stone-1 threat completion
 

@@ -1200,6 +1200,58 @@ Three branches in priority order:
    Avoids global cost-blowup that killed cap=12/16. Most expensive,
    regression risk.
 
+## Phase 28F-3.3 — Qsearch threat filter (PROMOTE on internal evidence)
+
+2026-05-25. Sub-phase 0 diagnosis: qsearch BF averages 4.7 at all
+plies in cluster decisive. `is_threat_move` filter too permissive —
+`creates_s0` and non-immediate `blocks_opp_s0` drive BF without
+resolving immediate threats. Three filter variants implemented behind
+`qsearch_filter_mode` config: `current`, `resolution`, `urgent`.
+
+**Outcome: PROMOTE on internal evidence. `.bestref` advanced to
+the urgent-mode commit.**
+
+### Results
+
+| Variant | Internal vs `current` (direct) | NPS (cyc/node) | External vs SB-perf (400g) |
+|---|---|---|---|
+| `current` (baseline) | 0 by definition | 532k (7973) | 2.0% (100g baseline) |
+| `resolution` | ~−21 Elo (triangulated, 200g) | 595k (6287) | (not run, weaker triangulation) |
+| `urgent` (winner) | **+50.7 Elo, CI [+16.4, +85.1]** (400g direct) | **650k (6529)** | **4.5%, CI [2.9%, 7.0%]** |
+
+External delta +2.5pp vs baseline; below strict +3pp gate but +CI
+direction. PROMOTE chosen on the dominant internal signal.
+
+### Methodology note: direct > triangulation
+
+First-pass 200g vs old `.bestref` triangulated `urgent` vs `current`
+at point estimate ≈−7 Elo. Direct 400g head-to-head: **+50.7 Elo**.
+Triangulation via shared opponent accumulates independent noise;
+direct match is canonical. Locked as a methodology rule.
+
+### Cap-raise hypothesis closed
+
+The "high BF caused the 28F-3.1 cap-raise failure" hypothesis is
+falsified. Combo test (`urgent` + cap=12, 200g): −17.4 Elo vs
+(`current` + cap=8). Inferring from the +50.7 baseline,
+`urgent` + cap=12 vs `urgent` + cap=8 ≈ −68 Elo. cap=8 is a hard
+ceiling for reasons unrelated to filter mode (likely speculative
+extension past useful-knowledge horizon). `qsearch_max_plies = 8`
+stays locked.
+
+### Commits
+
+| SHA | Subject |
+|---|---|
+| `958d27b` | `search: add qsearch_filter_mode config parameter` |
+| `0aafe6f` | `search: implement resolution-only qsearch filter` |
+| `368169e` | `search: implement urgent-only qsearch filter` |
+| `28470ce` | `search: unit tests for qsearch filter modes` |
+| `2af12ec` | `promote: advance .bestref to 28470ce (Phase 28F-3.3 baseline)` |
+| `24c8c8d` | `search: set qsearch_filter_mode to urgent` |
+
+Bench/match/arena raw outputs under `/tmp/phase_28f/3/3/` (gitignored).
+
 ## Phase 28E candidates (updated post-28E-2)
 
 Phase 28E-0 closed: time-fix mechanism corrected, SDK observability
