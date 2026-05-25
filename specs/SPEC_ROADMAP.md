@@ -40,6 +40,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 28E-0 | per-stone time-fix + SDK SearchStats + fixed-depth + engine audit (1 MAJOR + 1 MINOR); KEEP, no `.bestref` advance | ✅ done |
 | Sprint 1 | free-wins bundle: iai-callgrind gate + PGO ship + TT prefetch; +7.4% bench-quick NPS; `.bestref` cfefb3b → cac186e | ✅ done |
 | Sprint 2 | proximity bundle + supporting items: worktree-PGO opt-in (A) + bounds-elim/inline (D) + SparseCellSet u16 (E) + EvalCache align (G); C/F/H aborted by falsification branches; +3.3% bench-quick NPS / -7% iai instructions; 200g vs `.bestref` -12.2 Elo INCONCLUSIVE; `.bestref` UNCHANGED (Outcome C, plan § I.5) | ✅ done |
+| Sprint 3 | place_for_search (B, with design-pass A first) + history flat table (C) + AxisBitmap unchecked indexing (D); E LMR retune + F staged 2.5 deferred to Sprint 4; +39.2% bench-quick NPS / -25% iai instructions; Phase B 400g raw +19 corrected +9 Elo PASS, Phase C 200g raw +58 corrected +48 Elo PASS, Phase D 400g raw +6 corrected -4 Elo (accepted on evidence); `.bestref` advance per final 400g gate | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
