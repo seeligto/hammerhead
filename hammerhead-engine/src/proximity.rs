@@ -57,7 +57,16 @@ pub struct SparseCellSet {
     members: Vec<Coord>,
     /// `slot[prox_idx(c)] == members-position + 1`, or `0` when `c` is
     /// absent. The `+ 1` bias lets `0` double as the absent sentinel.
-    slot: Box<[u32]>,
+    ///
+    /// Sprint 2E: u16 (was u32). Slot values store `members.len() + 1`;
+    /// `members` is the set of currently-live cells, which in real play
+    /// never approaches `u16::MAX` = 65,535. The flat backing array is
+    /// sized `PROX_FIELD_SIZE` (~73 k) and `insert` debug-asserts the
+    /// pre-bump length is below `u16::MAX - 1` so a pathological state
+    /// would trip in dev builds. Halves the per-set footprint from 290
+    /// KB to 145 KB — both X and O sets fit a typical L2 (1 MB) with
+    /// room left for proximity counts and threat scratch.
+    slot: Box<[u16]>,
 }
 
 impl Default for SparseCellSet {
@@ -67,20 +76,20 @@ impl Default for SparseCellSet {
 }
 
 impl SparseCellSet {
-    /// Empty set. Allocates the flat `slot` field once (~290 KB at the
+    /// Empty set. Allocates the flat `slot` field once (~145 KB at the
     /// default window); reused across `clear`, never reallocated.
     #[must_use]
     #[cold]
     pub fn new() -> Self {
         Self {
             members: Vec::with_capacity(INITIAL_MEMBERS_CAPACITY),
-            slot: vec![0u32; PROX_FIELD_SIZE].into_boxed_slice(),
+            slot: vec![0u16; PROX_FIELD_SIZE].into_boxed_slice(),
         }
     }
 
     /// Insert `c`. Returns `true` iff it was newly inserted.
     #[inline]
-    #[allow(clippy::cast_possible_truncation)] // len <= PROX_FIELD_SIZE < u32::MAX
+    #[allow(clippy::cast_possible_truncation)]
     pub fn insert(&mut self, c: Coord) -> bool {
         let i = prox_idx(c);
         // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE`, and
@@ -89,8 +98,13 @@ impl SparseCellSet {
         if *slot != 0 {
             return false;
         }
+        debug_assert!(
+            self.members.len() < (u16::MAX as usize - 1),
+            "SparseCellSet members exceeded u16 slot capacity at {}",
+            self.members.len(),
+        );
         self.members.push(c);
-        *slot = self.members.len() as u32; // position + 1
+        *slot = self.members.len() as u16; // position + 1
         true
     }
 
