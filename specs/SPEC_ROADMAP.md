@@ -38,6 +38,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 28D-1 | 800g cycle-break match HEAD vs `.bestref`; Outcome C, `.bestref` 932c5d8 → 5bd89648 | ✅ done |
 | 28D-3 | eval revival (S1 detection: open_3 / closed_3 / open_2) + I3 bug sweep; KEEP commits, no `.bestref` advance | ✅ done |
 | 28E-0 | per-stone time-fix + SDK SearchStats + fixed-depth + engine audit (1 MAJOR + 1 MINOR); KEEP, no `.bestref` advance | ✅ done |
+| Sprint 1 | free-wins bundle: iai-callgrind gate + PGO ship + TT prefetch; +7.4% bench-quick NPS; `.bestref` cfefb3b → cac186e | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
