@@ -883,7 +883,7 @@ fn quiescence_node(
         threats_slot.clear();
         let cands_slot = &scratch.moves[ply_idx];
         for m in cands_slot.iter().copied() {
-            if is_threat_move(board, m, side) {
+            if is_threat_move(board, m, side, cfg.qsearch_filter_mode) {
                 threats_slot.push(m);
             }
         }
@@ -1001,11 +1001,30 @@ fn score_from_tt(score: i32, ply: u8) -> i32 {
 
 /// `is_threat_move` predicates for quiescence — share definitions with
 /// the ordering module so the qsearch frontier matches bucket 5/6/9.
+/// Dispatches on `cfg.qsearch_filter_mode`; the mode is resolved once at
+/// config load, so this is a cheap enum match in the hot path.
 #[inline]
-fn is_threat_move(board: &Board, m: Coord, side: Player) -> bool {
-    ordering::would_make_six(board, m, side)
-        || ordering::creates_s0(board, m, side)
-        || ordering::blocks_opp_s0(board, m, side)
+fn is_threat_move(board: &Board, m: Coord, side: Player, mode: QsearchFilterMode) -> bool {
+    match mode {
+        QsearchFilterMode::Current => {
+            ordering::would_make_six(board, m, side)
+                || ordering::creates_s0(board, m, side)
+                || ordering::blocks_opp_s0(board, m, side)
+        }
+        QsearchFilterMode::Resolution => is_threat_move_resolution(board, m, side),
+        QsearchFilterMode::Urgent => {
+            // Urgent falls back to Resolution until the dedicated
+            // function lands in the next commit.
+            is_threat_move_resolution(board, m, side)
+        }
+    }
+}
+
+/// Resolution filter: win now or block opponent's forced win only.
+/// Drops speculative S0 creation — qsearch only resolves immediate threats.
+#[inline]
+fn is_threat_move_resolution(board: &Board, m: Coord, side: Player) -> bool {
+    ordering::would_make_six(board, m, side) || ordering::blocks_opp_s0(board, m, side)
 }
 
 /// If the just-placed move at `m` left us halfway through a `HeXO` turn
