@@ -105,7 +105,7 @@ qsearch_max_plies = 8
 #   "current"    = would_make_six | creates_s0 | blocks_opp_s0 (default)
 #   "resolution" = would_make_six | blocks_opp_s0 (drop speculative S0 creation)
 #   "urgent"     = would_make_six(self) | would_make_six(opp) (win or block immediate six only)
-qsearch_filter_mode = "current"
+qsearch_filter_mode = "urgent"
 
 # Per root-path check-extension budget.
 max_check_extensions = 4
