@@ -458,7 +458,7 @@ fn pvs_node(
 
     // Stage 1: TT move.
     if let Some(m) = tt_move {
-        if board.is_legal(m) {
+        if board.is_legal_during_search(m) {
             let bucket = {
                 let ctx = OrderingContext {
                     board,
@@ -490,7 +490,7 @@ fn pvs_node(
     if !beta_cut {
         for (slot_idx, slot_opt) in killers_snap.slots().iter().enumerate() {
             let Some(slot) = *slot_opt else { continue };
-            if tried.contains(&slot) || !board.is_legal(slot) {
+            if tried.contains(&slot) || !board.is_legal_during_search(slot) {
                 continue;
             }
             let bucket = {
@@ -778,9 +778,7 @@ fn try_one_move(
     };
     let probe_depth = (new_depth - lmr_reduction).max(0);
 
-    board
-        .place(m)
-        .expect("staged move must be legal at search depth");
+    board.place_for_search(m);
     tt.prefetch(board.hash());
     let stone1_buf = collect_stone1_defense(board, m);
 
@@ -803,9 +801,7 @@ fn try_one_move(
         node_count,
         move_idx == 0,
     );
-    board
-        .undo()
-        .expect("undo own placement must succeed inside search");
+    board.undo_for_search();
     let score = score_result?;
 
     if maximize {
@@ -955,12 +951,10 @@ fn quiescence_node(
     // filter (qsearch frontier invariant — see I7 / B6).
     if let Some(m) = tt_move {
         if m != ORIGIN
-            && board.is_legal(m)
+            && board.is_legal_during_search(m)
             && is_threat_move(board, m, side, cfg.qsearch_filter_mode)
         {
-            board
-                .place(m)
-                .expect("TT-suggested threat move must be legal in qsearch");
+            board.place_for_search(m);
             tt.prefetch(board.hash());
             let r = quiescence_node(
                 board,
@@ -974,7 +968,7 @@ fn quiescence_node(
                 deadline,
                 node_count,
             );
-            board.undo().expect("undo TT move in qsearch");
+            board.undo_for_search();
             let score = r?;
             searched_any_move = true;
             tried_tt_move = Some(m);
@@ -1050,9 +1044,7 @@ fn quiescence_node(
         if Some(m) == tried_tt_move {
             continue;
         }
-        board
-            .place(m)
-            .expect("ordered threat must be legal in qsearch");
+        board.place_for_search(m);
         tt.prefetch(board.hash());
         let r = quiescence_node(
             board,
@@ -1066,7 +1058,7 @@ fn quiescence_node(
             deadline,
             node_count,
         );
-        board.undo().expect("undo own placement in qsearch");
+        board.undo_for_search();
         let score = r?;
         searched_any_move = true;
         // Track the unclamped best score for the TT store. `best` is
