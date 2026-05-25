@@ -868,7 +868,14 @@ Threat-only, hard-capped at `cfg.qsearch_max_plies`.
    Call `tt.store(board.hash(), -1, score_to_tt(best_score, ply),
    flag, qs_best_move)` where `qs_best_move` is the move that produced
    `best_score`, or `ORIGIN` if no move improved over the
-   stand-pat-derived starting value.
+   stand-pat-derived starting value. Stores fire on ANY search-derived
+   termination — both function tail AND in-loop beta/alpha cutoffs —
+   provided `searched_any_move == true` at the moment of store.
+   Inline-cutoff stores are mandatory: qsearch returns early on
+   `score >= beta` / `score <= alpha` and cannot fall through to a
+   common tail; skipping cutoff stores would lose the strongest
+   bounds qsearch derives. (Cf. Stockfish: qsearch stores on cutoff
+   before returning.)
 
 #### Qsearch TT depth convention (`-1`)
 

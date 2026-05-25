@@ -1252,6 +1252,48 @@ stays locked.
 
 Bench/match/arena raw outputs under `/tmp/phase_28f/3/3/` (gitignored).
 
+## Phase 28F-3.4 — Qsearch TT probe + store (PROMOTE on internal evidence)
+
+2026-05-25. Add TT probe + store inside `quiescence_node`, gated by
+`engine.search.qsearch_tt_enabled` (default true). No eval changes.
+Mirrors `pvs_node`'s TT pattern: probe BEFORE stand-pat, try
+TT-move-first when it passes `is_threat_move`, store at function tail
+AND on inline beta/alpha cutoffs (provided `searched_any_move`). All
+qsearch entries use `depth = -1` so they cannot displace main-search
+entries from the depth-preferred bucket.
+
+**Outcome: PROMOTE on internal evidence. `.bestref` advanced to
+`cfefb3b`.** Internal 200g @ 500ms: HH +33.1 Elo (109-90-1,
+W/L margin monotonically non-decreasing through the run, Wilson95
+[47.83%, 61.49%], SPRT inconclusive at 200g). External arena
+200g vs SB-perf @ 500ms: 10/200 = 5.00% (Wilson95 [2.74%, 8.96%])
+vs 28F-3.3 baseline 18/400 = 4.50% (Wilson95 [2.87%, 7.00%]) →
+Δ +0.5pp, fails sticky +3pp gate.
+
+Per dispatcher §5 STEP 5 decision matrix row 2 ("internal >= 0,
+external < +3pp with positive trend → PROMOTE on internal evidence")
+and project memory ("arena +3pp external gate is sticky"; "internal
+positive → promote"): PROMOTE.
+
+NPS A/B (tools/qsearch_tt_ab.sh, single-run bench-perf): midgame_12
+essentially unchanged; midgame_30 shows cyc/node up 7-111% but depth
++1 at long budget (8 → 9). Trade-off matches internal Elo signal.
+
+### Commits
+
+| SHA | Subject |
+|---|---|
+| `5465f00` | `spec: document qsearch TT probe + store (28F-3.4)` |
+| `7e302c4` | `config: add qsearch_tt_enabled flag (default true)` |
+| `d9efcb8` | `search: thread &mut tt into quiescence_node` |
+| `760375b` | `qsearch: TT store at tail when moves were searched` |
+| `2606d2f` | `qsearch: TT probe at top with depth=-1 cutoffs` |
+| `16ee043` | `bench: capture cyc/node delta with qsearch TT on vs off` |
+| `cfefb3b` | `fix: correct .bestref SHA typo (dbd72037->dbd7203f)` |
+| `34fec36` | `promote: advance .bestref to cfefb3b (Phase 28F-3.4)` |
+
+Bench/match/arena raw outputs under `/tmp/phase_28f/3/4/` (gitignored).
+
 ## Phase 28E candidates (updated post-28E-2)
 
 Phase 28E-0 closed: time-fix mechanism corrected, SDK observability
