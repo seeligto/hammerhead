@@ -83,11 +83,14 @@ impl SparseCellSet {
     #[allow(clippy::cast_possible_truncation)] // len <= PROX_FIELD_SIZE < u32::MAX
     pub fn insert(&mut self, c: Coord) -> bool {
         let i = prox_idx(c);
-        if self.slot[i] != 0 {
+        // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE`, and
+        // `self.slot.len() == PROX_FIELD_SIZE` by ctor.
+        let slot = unsafe { self.slot.get_unchecked_mut(i) };
+        if *slot != 0 {
             return false;
         }
         self.members.push(c);
-        self.slot[i] = self.members.len() as u32; // position + 1
+        *slot = self.members.len() as u32; // position + 1
         true
     }
 
@@ -95,7 +98,8 @@ impl SparseCellSet {
     #[inline]
     pub fn remove(&mut self, c: Coord) -> bool {
         let i = prox_idx(c);
-        let pos1 = self.slot[i];
+        // SAFETY: identical to `insert` — `prox_idx` debug-asserts in range.
+        let pos1 = unsafe { *self.slot.get_unchecked(i) };
         if pos1 == 0 {
             return false;
         }
@@ -105,10 +109,13 @@ impl SparseCellSet {
             let moved = self.members[last];
             self.members[pos] = moved;
             // `moved` now sits at `pos`; its slot value is `pos + 1 == pos1`.
-            self.slot[prox_idx(moved)] = pos1;
+            let moved_idx = prox_idx(moved);
+            // SAFETY: `prox_idx` debug-asserts in range.
+            unsafe { *self.slot.get_unchecked_mut(moved_idx) = pos1 };
         }
         self.members.pop();
-        self.slot[i] = 0;
+        // SAFETY: `i` validated above.
+        unsafe { *self.slot.get_unchecked_mut(i) = 0 };
         true
     }
 
@@ -116,7 +123,9 @@ impl SparseCellSet {
     #[inline]
     #[must_use]
     pub fn contains(&self, c: Coord) -> bool {
-        self.slot[prox_idx(c)] != 0
+        let i = prox_idx(c);
+        // SAFETY: `prox_idx` debug-asserts in range.
+        unsafe { *self.slot.get_unchecked(i) != 0 }
     }
 
     /// Iterate the members. Order is insertion order perturbed by every
@@ -194,14 +203,19 @@ impl ProximityCounts {
     #[inline]
     #[must_use]
     pub fn outer_at(&self, c: Coord) -> u8 {
-        self.outer[prox_idx(c)]
+        let i = prox_idx(c);
+        // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE`, and
+        // `self.outer.len() == PROX_FIELD_SIZE` by ctor.
+        unsafe { *self.outer.get_unchecked(i) }
     }
 
     /// Inner (r=2) refcount at `c`. `> 0` ⟺ `c` is move-gen-adjacent.
     #[inline]
     #[must_use]
     pub fn inner_at(&self, c: Coord) -> u8 {
-        self.inner[prox_idx(c)]
+        let i = prox_idx(c);
+        // SAFETY: identical to `outer_at` — `prox_idx` debug-asserts in range.
+        unsafe { *self.inner.get_unchecked(i) }
     }
 }
 
@@ -222,9 +236,13 @@ pub(crate) fn add_proximity(
 ) {
     for_each_in_range(center, radius, |d| {
         let i = prox_idx(d);
-        let was_zero = count[i] == 0;
-        count[i] = count[i].saturating_add(1);
-        debug_assert!(count[i] != u8::MAX, "proximity count overflow at {d:?}");
+        // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE` and
+        // `count.len() == PROX_FIELD_SIZE` by ctor (Board owns both
+        // halves of the field with matching lengths).
+        let cell = unsafe { count.get_unchecked_mut(i) };
+        let was_zero = *cell == 0;
+        *cell = cell.saturating_add(1);
+        debug_assert!(*cell != u8::MAX, "proximity count overflow at {d:?}");
         if d != center && was_zero && !axes.is_occupied(d) {
             candidates.insert(d);
         }
@@ -244,9 +262,11 @@ pub(crate) fn remove_proximity(
 ) {
     for_each_in_range(center, radius, |d| {
         let i = prox_idx(d);
-        debug_assert!(count[i] > 0, "proximity count underflow at {d:?}");
-        count[i] -= 1;
-        if count[i] == 0 {
+        // SAFETY: `prox_idx` debug-asserts `i < PROX_FIELD_SIZE`.
+        let cell = unsafe { count.get_unchecked_mut(i) };
+        debug_assert!(*cell > 0, "proximity count underflow at {d:?}");
+        *cell -= 1;
+        if *cell == 0 {
             candidates.remove(d);
         }
     });
