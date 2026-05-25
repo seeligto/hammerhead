@@ -413,19 +413,28 @@ def main():
         verdict = "EVAL-SIGN"
         rationale = (f"Overall sign-agreement {overall_sign_rate*100:.1f}% < 60%: HH and SB "
                      "fundamentally disagree about who's winning. Codebook rewrite scope.")
-    elif overall_sign_rate >= 0.8 and overall_r >= 0.7 and (math.isnan(overall_sb_hit) or overall_sb_hit < 0.7):
-        verdict = "SEARCH-GAP"
-        rationale = (f"Sign agreement {overall_sign_rate*100:.1f}% (>=80%), "
-                     f"correlation r={overall_r:.2f} (>=0.7). Evals agree but HH still "
-                     "loses → gap is search-side.")
     elif "HURT" in layer_verdict:
         verdict = "EVAL-LAYER1"
         rationale = (f"Layer-1 verdict: {layer_verdict}. Layer-1 generates false signal on "
                      "cluster positions → codebook rewrite (gamma) targets the right layer.")
-    elif overall_sign_rate >= 0.8 and (math.isnan(cluster_sb_hit) or cluster_sb_hit < 0.5):
+    elif overall_sign_rate >= 0.8 and (math.isnan(cluster_sb_hit) or 0.40 <= cluster_sb_hit <= 0.60):
+        # Sign agreement is high and on the disagreement set neither
+        # eval reliably outperforms — gap is unlikely eval-side.
         verdict = "SEARCH-GAP"
-        rationale = (f"Sign agreement {overall_sign_rate*100:.1f}% high, CROSS-AXIS-CLUSTER "
-                     "SB-vs-HH split inconclusive. Gap unlikely eval-side.")
+        rationale = (f"Sign agreement {overall_sign_rate*100:.1f}% (>=80%); "
+                     f"on the divergent cluster positions SB is right "
+                     f"{cluster_sb_hit*100:.1f}% (coin flip). "
+                     f"Layer-1 = {layer_verdict}. "
+                     f"Pearson r={overall_r:.2f} is low — evals differ in *magnitude* "
+                     "calibration but not in who's winning. HH eval is no worse than SB's "
+                     "where they disagree, so adding eval (gamma codebook) won't close "
+                     "the gap. Pivot to search-side: time mgmt, ordering, depth.")
+    elif overall_sign_rate >= 0.8 and not math.isnan(cluster_sb_hit) and cluster_sb_hit >= 0.70:
+        verdict = "EVAL-LAYER2"
+        rationale = (f"Sign agreement {overall_sign_rate*100:.1f}% high but on divergent "
+                     f"cluster positions SB is right {cluster_sb_hit*100:.1f}% (≥70%). "
+                     "SB's eval is systematically better on cluster shapes → "
+                     "Layer-2/3 shape detection needs enrichment.")
     else:
         verdict = "MIXED"
         rationale = (f"Mixed signal. sign={overall_sign_rate*100:.1f}%, r={overall_r:.2f}, "
