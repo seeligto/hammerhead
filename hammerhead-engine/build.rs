@@ -631,6 +631,12 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "qsearch_filter_mode"],
         "QSEARCH_FILTER_MODE_STR",
     );
+    emit_bool(
+        out,
+        cfg,
+        &["engine", "search", "qsearch_tt_enabled"],
+        "QSEARCH_TT_ENABLED",
+    );
 }
 
 fn emit_ordering(out: &mut String, cfg: &toml::Value) {
@@ -737,5 +743,12 @@ fn emit_str(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
         .as_str()
         .unwrap_or_else(|| panic!("hexo.toml {} not a string", path.join(".")));
     writeln!(out, "pub const {name}: &str = \"{v}\";").unwrap();
+}
+
+fn emit_bool(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = get(cfg, path)
+        .as_bool()
+        .unwrap_or_else(|| panic!("hexo.toml {} not a bool", path.join(".")));
+    writeln!(out, "pub const {name}: bool = {v};").unwrap();
 }
 

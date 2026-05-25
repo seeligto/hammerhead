@@ -23,7 +23,7 @@ use crate::config::{
     DEFAULT_MAX_DEPTH,
     DEFAULT_MOVE_RADIUS, DEFAULT_TIME_MS, LMR_MIN_DEPTH, LMR_MIN_MOVE_INDEX,
     LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_FILTER_MODE_STR,
-    QSEARCH_MAX_PLIES,
+    QSEARCH_MAX_PLIES, QSEARCH_TT_ENABLED,
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
@@ -162,6 +162,14 @@ pub struct SearchConfig {
     /// Qsearch threat-filter variant. Sourced from `hexo.toml`
     /// `engine.search.qsearch_filter_mode`.
     pub qsearch_filter_mode: QsearchFilterMode,
+    /// Phase 28F-3.4 feature gate. When `true`, `quiescence_node` probes
+    /// the TT before stand-pat and stores at the function tail (only
+    /// when at least one threat move was recursed). When `false`,
+    /// qsearch performs no TT I/O — behaviour is byte-identical to the
+    /// pre-28F-3.4 implementation. Both probe AND store are gated by
+    /// this single flag. Sourced from `hexo.toml`
+    /// `engine.search.qsearch_tt_enabled`.
+    pub qsearch_tt_enabled: bool,
 }
 
 impl Default for SearchConfig {
@@ -180,6 +188,7 @@ impl Default for SearchConfig {
             qsearch_filter_mode: QSEARCH_FILTER_MODE_STR
                 .parse()
                 .expect("QSEARCH_FILTER_MODE_STR from hexo.toml must be valid"),
+            qsearch_tt_enabled: QSEARCH_TT_ENABLED,
         }
     }
 }

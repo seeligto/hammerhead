@@ -107,6 +107,11 @@ qsearch_max_plies = 8
 #   "urgent"     = would_make_six(self) | would_make_six(opp) (win or block immediate six only)
 qsearch_filter_mode = "urgent"
 
+# Phase 28F-3.4: probe + store TT inside quiescence_node.
+# Gates BOTH the pre-stand-pat probe AND the function-tail store.
+# `false` reverts to pre-28F-3.4 byte-identical qsearch behaviour.
+qsearch_tt_enabled = true
+
 # Per root-path check-extension budget.
 max_check_extensions = 4
 
