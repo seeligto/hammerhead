@@ -52,6 +52,36 @@ pub enum BoardError {
 /// typical game (`HeXO` games rarely exceed ~256 stones).
 const INITIAL_MAP_CAPACITY: usize = 256;
 
+/// Cacheline-aligned static-eval cache (Sprint 2G).
+///
+/// Wraps the lazy `Cell<Option<i32>>` so it lives in its own 64-byte
+/// cache line, isolated from the mutating fields it would otherwise
+/// share a line with. See the `eval_cache` field doc on [`Board`] for
+/// the cachegrind motivation.
+#[repr(align(64))]
+struct EvalCache {
+    value: Cell<Option<i32>>,
+}
+
+impl EvalCache {
+    #[inline]
+    fn new() -> Self {
+        Self {
+            value: Cell::new(None),
+        }
+    }
+
+    #[inline]
+    fn get(&self) -> Option<i32> {
+        self.value.get()
+    }
+
+    #[inline]
+    fn set(&self, v: Option<i32>) {
+        self.value.set(v);
+    }
+}
+
 /// `HeXO` board state.
 pub struct Board {
     /// Per-cell proximity refcounts: outer (r=8, legality) + inner
@@ -109,7 +139,15 @@ pub struct Board {
     threats_dirty: Cell<bool>,
     /// Lazily-filled static-eval result. `None` after every mutation,
     /// reassigned on the next call to [`Board::cached_eval`].
-    eval_cache: Cell<Option<i32>>,
+    ///
+    /// Sprint 2G: wrapped in `#[repr(align(64))]` `EvalCache` so the
+    /// cache line is not shared with any mutating field. Cachegrind
+    /// (post-Sprint-1 cleanup pass, verdict §12c) attributed 18.3 %
+    /// of all D1 read misses to `Board::cached_eval` reads — the cache
+    /// line was being flushed on every `place` / `undo` because it
+    /// shared 64 B with the frequently-mutated `threats_dirty` /
+    /// `line_contrib` neighbours. Standalone alignment keeps it hot.
+    eval_cache: EvalCache,
     /// Phase-27 per-`(axis, line_id)` Layer-1 contribution cache.
     /// Scaffold only in C-01 — no consumers, no invalidation hooks yet.
     /// `RefCell` mirrors the `threats_x` / `threats_o` pattern: hot-path
@@ -160,7 +198,7 @@ impl Board {
             threats_o: RefCell::new(ThreatSet::default()),
             threat_scratch: RefCell::new(ThreatScratch::default()),
             threats_dirty: Cell::new(false),
-            eval_cache: Cell::new(None),
+            eval_cache: EvalCache::new(),
             line_contrib: RefCell::new(LineContrib::new()),
             eval_overrides: Cell::new(EvalOverrides::default()),
             window_score_table: RefCell::new(None),
