@@ -22,7 +22,8 @@ use crate::config::{
     ASPIRATION_START_DEPTH, ASP_WINDOW_INITIAL, ASP_WINDOW_WIDEN_FACTOR, DEADLINE_CHECK_NODES,
     DEFAULT_MAX_DEPTH,
     DEFAULT_MOVE_RADIUS, DEFAULT_TIME_MS, LMR_MIN_DEPTH, LMR_MIN_MOVE_INDEX,
-    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_MAX_PLIES,
+    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_FILTER_MODE_STR,
+    QSEARCH_MAX_PLIES,
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
@@ -103,6 +104,35 @@ const MATE_BOUND: i32 = MATE_SCORE - MAX_PLY as i32;
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Qsearch threat-filter mode. Parsed once at `SearchConfig::default()` from
+/// `QSEARCH_FILTER_MODE_STR` (sourced from `hexo.toml`). Hot-path dispatch
+/// is via `match` on this enum — never a string comparison.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum QsearchFilterMode {
+    /// `would_make_six | creates_s0 | blocks_opp_s0` — baseline behavior.
+    Current,
+    /// `would_make_six | blocks_opp_s0` — drop speculative S0 creation.
+    Resolution,
+    /// `would_make_six(self) | would_make_six(opp)` — win or block immediate six only.
+    Urgent,
+}
+
+impl std::str::FromStr for QsearchFilterMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "current" => Ok(Self::Current),
+            "resolution" => Ok(Self::Resolution),
+            "urgent" => Ok(Self::Urgent),
+            other => Err(format!(
+                "hexo.toml engine.search.qsearch_filter_mode: unknown value \
+                 {other:?}; valid: \"current\", \"resolution\", \"urgent\""
+            )),
+        }
+    }
+}
+
 /// Tunable search parameters. Defaults are sourced from `hexo.toml` via
 /// `crate::config::*`.
 #[derive(Copy, Clone, Debug)]
@@ -129,6 +159,9 @@ pub struct SearchConfig {
     pub qsearch_max_plies: u8,
     /// Per-root-path budget for check extensions.
     pub max_check_extensions: u8,
+    /// Qsearch threat-filter variant. Sourced from `hexo.toml`
+    /// `engine.search.qsearch_filter_mode`.
+    pub qsearch_filter_mode: QsearchFilterMode,
 }
 
 impl Default for SearchConfig {
@@ -144,6 +177,9 @@ impl Default for SearchConfig {
             lmr_reduction: LMR_REDUCTION,
             qsearch_max_plies: QSEARCH_MAX_PLIES,
             max_check_extensions: MAX_CHECK_EXTENSIONS,
+            qsearch_filter_mode: QSEARCH_FILTER_MODE_STR
+                .parse()
+                .expect("QSEARCH_FILTER_MODE_STR from hexo.toml must be valid"),
         }
     }
 }

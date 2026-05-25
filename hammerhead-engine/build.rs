@@ -625,6 +625,12 @@ fn emit_search(out: &mut String, cfg: &toml::Value) {
         &["engine", "search", "max_check_extensions"],
         "MAX_CHECK_EXTENSIONS",
     );
+    emit_str(
+        out,
+        cfg,
+        &["engine", "search", "qsearch_filter_mode"],
+        "QSEARCH_FILTER_MODE_STR",
+    );
 }
 
 fn emit_ordering(out: &mut String, cfg: &toml::Value) {
@@ -724,5 +730,12 @@ fn emit_usize(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
 fn emit_u8(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
     let v = as_int(get(cfg, path), path);
     writeln!(out, "pub const {name}: u8 = {v};").unwrap();
+}
+
+fn emit_str(out: &mut String, cfg: &toml::Value, path: &[&str], name: &str) {
+    let v = get(cfg, path)
+        .as_str()
+        .unwrap_or_else(|| panic!("hexo.toml {} not a string", path.join(".")));
+    writeln!(out, "pub const {name}: &str = \"{v}\";").unwrap();
 }
 
