@@ -1075,17 +1075,30 @@ After partial sort + truncation, only the top `MOVE_GEN_CAP` (default
 ### State
 
 `KillerSlot` holds at most `KILLER_SLOTS` (2) most-recent cutoff moves at a
-ply. `OrderingState` owns `Box<[KillerSlot; MAX_PLY]>` (MAX_PLY = 128) and a
-global `FxHashMap<(Coord, Player), u32>` history. The search driver calls:
+ply. `OrderingState` owns `Box<[KillerSlot; MAX_PLY]>` (MAX_PLY = 128) and
+the history table.
+
+**Sprint 3C** replaces the prior global `FxHashMap<(Coord, Player), u32>`
+with `HistoryTable` — a pair of flat `Box<[u32; PROX_FIELD_SIZE]>` arrays
+(one per player) indexed by `prox_idx(coord)`. Memory cost: 2 × ~73k × 4
+bytes ≈ 588 KB per `OrderingState`. Lookup is one array load, no hashing;
+`record_cutoff`'s `slot` access is a single index. The Sprint 2 flamegraph
+showed `record_cutoff` → hashbrown probes climbing into the top user-space
+frames once the proximity rework had shrunk the heavier callers — the flat
+table eliminates that path.
+
+The search driver calls:
 
 - `record_cutoff(ply, m, p, depth)` on a β-cutoff: pushes `m` into the
   killer slot for `ply` (dedup), and increments
-  `history[(m, p)] += depth² ` (saturating to `HISTORY_CUTOFF_MAX`).
+  `history[p][prox_idx(m)] += depth² ` (saturating to `HISTORY_CUTOFF_MAX`).
 - `decay_history()` once per `search_root` call, at search entry before
   the iterative-deepening loop begins: every entry is multiplied by
   `HISTORY_DECAY_NUM / HISTORY_DECAY_DEN` (default ½, integer-floor).
   History therefore decays per `best_move()` invocation (i.e. per stone),
-  not between ID iterations within a single call.
+  not between ID iterations within a single call. Decay walks both flat
+  arrays (~146k cells); cost is comparable to the prior hashmap retain
+  (similar live-entry count after a few iterations).
 
 ### Approximations (v1)
 
