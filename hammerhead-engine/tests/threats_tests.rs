@@ -685,10 +685,9 @@ fn rhombus_isolated_with_distant_opp() {
 
 #[test]
 fn rhombus_with_opp_at_centroid_not_counted() {
-    // Centroid of canonical rhombus is (1,1); opp on that cell.
-    // Actually (1,1) is itself a vertex (own X), so opp must be
-    // elsewhere — pick a cell at distance 1 from centroid.
-    // Centroid (1,1); opp at (2,1) → dist 1 ≤ 3 → reject.
+    // Cube-round centroid of canonical rhombus (0,0)(1,0)(0,1)(1,1)
+    // is the edge cell (1,0); opp at (2,1) → dq=1, dr=1, ds=-2 →
+    // dist (1+1+2)/2 = 2 ≤ 3 → reject.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
     o(&mut b, &[(2, 1)]);
@@ -699,7 +698,8 @@ fn rhombus_with_opp_at_centroid_not_counted() {
 
 #[test]
 fn rhombus_with_opp_at_centroid_radius_2_not_counted() {
-    // Centroid (1,1); opp at (3,1) → hex_distance 2 ≤ 3 → reject.
+    // Cube-round centroid (1,0); opp at (3,1) → dq=2, dr=1, ds=-3 →
+    // dist (2+1+3)/2 = 3 → on Ring C boundary → reject.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
     o(&mut b, &[(3, 1)]);
@@ -710,11 +710,12 @@ fn rhombus_with_opp_at_centroid_radius_2_not_counted() {
 
 #[test]
 fn rhombus_with_opp_at_centroid_radius_3_not_counted() {
-    // Centroid (1,1); opp at (4,1) → hex_distance 3 == 3 → reject.
+    // Cube-round centroid (1,0); opp at (4,0) → dq=3, dr=0, ds=-3 →
+    // dist (3+0+3)/2 = 3 == Ring C boundary → reject.
     // Ring C boundary inclusive per Radius Theory.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
-    o(&mut b, &[(4, 1)]);
+    o(&mut b, &[(4, 0)]);
     enable_rhombus(&mut b);
     let t = compute(&b, Player::X);
     assert_eq!(t.counts.rhombus, 0);
@@ -722,7 +723,8 @@ fn rhombus_with_opp_at_centroid_radius_3_not_counted() {
 
 #[test]
 fn rhombus_with_opp_inside_bounding_region_not_counted() {
-    // Centroid (1,1); opp at (1,2) → hex_distance 1 → reject.
+    // Cube-round centroid (1,0); opp at (1,2) → dq=0, dr=2, ds=-2 →
+    // dist (0+2+2)/2 = 2 → reject.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
     o(&mut b, &[(1, 2)]);
@@ -733,14 +735,54 @@ fn rhombus_with_opp_inside_bounding_region_not_counted() {
 
 #[test]
 fn rhombus_with_opp_adjacent_to_vertex_within_ring_c_not_counted() {
-    // Centroid (1,1); opp at (-1,0) → hex_distance to centroid:
-    // dq=-2, dr=-1, ds=3 → (2+1+3)/2 = 3 → within Ring C → reject.
+    // Cube-round centroid (1,0); opp at (-1,0) → dq=-2, dr=0, ds=2 →
+    // dist (2+0+2)/2 = 2 → within Ring C → reject.
     let mut b = fresh();
     x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
     o(&mut b, &[(-1, 0)]);
     enable_rhombus(&mut b);
     let t = compute(&b, Player::X);
     assert_eq!(t.counts.rhombus, 0);
+}
+
+// ── cube-round centroid fix (2) — far-side symmetry per S1-REV Check 3
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Per-component axial rounding landed the centroid on a rhombus VERTEX,
+// producing an asymmetric Ring-C reject zone. An opp on the far side of
+// the chosen vertex could be within Radius Theory's tactical reach of
+// the colony yet pass isolation because it fell outside Ring C of the
+// vertex. Cube-round centroid is edge-adjacent and restores symmetry.
+
+#[test]
+fn rhombus_far_side_opp_rejected_under_cube_round() {
+    // S1-REV concrete case: canonical rhombus (0,0)(1,0)(0,1)(1,1).
+    // Axial-round (vertex) centroid would be (1,1); opp at (-2,0) is
+    // distance 4 from (1,1) → ACCEPTED isolated under the old detector.
+    // Cube-round centroid is (1,0); opp at (-2,0) → dq=-3, dr=0, ds=3 →
+    // dist 3 → REJECTED. Restores Radius Theory's "from the colony"
+    // intent: opp at distance 2 from vertex (0,0) is in tactical reach.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(-2, 0)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 0);
+}
+
+#[test]
+fn rhombus_far_side_opp_just_outside_ring_c_still_accepted() {
+    // Counterpart to the above: an opp far enough from the cube-round
+    // centroid (1,0) on the far side must STILL be accepted as
+    // isolated. Opp at (-3,0): dq=-4, dr=0, ds=4 → dist 4 > 3 → outside
+    // Ring C → ACCEPT. Confirms cube-round didn't simply make every
+    // far-side cell reject.
+    let mut b = fresh();
+    x(&mut b, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+    o(&mut b, &[(-3, 0)]);
+    enable_rhombus(&mut b);
+    let t = compute(&b, Player::X);
+    assert_eq!(t.counts.rhombus, 1);
 }
 
 // ── edge cases (3)

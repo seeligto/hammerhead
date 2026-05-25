@@ -467,14 +467,45 @@ const HEX_UNITS: [Coord; 6] = [
     Coord::new(-1, 1),
 ];
 
-/// Round-half-away-from-zero divide-by-4 used to map a 4-cell sum onto
-/// the nearest integer hex cell (rhombus centroid). Bounded inputs
-/// (4 × `i16::MAX` fits in `i32`) so the cast back is exact in
-/// practice; `i32::try_into` is used to surface any future overflow as
-/// a debug panic rather than silently wrapping.
+/// Cube-coord round of the 4-cell centroid `(sum_q/4, sum_r/4)`.
+///
+/// Per-component axial rounding (the previous `round_div4` approach)
+/// always lands the centroid on a rhombus VERTEX, which produces an
+/// asymmetric Ring-C reject zone across orientations — an opp at the
+/// far side of a rhombus vertex can be inside tactical reach of the
+/// colony yet pass the isolation check because it falls outside Ring C
+/// of the chosen vertex. Cube-round (Red Blob Games §"Rounding") picks
+/// the nearest hex on the (q, r, s = -q-r) cube lattice and lands on an
+/// edge-adjacent cell, restoring symmetry.
+///
+/// Algorithm: convert axial frac → cube frac, round each component, fix
+/// the largest-deviation coord so the cube invariant `x + y + z == 0`
+/// holds, then map back to axial. Float math is bounded (sums ≤
+/// 4 × `i16::MAX`) so rounding is exact.
 #[inline]
-fn round_div4(x: i32) -> i32 {
-    if x >= 0 { (x + 2) / 4 } else { -((-x + 2) / 4) }
+fn cube_round_centroid(sum_q: i32, sum_r: i32) -> Coord {
+    let x = f64::from(sum_q) / 4.0;
+    let z = f64::from(sum_r) / 4.0;
+    let y = -x - z;
+    let xr = x.round();
+    let yr = y.round();
+    let zr = z.round();
+    let x_diff = (xr - x).abs();
+    let y_diff = (yr - y).abs();
+    let z_diff = (zr - z).abs();
+    // Fix the largest-deviation coord from the other two so cube
+    // invariant `x + y + z == 0` holds. Only `xr` / `zr` are needed
+    // for the axial mapping; `yr` is implicit (`-xr - zr`), so the
+    // middle branch only needs to re-derive `xr` from `(yr, zr)`.
+    let (qr, rr) = if x_diff > y_diff && x_diff > z_diff {
+        (-yr - zr, zr)
+    } else if y_diff > z_diff {
+        (xr, zr)
+    } else {
+        (xr, -xr - yr)
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    Coord::new(qr as i16, rr as i16)
 }
 
 /// Detect isolated rhombi for `player` and bump `counts.rhombus`.
@@ -489,15 +520,18 @@ fn round_div4(x: i32) -> i32 {
 ///   3. Canonicalize by sorting the 4 vertices into a `[Coord; 4]`
 ///      ascending-`(q, r)`, and dedup via the `seen` set — each
 ///      rhombus is generated up to 4 times (once per anchor vertex).
-///   4. Isolation check: compute the centroid as the round-half-away
-///      mean of the 4 vertices, then reject if any opp piece sits
-///      within `iso_radius` (`hex_distance`) of the centroid.
+///   4. Isolation check: compute the centroid via cube-coord round of
+///      the 4-vertex mean (`cube_round_centroid`), then reject if any
+///      opp piece sits within `iso_radius` (`hex_distance`) of the
+///      centroid. Cube-round lands on an edge-adjacent cell rather
+///      than a vertex, giving a symmetric Ring-C reject zone across
+///      orientations.
 ///   5. Surviving rhombi increment `counts.rhombus` (saturating u8).
 ///
 /// `iso_radius < 0` collapses to "no isolation" (every rhombus
 /// counted). `iso_radius == 0` collapses to "centroid cell empty of
-/// opp" — accepted in practice because that cell is a vertex when the
-/// rhombus has the canonical sum-divisible-by-4 layout.
+/// opp" — accepted in practice because that cell is an edge between
+/// two rhombus vertices under cube-round.
 fn detect_rhombi(
     own_pieces: &[Coord],
     own_set: &FxHashSet<Coord>,
@@ -539,14 +573,10 @@ fn detect_rhombi(
                 if !seen.insert(verts) {
                     continue;
                 }
-                // Isolation: opp within Ring C of centroid?
+                // Isolation: opp within Ring C of cube-round centroid?
                 let sum_q: i32 = verts.iter().map(|c| i32::from(c.q)).sum();
                 let sum_r: i32 = verts.iter().map(|c| i32::from(c.r)).sum();
-                #[allow(clippy::cast_possible_truncation)]
-                let centroid = Coord::new(
-                    round_div4(sum_q) as i16,
-                    round_div4(sum_r) as i16,
-                );
+                let centroid = cube_round_centroid(sum_q, sum_r);
                 let mut isolated = true;
                 for &opp in opp_set {
                     if hex_distance(opp, centroid) <= iso_radius_i16 {
