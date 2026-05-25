@@ -24,6 +24,7 @@ refs/
 # phase-of-record capture referenced by HOTSPOTS.md.
 benches/results/*.json
 !benches/results/baseline.json
+benches/results/tune/
 benches/results/flamegraph-*.folded.txt
 benches/results/flamegraph-*.svg
 !benches/results/flamegraph-*-69e2053.svg
