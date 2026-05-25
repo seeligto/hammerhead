@@ -218,13 +218,5 @@ impl Engine {
     pub fn tt_stats(&self) -> crate::tt::TTStatsSnapshot {
         self.tt.stats()
     }
-
-    /// Return accumulated qsearch diagnostics from the last `search_root`.
-    /// Only available with Cargo feature `qsearch_diag`.
-    #[cfg(feature = "qsearch_diag")]
-    #[must_use]
-    pub fn qsearch_diag(&self) -> &crate::search::QsearchDiag {
-        &self.scratch.qsearch_diag
-    }
 }
 

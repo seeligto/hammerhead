@@ -35,30 +35,6 @@ use smallvec::SmallVec;
 // Per-ply scratch buffers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Qsearch diagnostics (feature = "qsearch_diag")
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Per-ply accumulated qsearch statistics. One slot per `q_ply` 0..32.
-#[cfg(feature = "qsearch_diag")]
-#[derive(Default, Clone, Copy)]
-pub struct QsearchPlyStats {
-    pub entries: u64,
-    pub total_threat_count: u64,
-    pub max_threat_count: u32,
-    pub eval_sum: i64,
-    pub eval_abs_delta_sum: i64,
-    pub cap_hits: u64,
-}
-
-/// Accumulated qsearch diagnostics for one `search_root` call.
-#[cfg(feature = "qsearch_diag")]
-#[derive(Default)]
-pub struct QsearchDiag {
-    pub plies: [QsearchPlyStats; 32],
-    pub total_calls: u64,
-}
-
 /// Per-ply scratch space for move generation and ordering. One slot per
 /// search ply, indexed by `ply.min(MAX_PLY - 1)`. Each slot retains its
 /// `Vec` capacity across calls, so after the first search warmup the
@@ -80,9 +56,6 @@ pub struct SearchScratch {
     pub buckets: Box<[Vec<u8>; MAX_PLY]>,
     /// Per-ply qsearch threat sub-list (filtered subset of `moves`).
     pub threats: Box<[Vec<Coord>; MAX_PLY]>,
-    /// Accumulated qsearch diagnostics (reset on each `search_root`).
-    #[cfg(feature = "qsearch_diag")]
-    pub qsearch_diag: QsearchDiag,
 }
 
 impl Default for SearchScratch {
@@ -103,8 +76,6 @@ impl SearchScratch {
             scored: Box::new(std::array::from_fn(|_| Vec::new())),
             buckets: Box::new(std::array::from_fn(|_| Vec::new())),
             threats: Box::new(std::array::from_fn(|_| Vec::new())),
-            #[cfg(feature = "qsearch_diag")]
-            qsearch_diag: QsearchDiag::default(),
         }
     }
 
@@ -236,10 +207,6 @@ pub fn search_root(
     ordering.reset_killers(); // R-08-A: per-`best_move()` killer hygiene.
     ordering.decay_history();
     search_stats::reset();
-    #[cfg(feature = "qsearch_diag")]
-    {
-        scratch.qsearch_diag = QsearchDiag::default();
-    }
 
     let mut result = SearchResult::default();
     // Prime the fallback so a depth-1 timeout still returns *some* legal
@@ -825,7 +792,7 @@ fn try_one_move(
 /// Threat-only quiescence. Stand-pat with the cached static eval; only
 /// recurse on moves that create an own S0, block an opponent S0, or make
 /// a 6-in-row. Hard-capped at `cfg.qsearch_max_plies`.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn quiescence_node(
     board: &mut Board,
     scratch: &mut SearchScratch,
@@ -862,19 +829,7 @@ fn quiescence_node(
         }
     }
 
-    // Diag feature: raise cap to 16 to profile deep plies. Preserve
-    // qsearch_max_plies = 0 (no-qsearch test path) so tests pass.
-    #[cfg(feature = "qsearch_diag")]
-    let effective_cap: u8 = if cfg.qsearch_max_plies == 0 { 0 } else { 16 };
-    #[cfg(not(feature = "qsearch_diag"))]
-    let effective_cap: u8 = cfg.qsearch_max_plies;
-
-    if q_ply >= effective_cap {
-        #[cfg(feature = "qsearch_diag")]
-        {
-            let idx = (q_ply as usize).min(31);
-            scratch.qsearch_diag.plies[idx].cap_hits += 1;
-        }
+    if q_ply >= cfg.qsearch_max_plies {
         return Ok(if maximize { alpha } else { beta });
     }
 
@@ -898,21 +853,6 @@ fn quiescence_node(
         }
     }
     let threat_count = scratch.threats[ply_idx].len();
-
-    // Record per-ply entry stats before move loop.
-    #[cfg(feature = "qsearch_diag")]
-    {
-        let idx = (q_ply as usize).min(31);
-        let s = &mut scratch.qsearch_diag.plies[idx];
-        s.entries += 1;
-        s.total_threat_count += threat_count as u64;
-        if threat_count as u32 > s.max_threat_count {
-            s.max_threat_count = threat_count as u32;
-        }
-        s.eval_sum += i64::from(static_eval);
-        scratch.qsearch_diag.total_calls += 1;
-    }
-
     if threat_count == 0 {
         return Ok(if maximize { alpha } else { beta });
     }
@@ -958,15 +898,6 @@ fn quiescence_node(
             }
         }
     }
-
-    // Record eval delta: |best_after_moves - stand_pat|.
-    #[cfg(feature = "qsearch_diag")]
-    {
-        let idx = (q_ply as usize).min(31);
-        let delta = (i64::from(best) - i64::from(static_eval)).unsigned_abs();
-        scratch.qsearch_diag.plies[idx].eval_abs_delta_sum += delta as i64;
-    }
-
     Ok(best)
 }
 
