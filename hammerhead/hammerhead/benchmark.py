@@ -62,8 +62,6 @@ class QuickResult:
     cycles_per_node_mean: float
     depth_reached: int
     runs: int
-    qsearch_nodes_mean: float = 0.0
-    qsearch_max_depth_median: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,7 +180,7 @@ def bench_nps(
     last_depth = 0
     for _ in range(runs):
         eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-        _q, _r, _score, depth_reached, nodes, t_ms, *_x = eng.bench_best_move(
+        _q, _r, _score, depth_reached, nodes, t_ms = eng.bench_best_move(
             time_ms=time_ms
         )
         total_nodes += int(nodes)
@@ -206,7 +204,7 @@ def bench_depth_at_time(
 ) -> DepthAtTimeResult:
     """Deepest completed iteration within ``time_ms``."""
     eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-    _q, _r, _score, depth_reached, _nodes, _t, *_x = eng.bench_best_move(
+    _q, _r, _score, depth_reached, _nodes, _t = eng.bench_best_move(
         time_ms=time_ms
     )
     return DepthAtTimeResult(
@@ -278,22 +276,16 @@ def bench_quick(
     nps_values: list[float] = []
     cpn_values: list[float] = []
     depths: list[int] = []
-    qs_nodes_values: list[int] = []
-    qs_max_depths: list[int] = []
     for _ in range(runs):
         eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-        out = eng.bench_best_move(time_ms=time_ms)
-        _q, _r, _score, depth, nodes, t_ms = out[:6]
-        # TEMP 28F-3-0.5 diagnostic tail: (rank, qsearch_nodes, qsearch_max_depth)
-        qs_nodes = int(out[7]) if len(out) > 7 else 0
-        qs_max_depth = int(out[8]) if len(out) > 8 else 0
+        _q, _r, _score, depth, nodes, t_ms = eng.bench_best_move(
+            time_ms=time_ms
+        )
         nodes = int(nodes)
         elapsed_s = max(int(t_ms), 1) / 1000.0
         nps_values.append(nodes / elapsed_s)
         cpn_values.append(cycles_per_node(nodes, elapsed_s, cpu_ghz))
         depths.append(int(depth))
-        qs_nodes_values.append(qs_nodes)
-        qs_max_depths.append(qs_max_depth)
     return QuickResult(
         fixture=fixture,
         time_ms=time_ms,
@@ -302,8 +294,6 @@ def bench_quick(
         cycles_per_node_mean=statistics.mean(cpn_values),
         depth_reached=int(statistics.median(depths)),
         runs=runs,
-        qsearch_nodes_mean=statistics.mean(qs_nodes_values),
-        qsearch_max_depth_median=int(statistics.median(qs_max_depths)),
     )
 
 
@@ -514,7 +504,7 @@ def bench_reference(
             if elapsed > budget_s:
                 break
             eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-            _q, _r, _score, _depth_reached, nodes, t_ms, *_x = eng.bench_best_move(
+            _q, _r, _score, _depth_reached, nodes, t_ms = eng.bench_best_move(
                 depth=depth
             )
             hit_rate: Optional[float] = None
@@ -568,7 +558,7 @@ def bench_scaling(
             samples_depth: list[int] = []
             for _ in range(runs):
                 eng = load_fixture(fixture, tt_size_mb=tt_size_mb)
-                _q, _r, _s, depth, nodes, t_ms, *_x = eng.bench_best_move(
+                _q, _r, _s, depth, nodes, t_ms = eng.bench_best_move(
                     time_ms=time_ms
                 )
                 actual_s = max(int(t_ms), 1) / 1000.0

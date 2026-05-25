@@ -286,10 +286,6 @@ def _bench_quick(args: argparse.Namespace) -> int:
         f"depth {r.depth_reached}, "
         f"{r.cycles_per_node_mean:.0f} cyc/node{delta}"
     )
-    print(
-        f"  qsearch: max_depth={r.qsearch_max_depth_median} "
-        f"nodes_mean={r.qsearch_nodes_mean:,.0f}"
-    )
     _QUICK_CACHE.parent.mkdir(parents=True, exist_ok=True)
     _QUICK_CACHE.write_text(json.dumps(asdict(r), indent=2))
     return 0
