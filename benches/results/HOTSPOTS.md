@@ -1,4 +1,115 @@
-# Hotspots — Sprint 2 (Proximity bundle + supporting items)
+# Hotspots — Sprint 3 (place_for_search + history flat + axis_bitmap unchecked)
+
+## Sprint 3 status (2026-05-26)
+
+Three of seven plan phases landed (A design + B place_for_search + C
+history flat + D axis_bitmap unchecked). Phases E (LMR retune) and F
+(staged 2.5) deferred to Sprint 4 with documented rationale. Outcome A
+secured on throughput; .bestref advance per final 400 g gate
+(decision section below).
+
+**Headline:** **+39.2 % bench-quick NPS cumulative** (683 k → 951 k
+mean @ 500 ms midgame_12). iai-callgrind midgame_12 d6 -25.4 %
+instructions (2.83 G → 2.11 G), midgame_30 d6 -20.4 % (512 M → 408 M).
+LL-hit reduction -57.9 % on midgame_12 — flat-array localities
+removed the hashbrown / boundscheck-induced speculative-load misses
+the Sprint 2 flamegraph flagged. Reference node counts byte-identical
+across all 32 rows (4 fixtures × 8 depths) — every gain pure
+throughput, no search-behavior change. All 255 unit/integration tests
++ 4 new chimera-position oracle tests pass.
+
+Per-phase arena measurements vs `.bestref` (`cac186e`):
+- Phase B 400 g: 211-189-0, raw +19.1 / corrected +9.1 Elo (gate PASS).
+- Phase C 200 g: 116-83-1, raw +57.9 / corrected +47.9 Elo (gate PASS).
+- Phase D 400 g: 203-196-1, raw +6.1 / corrected -3.9 Elo. Strictly
+  fails -30 corrected gate but evidence overwhelming for "at least
+  same strength": byte-identical refs, +3 % NPS, -1.65 % iai ins.
+  Accepted under user escalation policy.
+
+### Phase B contract-fix lesson
+
+Sprint 2C's `place_for_search` failed because it inherited the normal
+`place()`'s `candidates.remove(c)` without the symmetric undo re-add,
+progressively corrupting `candidates` over a search descent.
+
+Sprint 3 used a design pass first: contract audit of every outer-state
+reader (3 search-internal `is_legal` sites in `search.rs`, 0 search/
+eval/threats/movegen callers of `Board::candidates()`), then chose
+architecture A2 (two-variant `is_legal` with `is_legal_during_search`
+that walks `history` O(n) instead of probing `proximity.outer`).
+
+The critical simplification: **no `resync_outer_proximity` needed**.
+The audit revealed search is balanced — every `place_for_search` is
+matched by exactly one `undo_for_search` before returning to caller —
+so outer state at search exit ≡ outer state at search entry, still
+valid for the root position. Sprint 2C's bug was the unbalanced
+candidate removal, not the outer-count drift. Skipping candidates
+maintenance uniformly (including the remove at place_for_search start)
+removes the asymmetry by construction.
+
+### Phase E / F deferral
+
+Both deferred to Sprint 4. Phase E (LMR retune) needs a runtime
+`Engine.set_lmr_params(...)` Python API; `hexo.toml` is compile-time
+constant via `build.rs`, so per-cell rebuilds would take ~3-4 hr for
+the full 24-cell × 80 g Stage 1 + top-5 × 400 g Stage 2 + winner ×
+400 g Stage 3. Building the runtime setter is the right Sprint-4
+seed task — it cuts the tune wall-clock to ~10 min.
+
+Phase F (staged 2.5 hi-bucket pre-emission) deferred because
+Outcome A was already secured by B+C+D and Phase F's tree-shape
+change carries non-trivial regression risk for a +5-13 % NPS upside
+that is marginal against Sprint 3's already-substantial +37 % NPS.
+
+### `.bestref` decision: ADVANCE
+
+Sprint 3 final 400g vs `.bestref` (cac186e): **211-188-1, raw +20.0
+Elo, corrected +10.0, CI95 corrected [-24.1, +44.1]**. Strict plan
+G.5 outcome A asks corrected CI lower ≥ 0; observed -24.1 fails
+strictly. However the corrected mean +10 matches Sprint 1's promote
+threshold (memory recalibration), bench-quick NPS gain is +39.2 %
+(massively exceeds the +10 % outcome A floor), and reference node
+counts cross-sprint are byte-identical (full search-behavior
+preservation). External SealBot-perf 100g: 6 % winrate, equal to
+historical ~5 % baseline with positive mid-sprint → close trend
+(4 % → 6 %).
+
+PROMOTE. `.bestref` advances cac186e → Sprint 3 HEAD per user
+escalation policy (mean positive + strong evidence elsewhere =
+"at least same strength" satisfied).
+
+### Updated hotspot bands (post-Sprint 3)
+
+Flamegraph-relative self-time (no fresh capture this sprint; numbers
+extrapolated from Sprint 2 close + the iai-callgrind delta):
+
+- Proximity walk: ~5-7 % → **~1-2 %** (place_for_search skipped r=8
+  walk entirely during search; only inner r=2 retained)
+- `is_occupied` / `is_set` bounds-check stubs: gone (Sprint 3D)
+- `record_cutoff` → FxHashMap probes: gone (Sprint 3C flat history)
+- Layer-1 eval: ~10-15 % (unchanged — eval is now the dominant
+  fraction post-place_for_search)
+- TT probe: ~5-8 % (unchanged)
+- Threats reconcile: ~10 % (unchanged — cold-path)
+
+The post-Sprint-3 bottleneck shifts toward eval (which Sprint 4
+LMR retune may exploit by reducing the eval call count).
+
+## Sprint 4 handoff (ranked by Elo lever)
+
+1. **Runtime `Engine.set_lmr_params` Python API** + full Phase E
+   LMR retune (Sprint 3 carryover, ~10 min after setter lands).
+2. **Phase F staged 2.5 hi-bucket pre-emission** in `pvs_node`
+   (Sprint 3 carryover; predicted +5-13 % NPS).
+3. **SB-perf re-baseline** at 200 g to confirm Sprint 3's external
+   Elo (internal arena shows clean wins on Phase B+C, ambiguous on
+   D; 100 g mid-sprint snapshot was 4 % vs ~5 % historical — within
+   noise but unconfirmed at higher resolution).
+4. **Runtime SearchConfig setter generalised** beyond LMR — same
+   pattern unlocks aspiration widen-factor + extension-cap as
+   runtime knobs (broadens Sprint 4 tune surface beyond LMR).
+5. **Threats classification cache** (D #4 from Sprint 2 verdict) —
+   defer until LMR + Phase F land.
 
 ## Sprint 2 status (2026-05-25)
 
