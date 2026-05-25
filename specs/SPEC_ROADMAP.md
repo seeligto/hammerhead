@@ -1063,50 +1063,145 @@ Full retrospective: `/tmp/phase_28e/PHASE_28E_0_RETRO.md` (gitignored
 per Phase 25.5 repo hygiene). Per-sub-phase reports under
 `/tmp/phase_28e/0/{time_diag,time_fix,sdk_design,sdk_impl,audit,audit_fix,verify}.md`.
 
-## Phase 28E candidates (updated post-28E-0)
+## Phase 28E-2 — Cluster shape falsification + opening diversity (KEEP commits, no .bestref advance)
+
+2026-05-25. Two stages: Stage 0 (opening diversity library, 20 HeXOpedia
+§6 openings, pair-seeded harness wiring), Stage 1 (rhombus cluster
+detector + 3-sweep arc Step 0 → 1 → 3). Stages 2 (bone) + 3
+(arch/trapezoid) SKIPPED per user direction after Stage 1 NO-LAND × 3
+sweeps falsified the cluster-detector lever a-priori for all
+cluster shapes. 4 code/spec commits on master + 1 on hexo-arena main +
+2 doc this retro.
+
+**Outcome: KEEP all 4 commits on master; `.bestref` NOT advanced.**
+NO weight applied (rhombus detector dormant at default `rhombus = 0`);
+no engine behavior change → no arena gate run. E-0 VERIFY baseline (HH
+2.0% per-stone 500ms vs SB-perf) stands unchanged. `.bestref` stays at
+`5bd89648`.
+
+### Per-stage summary
+
+| Stage | Commits | Outcome | Notes |
+|---|---|---|---|
+| Stage 0 — opening diversity | `a1245a1` (HH) + `d6b91ba` (arena) | PASS-WITH-MINOR (S0-REV) | 20 HeXOpedia §6 openings, pair-seeded via `pick_opening(i // 2)`. Two `NotImplementedError` raises in `promote.py:372-376`, `:553-557` DELETED. 29 new HH tests + 9 new arena tests. Smoke: 15 distinct game lengths in 20-game self-play. Arena adapter exposes `--opening hh:curated`. Measurement infrastructure, NOT strength. |
+| Stage 1 — rhombus detector | `042f020` (detector + 13 tests, weight=0 default) + `6d57f8e` (`--diversity` flag on tune-sweep) + `5295561` (Step 3 cube-round centroid + 2 new tests, 15 total) | NO-LAND × 3 sweeps | Distance-multiset `{1,1,1,1,1,2}` detector, all 12 orientations covered; Ring-C isolation via centroid. Step 0 V-pattern → Step 1 negative-weight (refutes double-count) → Step 3 cube-round (refutes isolation geometry). Mechanism: per-axis S1 sum + Layer-1 bucket already implicitly evaluate cluster shapes; any explicit weight at any sign with any isolation algorithm disrupts eval balance. |
+| Stages 2 + 3 — bone / arch / trapezoid | (no commits) | SKIPPED | A-priori generalization: bone / arch / trapezoid share per-axis decomposability mechanism with rhombus; same negative result expected. Saves 4-6 days arena time. |
+
+### Mechanism falsification arc (Stage 1)
+
+Three sweeps × 5 cells = 15 cells total, 200g/cell, 500ms/stone, 10
+workers, `opening_diversity=ON`. None point-positive with CI upper > 0.
+
+| Step | Centroid algo | Grid | Outcome | Mechanism refuted |
+|---|---|---|---|---|
+| Step 0 | vertex (per-component `round_div4`) | akra-anchored 22500-90000 | V-pattern, anchor 45000 flat at 0.0, two cells stat-sig negative | (initial sweep — no mechanism refuted, three hypotheses surfaced) |
+| Step 1 | vertex | neg-pos -22500 to +22500 | symmetric-negative around 0; negative weights WORSE than positive | **Double-count REFUTED as primary mechanism** (canonical rhombus structurally generates 5 open_2 firings = 56250 Elo before weight per S1-REV Check 3, but negative weight doesn't recover) |
+| Step 3 | cube-round (Red Blob Games) | akra-anchored 22500-90000 | monotonic-negative, WORSE on avg vs Step 0 | **Isolation geometry REFUTED** (more theoretically-faithful centroid did NOT flip any cell positive) |
+
+### Commits (4 atomic on hammerhead master + 2 doc this retro)
+
+| SHA | Subject |
+|---|---|
+| `a1245a1` | `harness: implement opening diversity library` |
+| `042f020` | `eval: implement rhombus detection with isolation` |
+| `6d57f8e` | `tune: add --diversity flag to tune-sweep` |
+| `5295561` | `eval: cube-round centroid for rhombus isolation` |
+| (prev) | `bench: HOTSPOTS Phase 28E-2 cluster falsification + diversity` |
+| (this commit) | `spec: mark Phase 28E-2 done in roadmap` |
+
+Plus 1 on hexo-arena main: `d6b91ba` (`adapter: consume opening
+diversity from HH harness`).
+
+### Honest assessment
+
+External arena DID NOT MOVE (no weight applied → no behavior change).
+Phase 28E-2 DID empirically falsify Path 3 (cluster detector revival)
+as a standalone Elo-positive lever via 3 cleanly-diagnosed sweeps. That
+is real progress — Path 3 was the largest unmeasured arm in E-1 SYN's
+decision matrix; falsifying it sharpens E-3's path-2B-or-Texel choice.
+Opening diversity library is real infrastructure (DIAG-1 fixed-depth
+determinism collapse can no longer re-trip with diversity ON). Rhombus
+detector code (~430 LOC + 15 tests) is preserved in repo for any future
+revisit if eval is restructured to subtract per-axis S1 from
+cluster-positions. SPEC_EVAL NOT updated this phase (detector landed but
+weight did NOT — eval architecture's behavior is unchanged from a
+caller's perspective).
+
+Full retrospective: `/tmp/phase_28e/PHASE_28E_2_RETRO.md` (gitignored
+per Phase 25.5 repo hygiene). Per-stage reports under
+`/tmp/phase_28e/2/{stage-0,stage-1}/{implementer,review}.md`. Sweep
+outputs at `benches/results/tune/rhombus/B/{20260524T210750,20260524T225139,20260525T013817}/*.json`.
+
+## Phase 28E candidates (updated post-28E-2)
 
 Phase 28E-0 closed: time-fix mechanism corrected, SDK observability
-landed, audit clean, methodology recalibration documented. E-1 picks up
-Gap #1 with the new SearchStats surface.
+landed, audit clean, methodology recalibration documented. Phase 28E-1
+closed as diagnostic synthesis (no production commits; surfaced Path
+2B / Path 3 / Texel decision matrix). Phase 28E-2 closed: cluster
+detector revival empirically falsified via 3 sweeps × 15 cells on
+rhombus; opening diversity infrastructure landed; Stages 2-3 SKIPPED
+a-priori.
 
-### Phase 28E-1 candidates
+### Phase 28E-3 candidates — priority ordering
 
-- **28E-1 — Gap #1 (window pattern table redesign) — PRIORITY**: make
-  Layer-1 length-3 and length-2 disjoint from S1 detection.
-  - **Step (a) diagnostic**: zero `window_k_scores[3]` and measure with
-    the new `SearchStats` surface. If `window_k_scores[3] = 0` produces
-    positive internal Elo + closes external gap, double-counting
-    hypothesis is experimentally confirmed and tuned open_3 / closed_3
-    weights become real signal.
-  - **Step (b) substantive**: replace `window_k_scores` bucket with a
-    729-entry continuous pattern table per axis (SB-perf style —
-    addresses D3-DIAG Gap #2 magnitude-resolution finding). Recommend
-    (a) first as the diagnostic; (b) follows if confirmed.
-  - E-1 baseline measurements should be re-taken at the post-fix HH
-    effective time (per E0-VERIFY methodology finding).
+- **28E-3 — Path 2B (SB-perf 729-table port) — PRIMARY**: E-1 SYN
+  Section C ranked Path 2B as Arm B; Phase 28E-2 Stage 1 falsifies Arm A
+  (Path 3 cluster detector revival). DIAG-4 + DIAG-5 established
+  Path 2B is M effort (codegen-only swap on existing 6561-entry
+  `WINDOW_SCORE_8`, 3-5 commits, 1-3 days). Runtime override path
+  already plumbed via `EvalOverrides::build_window_score_8`.
+  **Honest caveat**: DIAG-2 §"Implication" + DIAG-4 §"Per-axis tables"
+  flag that per-axis 729-table cannot architecturally fix the
+  load-bearing cluster gap; literal port would still see rhombus as 5
+  independent per-axis open-2s (refined from DIAG-2's 3 to S1-REV
+  Check 3's 5). Path 2B's expected gain is from denser per-pattern
+  evaluation of LINEAR shapes (where HH is already at 100% per DIAG-2),
+  NOT cluster recovery. Honest expectation: Path 2B may move external
+  winrate via linear-eval density refinement but will NOT close the
+  cluster gap DIAG-2 highlighted.
 
-### Phase 28E-2+ candidates
+- **28E-3+ — Texel pipeline (SECONDARY, contingent on Path 2B
+  failure)**: L effort per DIAG-5 (8+ commits, 1-2 weeks, mostly infra).
+  ML-trained eval is the remaining lever if Path 2B + cluster detector
+  revival both fail to move arena. Deferred per E-1 SYN unless Path 2B
+  prototype shows enough gain to justify chasing the optimum, OR Path 2B
+  fails and Texel becomes the sole architectural option.
 
-- **28E-2+ — Tempo proxy investigation**: deferred 28B → 28C → 28D-1 →
-  28D-3 → 28E-0. Detector revival or proxy invention. TT p.11 "tempo is
+### Phase 28E residual carry-forward (across phases)
+
+- **Tempo proxy investigation**: carried 28B → 28C → 28D-1 → 28D-3 →
+  28E-0 → 28E-2. Detector revival or proxy invention. TT p.11 "tempo is
   the most important currency" — strongest PDF evidence of any
-  deferred item.
-- **28E-2+ — Opening-diversity library + harness wiring**: deferred
-  B-1.3 / B-1.4 from Phase 28B. Library doesn't exist;
-  `promote.py:372-376` + `:553-557` still raise `NotImplementedError`.
-  ~150 LOC Python + 10-20 fixture entries.
-- **28E-2+ — Per-turn-joint vs per-stone-split scheduling A/B**:
-  re-scoped from defunct `stone1_fraction` A/B (the split fraction
-  concept no longer applies post-TIME-FIX — `stone1_time_pct` is
-  removed). SB-perf plans whole turns jointly in a single
-  `MinimaxBot.get_move` call; HH plans per-stone. Investigate whether
-  HH benefits from a per-turn-joint scheduling mode (sharing TT state
-  + time budget across two stones in one call) for arena gate symmetry
-  with SB.
-- **28E-2+ — Promote-harness commit-bug fix**: trivial reorder
-  `-m <msg> --only -- <path>` in `promote.py` auto-commit branch.
-  Bundle with next phase that touches `promote.py`. Carried from
-  Phase 28D-1.
+  deferred item. Structurally different from value tuning.
+- **Promote-harness commit-bug fix**: trivial reorder `-m <msg> --only
+  -- <path>` in `promote.py` auto-commit branch. Bundle with next
+  phase that touches `promote.py`. Carried from Phase 28D-1.
+- **Per-turn-joint vs per-stone-split scheduling A/B**: re-scoped from
+  defunct `stone1_fraction` A/B (the split fraction concept no longer
+  applies post-TIME-FIX — `stone1_time_pct` is removed). SB-perf plans
+  whole turns jointly in a single `MinimaxBot.get_move` call; HH plans
+  per-stone. Investigate whether HH benefits from a per-turn-joint
+  scheduling mode (sharing TT state + time budget across two stones in
+  one call) for arena gate symmetry with SB.
+- **Phase 28E-2 Stage 0 S0-REV MINOR items**: (a) `openings.py:308`
+  docstring "Three" → "Two" 5-char fix; (b) arena `bots/external/
+  INTEGRATION_NOTES.md § 1. Hammerhead` lacks `--opening hh:curated`
+  operator-doc line; (c) optional Shotgun / Revolver BKE→axial fidelity
+  to HeXOpedia §6.2 with full mapped table.
+- **Triangle detection — NOT REVISITED**: per Phase 28E-2 scope close.
+  Cluster-detector mechanism falsification (3 sweeps, 15 cells, NO
+  positive cell across vertex/cube-round + positive/negative weight
+  space) argues against per-shape Layer-2 revival generally; triangle
+  would face the same mechanism (decomposable into per-axis sums via
+  existing S1 detectors).
+- **Eval architecture restructure (long-form, contingent on Path 2B
+  failure)**: load-bearing finding from Phase 28E-2 Stage 1 is that
+  per-axis S1 + Layer-1 already implicitly evaluate cluster shapes.
+  Options: (a) DISABLE per-axis S1 from cluster-positions (runtime
+  per-position S1-suppression — complex); (b) REPLACE per-axis S1 with
+  per-pattern table (≈ Path 2B). Path 2B is cheaper. Open question for
+  E-3+: if Path 2B fails to move arena, the cluster gap may be
+  untouchable without ML-trained eval (Texel pipeline).
 
 ## Phase 28D-2+ candidates (legacy, superseded by 28E above)
 
