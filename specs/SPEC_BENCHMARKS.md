@@ -173,6 +173,35 @@ collects results into `benches/results/<isodate>-<sha>.json`. Called by
 
 Schema versioned. Diff tool refuses to compare across schema versions.
 
+### iai-callgrind — deterministic gate
+
+Wall-clock NPS benches resolve ~2% changes; the Phase 26.5 / 28F-2 sweeps
+straddled zero at 200 g × 500 ms, leaving sub-1% improvements unprovable
+without burning a multi-hour arena run. **iai-callgrind** sidesteps this
+by counting instructions / D1 misses / Lmd misses under valgrind —
+deterministic to within tens of instructions, runs in seconds.
+
+- **File:** `hammerhead-engine/benches/iai_search.rs`. Two fixtures
+  (`midgame_12`, `midgame_30`) at fixed depth 6, calling `search_root`
+  directly. No timeout; the search runs to completion.
+- **Dep:** `iai-callgrind = "0.16"` under `[dev-dependencies]`.
+- **Invocation:** `cargo bench --bench iai_search`. Requires `valgrind`
+  (Arch: `pacman -S valgrind`).
+- **Determinism bar:** two consecutive runs must agree to ≤ 50
+  instructions per bench. Any drift beyond that is a host-state bug
+  (background load, CPU pinning, perf-paranoid setting), not a code
+  change.
+- **Acceptance for refactors expected to be byte-identical:** delta
+  ≤ ±50 ins. Otherwise the delta IS the measurement — iai-callgrind
+  is the source of truth for sub-1% changes.
+- **Relation to `bench-quick`:** iai gates correctness of the change;
+  `bench-quick` gates the wall-clock translation. Run both per
+  A/B unless the change is build-only (PGO, codegen flag), in
+  which case iai is uninformative.
+- **Caveat:** PGO changes code layout (function placement, basic-block
+  ordering), not instruction count. Expect iai cycle estimates to
+  shift slightly under PGO; ins/bench stays roughly constant.
+
 ## Python macro-benches
 
 `hammerhead/hammerhead/benchmark.py` exposes a small library. CLI exposes
