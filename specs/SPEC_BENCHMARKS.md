@@ -826,3 +826,23 @@ Phase 25 fix:
   ("TT stats unavailable — build was not compiled with --features
   tt_stats") instead of silently writing `null`. It does not fail:
   a feature-free build is a legitimate deliberate choice.
+
+## PGO baseline (Sprint 1B)
+
+`make pgo` is the canonical release-build path (see SPEC_ARCHITECTURE
+§ `make pgo`). All NPS numbers post-Sprint-1 measure the PGO build;
+non-PGO numbers (e.g. dev `make build`, `make bench` with the
+`tt_stats` build) are stale by ~5% on this host. `bench-quick` /
+`bench-perf` run on whatever was last installed in `.venv` — re-run
+`make pgo` after `make build` / `make bench` / `make build-tt-stats`
+if you want the production NPS.
+
+PGO and `tt_stats` are mutually exclusive in `.venv`: only one `.so`
+is installed at a time. For TT-hit-rate measurements (`make bench
+--tt-stats`) the non-PGO build is fine — TT counters are about
+correctness of search ordering, not throughput. For depth-at-time /
+NPS measurements, rebuild with `make pgo`.
+
+`scripts/setup_worktree.sh` honours `HEXO_PGO=1` (set automatically
+by `make vs` and `make promote`), so the `.bestref` worktree is also
+PGO-built for apples-to-apples arena runs.

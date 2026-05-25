@@ -155,6 +155,47 @@ rustflags = ["-C", "target-feature=+avx2,+bmi2,+fma"]
 ABI3 wheel inherits the same constraint; portable wheels should use
 the explicit-feature form.
 
+### `make pgo` — profile-guided optimization
+
+Canonical release path. `make pgo` runs four passes via
+`scripts/pgo_build.sh`:
+
+1. **Instrumented build** — `maturin develop --release` with
+   `RUSTFLAGS=-Cprofile-generate=<dir>`. The `.so` installed into
+   `.venv` is instrumented; every call writes `.profraw` events.
+2. **Training** — `scripts/pgo_training.py` runs the engine on the
+   canonical fixtures (`midgame_12`, `midgame_30`, `single_origin`)
+   at depth 6, ~30 s total wall-clock. Coverage focuses on the search
+   hot path that real games stress.
+3. **Profile merge** — `llvm-profdata merge` consolidates the
+   `.profraw` set into `merged.profdata`. Rustup's bundled
+   `llvm-profdata` (matched to the active toolchain's LLVM version)
+   is preferred over Arch's `/usr/bin/llvm-profdata`.
+4. **Optimized build** — `maturin develop --release` with
+   `RUSTFLAGS=-Cprofile-use=<merged.profdata>`. PGO-flavoured `.so`
+   replaces the instrumented one in `.venv`.
+
+`CARGO_TARGET_DIR=hammerhead-engine/target-pgo` is exported by the
+script so neither the instrumented nor the optimized build pollutes
+the main `target/` (used by `make build`, `make bench-iai`, etc.).
+
+**Trigger:** re-run `make pgo` on any commit that touches a
+search-hot file (`src/{search,ordering,eval,threats,axis_bitmap,tt,
+board}.rs`). The merged profile is host-specific and stale once the
+instrumented call graph drifts.
+
+**Caveats:**
+- Per-arch retrain. PGO data captures host-specific code-layout
+  decisions; cross-arch distribution needs per-target retrain.
+  Out of scope for v1.
+- Requires `llvm-tools-preview` rustup component (see
+  `rust-toolchain.toml`).
+- Skip with `HEXO_SKIP_PGO=1` when iterating on unrelated flags.
+
+Measured impact at Sprint 1 baseline (`ae539b7`): +5.4% NPS
+midgame_12 @ 500 ms vs the same source without PGO. See
+`analysis/baseline_ae539b7/verdict.md` for the full measurement.
+
 ### Optional features
 
 - `tt_stats` — `Engine::tt_stats()` populates probe/hit/store/
