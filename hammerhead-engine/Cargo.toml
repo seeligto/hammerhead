@@ -80,6 +80,15 @@ codegen-units        = 1
 # when it builds bench_search; Cargo has no `[profile]` key for that.
 # See specs/SPEC_BENCHMARKS.md § Flamegraph capture — frame-pointer based.
 
+# Ad-hoc profiling profile. Inherits release codegen but keeps line-table
+# debug info (~5% binary size, no runtime cost) so samply / perf / flamegraph
+# attribute frames to source lines. Use for one-off `cargo build --profile
+# profiling` then `samply record` runs that aren't tied to criterion.
+[profile.profiling]
+inherits = "release"
+debug    = "line-tables-only"
+strip    = false
+
 [[bench]]
 name = "bench_board"
 harness = false
