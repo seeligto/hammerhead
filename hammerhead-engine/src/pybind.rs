@@ -63,18 +63,16 @@ impl PyEngine {
     }
 
     /// Bench-only variant returning the full search result as
-    /// `(q, r, score, depth_reached, nodes, time_ms, best_move_rank,
-    /// qsearch_nodes, qsearch_max_depth)`. Lets the Python macro-bench
-    /// library compute NPS and depth-at-time without going through
-    /// `cargo bench`. The last three fields (TEMP Phase 28F-3-0.5) are
-    /// ordering / quiescence diagnostics.
+    /// `(q, r, score, depth_reached, nodes, time_ms)`. Lets the Python
+    /// macro-bench library compute NPS and depth-at-time without going
+    /// through `cargo bench`.
     #[pyo3(signature = (time_ms = None, depth = None))]
     fn bench_best_move(
         &mut self,
         py: Python<'_>,
         time_ms: Option<u64>,
         depth: Option<i8>,
-    ) -> PyResult<(i16, i16, i32, i8, u64, u64, u32, u64, u32)> {
+    ) -> PyResult<(i16, i16, i32, i8, u64, u64)> {
         if time_ms.is_none() && depth.is_none() {
             return Err(PyValueError::new_err(
                 "bench_best_move requires time_ms or depth",
@@ -88,9 +86,6 @@ impl PyEngine {
             r.depth_reached,
             r.nodes,
             r.time_ms,
-            r.best_move_rank,
-            r.qsearch_nodes,
-            r.qsearch_max_depth,
         ))
     }
 
