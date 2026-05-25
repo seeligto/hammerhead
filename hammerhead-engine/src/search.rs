@@ -848,8 +848,17 @@ const QSEARCH_NODE_DEPTH: i8 = -1;
 /// recurse on moves that create an own S0, block an opponent S0, or make
 /// a 6-in-row. Hard-capped at `cfg.qsearch_max_plies`.
 ///
-/// Phase 28F-3.4: when `cfg.qsearch_tt_enabled` is true, stores a TT
-/// entry at function tail iff at least one threat move was recursed.
+/// Phase 28F-3.4: when `cfg.qsearch_tt_enabled` is true:
+/// - Probes the TT BEFORE stand-pat. On `Exact` / sufficient-bound
+///   hits, returns the adjusted score immediately. Otherwise saves
+///   `tt_move` for try-first ordering below.
+/// - Tries the TT-suggested move FIRST in the recursion loop (when it
+///   passes legality + `is_threat_move` for the current filter mode),
+///   skipping it in the generated list. A beta cutoff on the TT move
+///   alone returns without calling `moves::generate`.
+/// - Stores a TT entry at function tail iff at least one threat move
+///   was recursed (the TT move counts).
+///
 /// Stand-pat-only / cap / no-threat early-returns DO NOT store — the
 /// store is a search-derived bound, not an eval-derived one. The flag
 /// is computed from `(best_score, alpha_orig, beta_orig)` snapshotted
@@ -881,6 +890,31 @@ fn quiescence_node(
     let alpha_orig = alpha;
     let beta_orig = beta;
 
+    // TT probe BEFORE stand-pat (D2). On a bound-sufficient hit, return
+    // immediately. Otherwise save `tt_move` so the recursion loop can
+    // try it first. Polarity-agnostic: TT scores are X-positive
+    // globally; `>= beta` / `<= alpha` checks work for both sides
+    // without sign flips (D5 / R4). Mirrors `pvs_node` exactly.
+    let mut tt_move: Option<Coord> = None;
+    if cfg.qsearch_tt_enabled {
+        if let Some(entry) = tt.probe(board.hash()) {
+            tt_move = Some(entry.best_move);
+            // Explicit gate `entry.depth >= QSEARCH_NODE_DEPTH` is
+            // structurally always true (qsearch stores at -1,
+            // main-search at >= 0); the gate documents intent and
+            // mirrors `pvs_node`'s pattern.
+            if entry.depth >= QSEARCH_NODE_DEPTH {
+                let adjusted = score_from_tt(entry.score, ply);
+                match entry.flag {
+                    TTFlag::Exact => return Ok(adjusted),
+                    TTFlag::LowerBound if adjusted >= beta => return Ok(adjusted),
+                    TTFlag::UpperBound if adjusted <= alpha => return Ok(adjusted),
+                    _ => {}
+                }
+            }
+        }
+    }
+
     let side = board.to_move();
     let maximize = matches!(side, Player::X);
     let static_eval = board.cached_eval();
@@ -908,6 +942,80 @@ fn quiescence_node(
         return Ok(if maximize { alpha } else { beta });
     }
 
+    let mut best = if maximize { alpha } else { beta };
+    let mut best_score_for_tt = best;
+    let mut qs_best_move: Coord = ORIGIN;
+    let mut searched_any_move = false;
+    let mut tried_tt_move: Option<Coord> = None;
+
+    // ── Try TT move FIRST (D4) ──────────────────────────────────────────
+    // Skip TT move if missing, ORIGIN sentinel, illegal (board moved on
+    // since the entry was written), or not a threat under the current
+    // filter (qsearch frontier invariant — see I7 / B6).
+    if let Some(m) = tt_move {
+        if m != ORIGIN
+            && board.is_legal(m)
+            && is_threat_move(board, m, side, cfg.qsearch_filter_mode)
+        {
+            board
+                .place(m)
+                .expect("TT-suggested threat move must be legal in qsearch");
+            let r = quiescence_node(
+                board,
+                tt,
+                scratch,
+                cfg,
+                alpha,
+                beta,
+                ply + 1,
+                q_ply + 1,
+                deadline,
+                node_count,
+            );
+            board.undo().expect("undo TT move in qsearch");
+            let score = r?;
+            searched_any_move = true;
+            tried_tt_move = Some(m);
+            if maximize {
+                if score > best_score_for_tt {
+                    best_score_for_tt = score;
+                    qs_best_move = m;
+                }
+                if score >= beta {
+                    qs_store(
+                        tt, cfg, board, ply, best_score_for_tt, alpha_orig, beta_orig,
+                        qs_best_move,
+                    );
+                    return Ok(beta);
+                }
+                if score > best {
+                    best = score;
+                }
+                if score > alpha {
+                    alpha = score;
+                }
+            } else {
+                if score < best_score_for_tt {
+                    best_score_for_tt = score;
+                    qs_best_move = m;
+                }
+                if score <= alpha {
+                    qs_store(
+                        tt, cfg, board, ply, best_score_for_tt, alpha_orig, beta_orig,
+                        qs_best_move,
+                    );
+                    return Ok(alpha);
+                }
+                if score < best {
+                    best = score;
+                }
+                if score < beta {
+                    beta = score;
+                }
+            }
+        }
+    }
+
     // Threat-only filter on the inner-radius candidates. Reuses the
     // per-ply slot: `pvs_node` at ply P returns into qsearch *before*
     // generating its own moves, so slot P is free to host the candidate
@@ -928,16 +1036,18 @@ fn quiescence_node(
         }
     }
     let threat_count = scratch.threats[ply_idx].len();
-    if threat_count == 0 {
+    if threat_count == 0 && !searched_any_move {
+        // True no-threats case: position is quiet AND no TT move was
+        // tried. Stand-pat-style return; no store (I5).
         return Ok(if maximize { alpha } else { beta });
     }
 
-    let mut best = if maximize { alpha } else { beta };
-    let mut best_score_for_tt = best;
-    let mut qs_best_move: Coord = ORIGIN;
-    let mut searched_any_move = false;
     for i in 0..threat_count {
         let m = scratch.threats[ply_idx][i];
+        // Skip the TT move if we already tried it (B7).
+        if Some(m) == tried_tt_move {
+            continue;
+        }
         board
             .place(m)
             .expect("ordered threat must be legal in qsearch");
@@ -1806,6 +1916,271 @@ mod tests {
             "qsearch TT best_move on fail-high must be the winning threat move, \
              not ORIGIN sentinel"
         );
+    }
+
+    /// T2. Pre-populate the TT with an Exact entry at the qsearch entry
+    /// hash, then verify a probe immediately returns the (mate-distance
+    /// adjusted) score without recursion.
+    #[test]
+    fn qsearch_probe_returns_exact_on_hit() {
+        let mut b = Board::new();
+        // Quiet midgame-like position so no terminal short-circuit.
+        b.place_for_test(Coord::new(0, 0), Player::X);
+        b.place_for_test(Coord::new(2, 0), Player::O);
+        b.force_parity_for_test(Player::X, 0);
+        let entry_hash = b.hash();
+
+        let mut tt = TranspositionTable::new(16);
+        // Pre-populate TT: Exact entry, score = 12345, depth = -1.
+        let canned_score: i32 = 12345;
+        tt.store(
+            entry_hash,
+            QSEARCH_NODE_DEPTH,
+            score_to_tt(canned_score, 0),
+            TTFlag::Exact,
+            Coord::new(1, 0),
+        );
+
+        let cfg = SearchConfig::default();
+        assert!(cfg.qsearch_tt_enabled);
+        let mut scratch = SearchScratch::new();
+        let mut nodes_before: u64 = 0;
+
+        let score = quiescence_node(
+            &mut b,
+            &mut tt,
+            &mut scratch,
+            &cfg,
+            -INF,
+            INF,
+            0,
+            0,
+            None,
+            &mut nodes_before,
+        )
+        .expect("no timeout");
+
+        assert_eq!(
+            score, canned_score,
+            "Exact-hit probe must return the TT-stored score verbatim \
+             (mate-distance adjusted; this is a non-mate score so it \
+              round-trips unchanged)"
+        );
+        // Node count should be 1 (just the bump-and-check at entry); no
+        // recursion fired.
+        assert_eq!(
+            nodes_before, 1,
+            "Exact-hit probe must return without recursing"
+        );
+    }
+
+    /// T3. Polarity-correctness: O-to-move position with an `UpperBound`
+    /// TT entry whose score sits at-or-below `alpha`. The probe must
+    /// fail-low (return `adjusted`) for the minimizing side without any
+    /// polarity-specific sign flip in the probe block (R4).
+    #[test]
+    fn qsearch_probe_o_to_move_upper_bound_cutoff() {
+        let mut b = Board::new();
+        b.place_for_test(Coord::new(0, 0), Player::X);
+        b.place_for_test(Coord::new(2, 0), Player::O);
+        // Force O to move.
+        b.force_parity_for_test(Player::O, 0);
+        let entry_hash = b.hash();
+        assert_eq!(b.to_move(), Player::O, "test setup: O must be to move");
+
+        let mut tt = TranspositionTable::new(16);
+        // UpperBound entry with score = -500 (X-positive frame; negative
+        // = O advantage). For O (minimizer), a `score <= alpha` proves
+        // O can hold X to no better than -500 → fail-low return.
+        let canned_score: i32 = -500;
+        tt.store(
+            entry_hash,
+            QSEARCH_NODE_DEPTH,
+            score_to_tt(canned_score, 0),
+            TTFlag::UpperBound,
+            Coord::new(1, 0),
+        );
+
+        let cfg = SearchConfig::default();
+        let mut scratch = SearchScratch::new();
+        let mut nodes: u64 = 0;
+
+        // `alpha = -400 > canned_score = -500`. Cutoff condition:
+        // `adjusted <= alpha`, so the probe returns `adjusted = -500`.
+        let alpha: i32 = -400;
+        let beta: i32 = INF;
+
+        let score = quiescence_node(
+            &mut b,
+            &mut tt,
+            &mut scratch,
+            &cfg,
+            alpha,
+            beta,
+            0,
+            0,
+            None,
+            &mut nodes,
+        )
+        .expect("no timeout");
+
+        assert_eq!(
+            score, canned_score,
+            "UpperBound probe at O-to-move with score <= alpha must \
+             return the adjusted TT score (polarity-agnostic cutoff)"
+        );
+        assert_eq!(
+            nodes, 1,
+            "Bound-sufficient probe hit must short-circuit before recursion"
+        );
+    }
+
+    /// T4. The TT-suggested move is recursed FIRST when it passes the
+    /// threat filter, before any generated threat move. Verify by
+    /// pre-populating TT with a winning move for X and asserting the
+    /// stored `best_move` on the resulting `LowerBound` matches.
+    #[test]
+    fn qsearch_tt_move_tried_first_when_threat() {
+        let mut b = Board::new();
+        x_row(&mut b, 0, 5);
+        b.force_parity_for_test(Player::X, 0);
+        let entry_hash = b.hash();
+
+        let mut tt = TranspositionTable::new(16);
+        // Pre-populate a low-bound entry with the winning move (5,0).
+        // The probe-cutoff conditions will NOT fire because we pass an
+        // explicitly wide window — the entry's role here is to supply
+        // the try-first move. The result of the qsearch should still
+        // be a fail-high; we then verify the stored best_move is (5,0).
+        let tt_move = Coord::new(5, 0);
+        tt.store(
+            entry_hash,
+            QSEARCH_NODE_DEPTH,
+            -INF, // Lower bound = -INF; cannot fire `>= beta` cutoff.
+            TTFlag::LowerBound,
+            tt_move,
+        );
+
+        let cfg = SearchConfig::default();
+        let mut scratch = SearchScratch::new();
+        let standpat = b.cached_eval();
+        let beta = standpat.saturating_add(1);
+        let mut nodes: u64 = 0;
+
+        let score = quiescence_node(
+            &mut b,
+            &mut tt,
+            &mut scratch,
+            &cfg,
+            -INF,
+            beta,
+            0,
+            0,
+            None,
+            &mut nodes,
+        )
+        .expect("no timeout");
+        assert!(score >= beta, "test setup must fail-high");
+
+        let entry = tt.probe(entry_hash).expect("entry must exist");
+        assert_eq!(
+            entry.best_move, tt_move,
+            "After cutoff, stored best_move must equal the TT-suggested \
+             move that was tried first (proves try-first ordering)"
+        );
+        assert!(matches!(entry.flag, TTFlag::LowerBound));
+    }
+
+    /// T5. A qsearch entry stored at `depth = -1` MUST NOT displace a
+    /// deeper main-search entry from the depth-preferred bucket. The
+    /// new qsearch entry lands in always-replace; the main entry stays
+    /// in depth-preferred.
+    #[test]
+    fn qsearch_depth_minus_one_does_not_displace_main_entry() {
+        let mut tt = TranspositionTable::new(1);
+        let hash: u128 = 0xDEAD_BEEF_CAFE_BABE_DEAD_BEEF_CAFE_BABE;
+        // Main-search entry at depth=5 in depth-preferred.
+        let main_move = Coord::new(7, 7);
+        tt.store(hash, 5, 123, TTFlag::Exact, main_move);
+        // Qsearch entry at depth=-1; SAME hash so same bucket.
+        let qs_move = Coord::new(3, 3);
+        tt.store(hash, QSEARCH_NODE_DEPTH, 456, TTFlag::LowerBound, qs_move);
+
+        // probe() returns depth-preferred when both buckets match the
+        // same hash — verify the depth-5 main entry is what surfaces.
+        let probed = tt.probe(hash).expect("entry must be present");
+        assert_eq!(
+            probed.depth, 5,
+            "main-search depth-preferred entry must NOT be displaced \
+             by a qsearch entry at depth=-1"
+        );
+        assert_eq!(probed.best_move, main_move);
+        assert!(matches!(probed.flag, TTFlag::Exact));
+    }
+
+    /// T6. Kill-switch: with `qsearch_tt_enabled = false`, qsearch
+    /// behaviour is byte-identical to the pre-feature implementation:
+    /// no probe (so a poisoned TT entry CANNOT affect the result), and
+    /// no store.
+    #[test]
+    fn qsearch_tt_disabled_byte_identical_to_head() {
+        let mut b = Board::new();
+        b.place_for_test(Coord::new(0, 0), Player::X);
+        b.place_for_test(Coord::new(2, 0), Player::O);
+        b.force_parity_for_test(Player::X, 0);
+        let entry_hash = b.hash();
+
+        let mut tt = TranspositionTable::new(16);
+        // Poison the TT with an Exact entry that would otherwise short-
+        // circuit the search to a wildly wrong score.
+        let poison_score: i32 = -987_654;
+        tt.store(
+            entry_hash,
+            QSEARCH_NODE_DEPTH,
+            score_to_tt(poison_score, 0),
+            TTFlag::Exact,
+            Coord::new(5, 5),
+        );
+
+        let cfg = SearchConfig {
+            qsearch_tt_enabled: false,
+            ..SearchConfig::default()
+        };
+        let mut scratch = SearchScratch::new();
+        let mut nodes: u64 = 0;
+
+        let score = quiescence_node(
+            &mut b,
+            &mut tt,
+            &mut scratch,
+            &cfg,
+            -INF,
+            INF,
+            0,
+            0,
+            None,
+            &mut nodes,
+        )
+        .expect("no timeout");
+
+        // The poisoned probe must NOT fire: the returned score is the
+        // real stand-pat (or search-derived) value, never the poison.
+        assert_ne!(
+            score, poison_score,
+            "qsearch_tt_enabled=false MUST skip TT probe; poisoned entry \
+             leaked into the return value"
+        );
+
+        // Store side: the entry at `entry_hash` must remain the poison
+        // we wrote — qsearch's tail-store path must also be gated off.
+        let entry = tt.probe(entry_hash).expect("poison entry must persist");
+        assert_eq!(
+            score_from_tt(entry.score, 0),
+            poison_score,
+            "qsearch_tt_enabled=false MUST skip TT store; the poison \
+             entry should be unchanged"
+        );
+        assert_eq!(entry.best_move, Coord::new(5, 5));
     }
 }
 
