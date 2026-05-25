@@ -39,6 +39,7 @@ Save as `specs/SPEC_ROADMAP.md`.
 | 28D-3 | eval revival (S1 detection: open_3 / closed_3 / open_2) + I3 bug sweep; KEEP commits, no `.bestref` advance | ✅ done |
 | 28E-0 | per-stone time-fix + SDK SearchStats + fixed-depth + engine audit (1 MAJOR + 1 MINOR); KEEP, no `.bestref` advance | ✅ done |
 | Sprint 1 | free-wins bundle: iai-callgrind gate + PGO ship + TT prefetch; +7.4% bench-quick NPS; `.bestref` cfefb3b → cac186e | ✅ done |
+| Sprint 2 | proximity bundle + supporting items: worktree-PGO opt-in (A) + bounds-elim/inline (D) + SparseCellSet u16 (E) + EvalCache align (G); C/F/H aborted by falsification branches; +3.3% bench-quick NPS / -7% iai instructions; 200g vs `.bestref` -12.2 Elo INCONCLUSIVE; `.bestref` UNCHANGED (Outcome C, plan § I.5) | ✅ done |
 
 Order is fixed. Each phase depends on the previous.
 
