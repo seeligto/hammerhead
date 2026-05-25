@@ -215,6 +215,44 @@ per `Board`. Negligible vs the 64 MB TT, and there is exactly one live
 > drift again — also documented as not a strength change. The
 > baseline was refreshed a second time at R-05.
 
+### place_for_search / undo_for_search (Sprint 3B)
+
+Search-internal `place` / `undo` variants that skip the r=8 outer-halo
+maintenance. The inner r=2 walk runs unchanged (search reads
+`inner_candidates` only). The candidate audit (Sprint 3A,
+`/tmp/sprint_3/A_place_for_search_design.md`) confirmed three search-
+internal call sites — all `board.is_legal(m)` — and zero search/eval/
+threats/movegen callers of the outer `candidates: SparseCellSet`.
+
+**Contract**: during a search rooted at top-level position `P0`,
+`place_for_search` / `undo_for_search` leave `proximity.outer` and
+`candidates` frozen at `P0`'s state. Search descent is balanced —
+every `place_for_search` is matched by exactly one `undo_for_search`
+before returning to caller — so outer state at search exit ≡ outer
+state at search entry, still valid for `P0`. **No `resync_outer_proximity`
+is required at the search→top-level boundary.** `Engine::best_move`'s
+subsequent top-level `place()` of the chosen move continues outer
+maintenance via the normal API.
+
+`is_legal_during_search(c)` is the search-safe legality query: empty-
+cell check via `axes` plus an O(history) `hex_distance` walk. Called
+~3 / node (TT + 2 killers); the per-call cost is bounded by piece
+count (~50 in mid-game). `is_legal` (public, `proximity.outer`-backed)
+is unchanged for top-level callers and tests.
+
+Sprint 2C's first attempt re-used the normal `place()` body's
+`candidates.remove(c)` without the symmetric re-add in
+`undo_for_search`, progressively corrupting `candidates`.
+Sprint 3B's split skips all outer-state ops uniformly — including
+`candidates.remove` — preventing the leak by construction.
+
+Predicted +10-15 % NPS based on Sprint 2C measurement (+37 % NPS
+before the broken-contract revert; Sprint 3B's clean implementation
+lands somewhere between, accounting for the small `is_legal_during_search`
+overhead). Validation requires both reference fixture byte-identity AND
+a new `chimera-positions` test set that exercises `is_legal_during_search`
+plus the post-search `candidates()` oracle.
+
 ## Move Generation (`moves.rs`)
 
 Per-stone generation. Search calls this once per ply (not once per turn) —
