@@ -828,6 +828,19 @@ per-node `maximize` flag is one branch in cold code. Per node:
 8. Store a TT entry with flag `Exact`, `LowerBound`, or `UpperBound`
    depending on whether alpha was raised / beta was cut.
 
+**TT prefetch (Sprint 1C).** Immediately after `board.place(m)` and
+before the recursive `pvs_dance` / `quiescence_node` call, issue an
+L1 prefetch (`_mm_prefetch::<_MM_HINT_T0>`) on the TT bucket the
+child position will probe. The hash is `board.hash()` (post-place);
+the bucket index is `(hash as u64 as usize) & tt.mask`. The
+prefetch fires on x86_64 only; non-x86 builds use a no-op stub. It
+is purely a timing hint — affects ordering of memory ops, never
+correctness — and so cannot deadlock, race, or fault on a freed
+pointer. Applies at all three post-place sites in `search.rs`: the
+PVS main move loop, the qsearch TT-move attempt, and the qsearch
+threat-move loop. Predicted +1.5-3 % NPS by hiding DRAM latency on
+the child probe (see `analysis/baseline_ae539b7/verdict.md` #4).
+
 ### Quiescence (`quiescence_max` / `quiescence_min`)
 
 Threat-only, hard-capped at `cfg.qsearch_max_plies`.
