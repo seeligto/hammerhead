@@ -353,6 +353,96 @@ impl Board {
         Ok(())
     }
 
+    /// Search-internal `place`. Skips the r=8 outer-halo maintenance
+    /// (`proximity.outer` and the `candidates` [`SparseCellSet`]) that
+    /// `place()` keeps in lockstep with the inner state. Outer state
+    /// is frozen at the search-root snapshot for the entire search
+    /// descent; balanced `place_for_search` / `undo_for_search` pairs
+    /// leave it untouched at search exit. See
+    /// `SPEC_ENGINE.md § place_for_search / undo_for_search`.
+    ///
+    /// Pre-conditions (callers are responsible):
+    /// - `c` is empty (`!axes.is_occupied(c)`)
+    /// - `c` is within `MAX_PIECE_DISTANCE` of some placed piece, OR
+    ///   `ply == 0` and `c == ORIGIN`.
+    ///
+    /// `is_legal_during_search(c)` checks both. Search callsites
+    /// derive `c` from ordering (which only emits legal moves) so the
+    /// preconditions are guaranteed; the `debug_assert` flags
+    /// violations in dev builds.
+    #[inline]
+    pub fn place_for_search(&mut self, c: Coord) {
+        debug_assert!(
+            self.is_legal_during_search(c),
+            "place_for_search precondition: c={c:?} must be legal",
+        );
+        let player = self.side_to_move;
+
+        self.inner_candidates.remove(c);
+        self.apply_set(c, player);
+
+        add_proximity(
+            &mut self.proximity.inner,
+            &mut self.inner_candidates,
+            c,
+            MOVE_GEN_INNER_RADIUS,
+            &self.axes,
+        );
+
+        self.hash ^= self.zobrist.key(c, player);
+        self.history.push(c);
+        self.history_players.push(player);
+        self.ply += 1;
+        self.advance_parity();
+        self.mark_threats_dirty();
+        if crate::win::is_winning_move(self, c, player) {
+            self.winner = Some(player);
+        }
+    }
+
+    /// Search-internal `undo`. Symmetric inverse of
+    /// [`Self::place_for_search`]; skips outer-state rollback.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `history` is empty — callers must match every
+    /// `place_for_search` with an `undo_for_search`.
+    #[inline]
+    pub fn undo_for_search(&mut self) {
+        let c = self
+            .history
+            .pop()
+            .expect("undo_for_search: empty history");
+        let player = self
+            .history_players
+            .pop()
+            .expect("invariant: history_players parallel to history");
+
+        self.apply_clear(c, player);
+        self.mark_threats_dirty();
+        if self.winner == Some(player) {
+            self.winner = self.rederive_winner(player);
+        }
+
+        self.hash ^= self.zobrist.key(c, player);
+        self.ply -= 1;
+        self.retreat_parity();
+
+        remove_proximity(
+            &mut self.proximity.inner,
+            &mut self.inner_candidates,
+            c,
+            MOVE_GEN_INNER_RADIUS,
+        );
+
+        if self.ply == 0 {
+            // Inner stays empty (movegen short-circuits on ply==0).
+            self.inner_candidates.clear();
+        } else if self.proximity.inner_at(c) > 0 {
+            self.inner_candidates.insert(c);
+        }
+    }
+
     /// Total stones placed so far.
     #[inline]
     #[must_use]
