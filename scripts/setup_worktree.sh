@@ -93,4 +93,17 @@ pip install -q -e "$PKG_DIR"
 
 deactivate
 
+# Sprint 2A — optional PGO retrain inside the worktree's venv. Driven
+# by the same `pgo_build.sh` pipeline as the main repo, parameterised
+# via HEXO_PGO_* env vars. Default off (preserves the fast path for
+# tests / dev iteration); `make vs` / `make promote` set HEXO_PGO=1
+# for apples-to-apples arena measurement.
+if [ "${HEXO_PGO:-0}" = "1" ]; then
+    echo "worktree: HEXO_PGO=1 — retraining PGO inside $WT_PATH"
+    HEXO_PGO_ROOT="$(pwd)" \
+    HEXO_PGO_VENV="$(pwd)/$VENV_NAME" \
+    HEXO_PGO_ENGINE_DIR="$(pwd)/$ENGINE_DIR" \
+        bash "$REPO_ROOT/scripts/pgo_build.sh"
+fi
+
 echo "worktree ready: $WT_PATH @ $BESTREF_SHA"
