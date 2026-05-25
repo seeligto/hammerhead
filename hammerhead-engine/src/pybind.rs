@@ -101,6 +101,28 @@ impl PyEngine {
         self.inner.cached_eval()
     }
 
+    /// TEMPORARY: Phase 28F-2 diagnostic, remove after.
+    /// Returns `(layer1, layer2, layer3)` static-eval breakdown for the
+    /// current position. All three are X-positive (X minus O perspective).
+    /// Layer-3 sentinel (`i32::MAX`) is mapped to the literal value so
+    /// the diagnostic harness can detect mate-class scores.
+    fn _debug_eval_layers(&self) -> (i32, i32, i32) {
+        let board = &self.inner.board;
+        let l1 = crate::eval::bench_layer1_window_scan(board);
+        let l2 = crate::eval::bench_layer2_shapes(board);
+        let fx = crate::eval::bench_layer3_fork_bonus(board, Player::X);
+        let fo = crate::eval::bench_layer3_fork_bonus(board, Player::O);
+        // Map saturating i32::MAX-class returns to a recognisable
+        // sentinel without overflowing the subtraction.
+        let l3 = match (fx == i32::MAX, fo == i32::MAX) {
+            (true, true) => 0,
+            (true, false) => i32::MAX,
+            (false, true) => i32::MIN,
+            (false, false) => fx - fo,
+        };
+        (l1, l2, l3)
+    }
+
     fn to_move(&self) -> u8 {
         match self.inner.to_move() {
             Player::X => 0,
