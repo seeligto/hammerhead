@@ -19,6 +19,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pdoc"]
+# Phase S5 Stage 2A CMA-ES tuning harness (`tools/cma_tune.py`).
+# Optional because the engine SDK itself doesn't depend on it.
+tune-cma = ["cma>=3.3"]
 
 [project.scripts]
 hammerhead = "hammerhead.cli:main"
