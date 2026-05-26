@@ -213,9 +213,19 @@ their *current* value, unknown keys raise `ValueError`. The override
 persists across `reset()` and `clear_tt()` but **not** across engine
 restart — a fresh `Engine()` reads TOML defaults.
 
-Sprint 4A exposes the LMR triplet (`lmr_min_depth`,
-`lmr_min_move_index`, `lmr_reduction`). Sprint 4C extends the dict to
-aspiration + extension parameters.
+Sprint 4A exposed the LMR triplet (`lmr_min_depth`,
+`lmr_min_move_index`, `lmr_reduction`). Sprint 4C extends the dict
+with aspiration + extension knobs:
+
+- `asp_window_initial` (i32, [1, 10000]) — aspiration half-window
+  for the first attempt.
+- `asp_window_widen_factor` (u32, [2, 16]) — multiplicative widen
+  factor between aspiration attempts. Must be ≥ 2 to guarantee the
+  aspiration loop terminates.
+- `max_check_extensions` (u8, [0, 32]) — per-root-path budget for
+  check extensions.
+- `qsearch_max_plies` (u8, [0, 32]) — hard cap on quiescence
+  recursion depth in plies.
 
 Rule: `hexo.toml` is the source of truth for committed values. Runtime
 override is a tune-loop knob, not a replacement for TOML. Any tuned
