@@ -711,6 +711,38 @@ is handled outside the driver per Phase 28C-1 design §4 (kept out so
 the driver stays a pure consumer of the harness, parallel to
 `tune.py`).
 
+## LMR Texel tune driver (Sprint 4B)
+
+`scripts/tune_lmr.py` retunes the LMR triplet (`lmr_min_depth`,
+`lmr_min_move_index`, `lmr_reduction`) for the post-Sprint-3 NPS
+regime. It is a thin driver: candidate cells land in the worker via
+the `HEXO_SEARCH_PARAMS` env var (Sprint 4A counterpart of
+`HEXO_EVAL_OVERRIDES`); the baseline subprocess is wrapped with
+`env -u HEXO_SEARCH_PARAMS` so it always reads `hexo.toml` defaults.
+Both sides PGO-build from the same source — only the env var differs,
+mirroring `tune.py`'s A/B isolation. Opening diversity is forced OFF
+per Phase 28A.5.
+
+Three-stage protocol:
+
+- **Stage 1 — coarse screen**: a 24-cell grid (`min_depth ∈ {2,3,4}`,
+  `min_move_index ∈ {4,6,8,12}`, `reduction ∈ {1,2}`) at 80 g × 250 ms.
+  Triage by corrected mean Elo (apply −10 per
+  `feedback_arena_correction_factor`). Top-5 cells advance.
+- **Stage 2 — fine validation**: 5-cell shortlist at 400 g × 500 ms.
+  Pick the cell with the highest corrected mean **and** CI lower
+  ≥ −10. If none qualify, document and abort (LMR is locally optimal
+  for the current grid).
+- **Stage 3 — A/B promote**: winner vs `.bestref` at 400 g × 500 ms.
+  Promote criterion: corrected mean ≥ 0 (matches Sprint 1 / 3 promote
+  bar). If accepted, commit the winner to `hexo.toml`; the runtime
+  override is a tune-loop knob, not a production setting.
+
+Per-cell CSV lands at `/tmp/sprint_4/B_lmr_stage<N>.csv` with columns
+`min_depth, min_move_index, reduction, n, w, l, d, mean_elo, ci_lower,
+ci_upper`. Wall-clock budget at 10 workers: ~70 min stage 1, ~75 min
+stage 2, ~15 min stage 3 (~3 h total).
+
 ## Methodology fixes (Phase 25)
 
 Three measurement-infrastructure repairs surfaced by Phase 24.
