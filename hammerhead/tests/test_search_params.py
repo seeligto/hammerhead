@@ -34,6 +34,16 @@ def test_search_params_defaults_match_config() -> None:
     assert d["lmr_min_depth"] == CONFIG.search.lmr_min_depth
     assert d["lmr_min_move_index"] == CONFIG.search.lmr_min_move_index
     assert d["lmr_reduction"] == CONFIG.search.lmr_reduction
+    # Sprint 4C — aspiration + extension knobs.
+    assert d["asp_window_initial"] == CONFIG.search.asp_window_initial
+    assert (
+        d["asp_window_widen_factor"]
+        == CONFIG.search.asp_window_widen_factor
+    )
+    assert (
+        d["max_check_extensions"] == CONFIG.search.max_check_extensions
+    )
+    assert d["qsearch_max_plies"] == CONFIG.search.qsearch_max_plies
 
 
 def test_set_search_params_empty_dict_is_noop() -> None:
@@ -108,3 +118,62 @@ def test_lmr_reduction_out_of_range_raises() -> None:
         bot.set_search_params({"lmr_reduction": -1})
     with pytest.raises(ValueError):
         bot.set_search_params({"lmr_reduction": 5})
+
+
+# ── Sprint 4C — aspiration + extension knobs ──────────────────────────
+
+
+def test_asp_window_initial_set_and_get() -> None:
+    bot = Bot()
+    bot.set_search_params({"asp_window_initial": 75})
+    assert bot.search_params()["asp_window_initial"] == 75
+
+
+def test_asp_window_initial_out_of_range_raises() -> None:
+    bot = Bot()
+    with pytest.raises(ValueError):
+        bot.set_search_params({"asp_window_initial": 0})
+    with pytest.raises(ValueError):
+        bot.set_search_params({"asp_window_initial": 10_001})
+
+
+def test_asp_widen_factor_lower_bound_enforced() -> None:
+    bot = Bot()
+    with pytest.raises(ValueError):
+        bot.set_search_params({"asp_window_widen_factor": 1})
+    bot.set_search_params({"asp_window_widen_factor": 2})
+    assert bot.search_params()["asp_window_widen_factor"] == 2
+    with pytest.raises(ValueError):
+        bot.set_search_params({"asp_window_widen_factor": 17})
+
+
+def test_max_check_extensions_range() -> None:
+    bot = Bot()
+    bot.set_search_params({"max_check_extensions": 0})
+    bot.set_search_params({"max_check_extensions": 32})
+    with pytest.raises(ValueError):
+        bot.set_search_params({"max_check_extensions": 33})
+
+
+def test_qsearch_max_plies_range() -> None:
+    bot = Bot()
+    bot.set_search_params({"qsearch_max_plies": 4})
+    assert bot.search_params()["qsearch_max_plies"] == 4
+    with pytest.raises(ValueError):
+        bot.set_search_params({"qsearch_max_plies": 33})
+
+
+def test_reset_restores_aspiration_and_extensions() -> None:
+    bot = Bot()
+    bot.set_search_params({
+        "asp_window_initial": 75,
+        "asp_window_widen_factor": 4,
+        "max_check_extensions": 8,
+        "qsearch_max_plies": 12,
+    })
+    bot.reset_search_params()
+    d = bot.search_params()
+    assert d["asp_window_initial"] == CONFIG.search.asp_window_initial
+    assert d["asp_window_widen_factor"] == CONFIG.search.asp_window_widen_factor
+    assert d["max_check_extensions"] == CONFIG.search.max_check_extensions
+    assert d["qsearch_max_plies"] == CONFIG.search.qsearch_max_plies

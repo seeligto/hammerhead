@@ -82,6 +82,34 @@ fn lmr_override_changes_node_count() {
 }
 
 #[test]
+fn aspiration_override_changes_node_count() {
+    // Asp window of 1 forces many fail-low/fail-high re-searches at
+    // each ID iteration; a large window (10000) collapses to full
+    // window immediately. Node counts must differ.
+    let mut a = seeded();
+    let mut b = seeded();
+    let base = SearchConfig {
+        max_depth: 6,
+        time_ms: None,
+        ..SearchConfig::default()
+    };
+    let narrow = SearchConfig {
+        asp_window_initial: 1,
+        ..base
+    };
+    let wide = SearchConfig {
+        asp_window_initial: 10_000,
+        ..base
+    };
+    let nodes_narrow = run_at_depth(&narrow, &mut a);
+    let nodes_wide = run_at_depth(&wide, &mut b);
+    assert_ne!(
+        nodes_narrow, nodes_wide,
+        "narrow={nodes_narrow} wide={nodes_wide}"
+    );
+}
+
+#[test]
 fn default_config_byte_identical_to_explicit_constants() {
     // A SearchConfig built via Default and one built by hand from the
     // constants must produce the same node count — sanity that no
