@@ -7,6 +7,24 @@ All numeric tuning lives in `hexo.toml` (workspace root) and is exposed via
 this spec (e.g. radius 2, time check every 4096 nodes), the canonical source is
 `hexo.toml` — do not duplicate.
 
+### Runtime override surface (Sprint 4A)
+
+`SearchConfig` (see § Search) is the runtime tuning surface. Each `Engine`
+holds one `cfg: SearchConfig`, initialised from `Default::default()` (which
+reads the codegen'd constants). `best_move` clones `cfg` into a per-call
+`local`, applies `time_ms` / `depth` overrides, then passes `&local` to
+`search_root`. The hot path (`pvs_node`, `iterate_at_depth`) already reads
+`cfg.lmr_*`, `cfg.asp_window_*`, etc. — the constants are touched only by
+`Default::default()`. This means **mutating `engine.cfg.lmr_*` between
+searches changes search behaviour on the next call without rebuild**, at
+the cost of a struct-field load (vs. compile-time const immediate)
+per comparison. Verified < 0.1 % NPS impact via iai-callgrind in Sprint 4A.
+
+The pybind layer exposes the surface as `search_params` / `set_search_params`
+/ `reset_search_params` — see [SPEC_API](SPEC_API.md) § Tunable parameters.
+The override is a tune-loop knob; production-promotable values land in
+`hexo.toml`.
+
 ## Coordinates (`coords.rs`)
 
 Axial coords. Drop `s` (implicit: `s = -q - r`).
