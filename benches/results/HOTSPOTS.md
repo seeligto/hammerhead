@@ -1,23 +1,31 @@
-# Hotspots — Sprint 4 (runtime tuning surface + LMR retune)
+# Hotspots — Sprint 4 (runtime tuning surface, LMR sweep REVERTED)
 
 ## Sprint 4 status (2026-05-26)
 
-Four of seven plan phases landed (A runtime tuning surface + B LMR
-Texel retune + C aspiration/extension override + Phase F close).
-Phase D (SealBot-perf re-baseline) skipped — adapter not present.
-Phase E (staged movegen 2.5) deferred to Sprint 5 with documented
-rationale. Outcome A targeted on Elo (not NPS) — Phase B trades NPS
-for depth and the arena gate confirms net positive strength.
+**OUTCOME B — `.bestref` UNCHANGED.** Infrastructure landed; LMR
+Texel-tuned change reverted on Stage 3 evidence. Three of seven
+plan phases landed (A runtime tuning surface + C aspiration/extension
+override + side-quest PGO-build bug fix). Phase B (LMR Texel retune)
+sweep completed and the (3,4,2) winner was committed but **reverted**
+in Phase F after the final 400 g SPRT vs .bestref disagreed with
+Stage 3 v2. Phase D (SealBot-perf re-baseline) skipped — adapter
+absent. Phase E (staged movegen 2.5) deferred to Sprint 5.
 
-**Headline:** **bench-quick depth 6 → 7 at same 500 ms TC** with
-−14.6 % raw NPS (951 k → 810 k). The depth gain is the search-shape
-Elo lever Phase B targeted: more aggressive LMR (reduction 1 → 2,
-min_move_index 6 → 4) cuts hard on tactical interiors. iai-callgrind
-midgame_12 d6 **−55.3 % ins** (2.110 G → 943 M); midgame_30 +24.1 %
-(408 M → 506 M, where deeper recursion offsets the per-node savings).
-Reference node counts shifted substantially across all fixtures
-(e.g. single_origin d7: 1.73 M → 202 k = −88 %; midgame_12 d8:
-1.68 M → 670 k = −60 %), as expected from a tree-shape change.
+**Headline (post-revert):** bench-quick **942-946 k NPS at depth 6**
+— within ±1 % of Sprint 3 close baseline (951 k). All Phase A + C
+infrastructure is pure additive: iai-callgrind byte-identical
+instructions at default params; reference node counts byte-identical
+at default params. The runtime tuning surface (`Engine.search_params`
+/ `set_search_params(dict)` / `reset_search_params`) is now live but
+unused on production paths — defaults read from `hexo.toml` exactly
+as before.
+
+**Phase B mid-sprint headline (pre-revert):** depth 6 → 7 at the
+same 500 ms time budget with LMR (3,4,2), iai-callgrind midgame_12
+d6 **−55.3 % ins** (2.110 G → 943 M), reference node counts dropped
+dramatically (e.g. single_origin d7: 1.73 M → 202 k = −88 %). The
+search-shape change was real and substantial — but the arena
+disagreed (see decision below).
 
 ### Phase A — Runtime tuning surface (5 commits)
 
@@ -62,10 +70,23 @@ counterpart of `HEXO_EVAL_OVERRIDES`).
   was derived with the bug present.
 - **Stage 3 v2** (clean, post-fix): 207-193-0, raw +12.2 Elo / corrected
   +2.2, CI95 raw [−21.8, +46.2]. .so files distinct throughout (verified
-  md5 mid-match). Corrected mean ≥ 0 promote bar met.
+  md5 mid-match). Marginally above the corrected mean ≥ 0 promote bar.
+- **Final SPRT** (clean, after committing winner): 194-204-2, raw −8.7
+  Elo / corrected −18.7, CI95 raw [−42.7, +25.3], llr inconclusive.
+  Disagrees with v2 by ~21 Elo — within one 400 g CI (±34), but means
+  the underlying Elo is statistically indistinguishable from zero
+  (pooled v2 + final: raw ~+1.7 / corrected ~−8.3 Elo at ~800 g,
+  CI ±24).
 
-`hexo.toml` diff: `lmr_min_move_index 6 → 4`, `lmr_reduction 1 → 2`,
-`lmr_min_depth` unchanged at 3.
+Decision: **REVERT** the `hexo.toml` LMR change. Same-source Stage 2
+strongly favoured (3,4,2) at +24.4 raw, but two clean 400 g arenas
+against `.bestref` give pooled +2 raw / −8 corrected Elo — not
+distinguishable from noise. Possible explanation: the more aggressive
+LMR pruning loses more tactical sight in some lines than it gains in
+nominal depth, even though bench-quick reports +1 nominal ply. Keep
+all infrastructure (Phase A pybind, Phase C extension, Phase B's tune
+harness + spec + bug fix). Sprint 5 should re-attempt LMR tuning at
+higher sample size (≥ 800 g per Stage 3 cell) before promoting.
 
 ### Phase C — Generalised override (3 commits)
 
@@ -87,49 +108,53 @@ Optional per plan §7.1. Sprint 4 wall-clock budget exhausted by
 PGO-bug investigation + double Stage 3 run. Sprint 5 handoff:
 predicted +5-13 % NPS via hi-bucket pre-emission in pvs_node Stage 2.5.
 
-### `.bestref` decision
+### `.bestref` decision: UNCHANGED
 
-Sprint 4 Phase B Stage 3 v2 (clean): raw +12.2 Elo, corrected +2.2,
-CI95 raw [−21.8, +46.2]. Corrected mean ≥ 0 (Sprint 1/3 promote bar
-per retro lesson #2). Strong non-arena evidence:
+After Phase B's LMR change was reverted, the remaining Sprint 4
+content is pure infrastructure: pybind `set_search_params(dict)` surface
+covering LMR / aspiration / extension knobs (Phase A + C), the
+`tune_lmr.py` harness driving HEXO_SEARCH_PARAMS env-var sweeps
+(Phase B), the `pgo_build.sh` cross-venv contamination fix (side
+quest), and the spec touchpoints. None of this changes default
+search behaviour — iai-callgrind byte-identical at default params,
+bench-quick 942-946 k NPS recovered to baseline ±1 %, reference
+node counts byte-identical at default params.
 
-- Same-source Stage 2 +24.4 raw Elo for (3,4,2) — independent of
-  worktree-PGO penalty
-- bench-quick depth +1 at same time budget (search reaches deeper
-  per stone)
-- Reference node counts dramatically reduced (more aggressive LMR
-  cuts as designed)
-- iai-callgrind midgame_12 −55.3 % instructions
-
-PROMOTE. `.bestref` advances `dedfbbb` → Sprint 4 HEAD.
+`.bestref` **does not advance**. Sprint 4 outcome B per plan F.5:
+"Keep commits. `.bestref` unchanged. Investigate B/C/E for failure."
+The infrastructure value remains; the LMR-shape claim awaits Sprint 5
+re-attempt at higher sample size.
 
 ### Updated hotspot bands (post-Sprint 4)
 
-LMR (3,4,2) impact:
-- Fewer non-PV interior nodes (~30-50 % reduction depending on fixture)
-- Per-node cyc up (5230 vs baseline 4440) — extra depth reached at
-  same time pays in expensive interior expansions
-- Eval call count drops proportional to node reduction (validates
-  Sprint 3 close prediction that LMR retune would "exploit eval by
-  reducing the eval call count")
+Defaults restored to Sprint 3 close LMR (3,6,1). bench-quick recovered
+to 944 k mean NPS / depth 6 / 4466 cyc/node at 500 ms midgame_12 —
+within ±1 % of Sprint 3 close, all the place_for_search / history-flat
+/ axis-bitmap unchecked optimisations of Sprint 3 remain dominant.
+No new hotspot bands shifted from Sprint 3 close.
 
 ### Sprint 5 handoff (top 5)
 
-1. **Phase E staged movegen 2.5** — hi-bucket pre-emission in pvs_node.
-   Predicted +5-13 % NPS recovery from the depth-7 regime. Plan §7 in
-   the Sprint 4 prompt has the full design.
-2. **Aspiration / extension retune** — now unblocked by Phase C's
+1. **LMR retune at higher sample size** — Sprint 4's 400 g Stage 3
+   was too noisy (CI ±34) to distinguish small effects. Re-run with
+   ≥ 800 g per Stage 3 candidate. (3,4,2) and (3,12,2) are the most
+   plausible candidates from Sprint 4 Stage 2. Same-source Stage 2
+   for (3,4,2) was +24.4 — the gap to vs-`.bestref` pooled +1.7 raw
+   suggests either a small true Elo gain or the worktree-PGO penalty
+   is larger than the −10 correction factor.
+2. **PGO correction factor re-calibration** — with the Sprint 4B
+   cross-venv contamination bug fixed, the empirically-fitted −10
+   correction may be off. Re-baseline by running `make vs`
+   HEAD-vs-HEAD (current `.bestref` against itself) at 800 g to
+   measure pure worktree-PGO variance.
+3. **Phase E staged movegen 2.5** — hi-bucket pre-emission in pvs_node.
+   Predicted +5-13 % NPS. Plan §7 in the Sprint 4 prompt has the full
+   design. Sprint-4-deferred.
+4. **Aspiration / extension retune** — unblocked by Sprint 4C's
    override surface. Same 3-stage Texel protocol; no infra cost.
-3. **SealBot-perf adapter setup + 200g re-baseline** — external
-   validation of Sprint 3 + Sprint 4 cumulative Elo gain. Plan §6.
-4. **LMR grid expansion** — Stage 1's reduction-2 dominance suggests
-   reduction=3 or 4 may also be productive; expand grid bounds and
-   re-screen with longer per-cell match length to reduce Stage-1 noise.
-5. **PGO correction factor re-calibration** — with the cross-venv
-   contamination bug fixed, the empirically-fitted −10 correction may
-   be tighter. Re-baseline by running `make vs` HEAD-vs-HEAD (current
-   .bestref against itself) at 400 g to measure pure worktree-PGO
-   variance.
+5. **SealBot-perf adapter setup + 200 g re-baseline** — external
+   validation of Sprint 3 + Sprint 4 cumulative Elo gain. Sprint 4D
+   deferred (adapter absent).
 
 # Hotspots — Sprint 3 (place_for_search + history flat + axis_bitmap unchecked)
 
