@@ -453,10 +453,7 @@ fn pvs_node(
     let mut best_score = if maximize { -INF } else { INF };
     let mut best_move = ORIGIN;
     let mut move_idx: usize = 0;
-    // Stage 2.5 can push multiple hi-bucket coords in addition to TT (1) and
-    // killers (2). Cap at 16 keeps every push() inline (no heap alloc on the
-    // hot path); deeper hi-bucket stacks tail-spill to heap as smallvec does.
-    let mut tried: SmallVec<[Coord; 16]> = SmallVec::new();
+    let mut tried: SmallVec<[Coord; 3]> = SmallVec::new();
     let mut beta_cut = false;
 
     // Stage 1: TT move.
