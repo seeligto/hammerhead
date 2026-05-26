@@ -439,6 +439,40 @@ class Bot:
         """
         self._engine.set_eval_overrides(dict(overrides))
 
+    # ── Search-param overrides (Sprint 4A) ──────────────────────────────
+
+    def search_params(self) -> dict[str, Any]:
+        """Return the currently-active runtime search params as a dict.
+
+        Defaults equal the ``crate::config::*`` constants codegen'd
+        from ``hexo.toml``. Sprint 4A exposes the LMR triplet
+        (``lmr_min_depth``, ``lmr_min_move_index``, ``lmr_reduction``).
+        Sprint 4C extends the dict to aspiration + extension params.
+        """
+        return self._engine.search_params()
+
+    def set_search_params(self, params: Mapping[str, Any]) -> None:
+        """Patch the runtime search params (Sprint 4A).
+
+        Partial updates: keys absent from ``params`` retain their
+        *current* value. Unknown keys raise ``ValueError``.
+
+        Recognised keys (Sprint 4A): ``lmr_min_depth`` (i8, [1, 32]),
+        ``lmr_min_move_index`` (u8, no upper bound), ``lmr_reduction``
+        (i8, [0, 4]).
+
+        Persists across :meth:`reset` and ``clear_tt``. Does NOT
+        survive engine restart — fresh ``Bot()`` reads TOML defaults.
+
+        Args:
+            params: Mapping of search-param key → new value.
+        """
+        self._engine.set_search_params(dict(params))
+
+    def reset_search_params(self) -> None:
+        """Restore search params to ``hexo.toml`` defaults."""
+        self._engine.reset_search_params()
+
 
 def _coord(move: Move) -> Move:
     """Normalise a move argument to a plain ``(int, int)`` tuple."""
