@@ -166,6 +166,10 @@ class Engine:
     def hash(self) -> int: ...         # 128-bit Zobrist
     def reset(self) -> None: ...
     def clear_tt(self) -> None: ...
+    # Runtime tuning surface (Sprint 4A — see § Tunable parameters)
+    def search_params(self) -> dict: ...
+    def set_search_params(self, params: dict) -> None: ...
+    def reset_search_params(self) -> None: ...
 ```
 
 - `place` uses the side stored on the board. No player argument.
@@ -188,6 +192,36 @@ class Engine:
 
 Thin wrapper, no game logic. Releases the GIL for every `best_move` via
 `py.detach` (PyO3 0.28). Errors map to `PyValueError`.
+
+### Tunable parameters (runtime override, Sprint 4A)
+
+`hexo.toml` remains the source of truth for **defaults**. Production
+`Engine::new()` initialises `SearchConfig` from those defaults. Tuning
+workflows can transiently override values without rebuild via:
+
+```python
+engine.set_search_params({"lmr_min_depth": 2,
+                          "lmr_min_move_index": 8,
+                          "lmr_reduction": 2})
+result = engine.best_move(time_ms=500)
+engine.reset_search_params()   # restore TOML defaults
+current = engine.search_params()
+```
+
+Partial dict semantics mirror `set_eval_overrides`: missing keys retain
+their *current* value, unknown keys raise `ValueError`. The override
+persists across `reset()` and `clear_tt()` but **not** across engine
+restart — a fresh `Engine()` reads TOML defaults.
+
+Sprint 4A exposes the LMR triplet (`lmr_min_depth`,
+`lmr_min_move_index`, `lmr_reduction`). Sprint 4C extends the dict to
+aspiration + extension parameters.
+
+Rule: `hexo.toml` is the source of truth for committed values. Runtime
+override is a tune-loop knob, not a replacement for TOML. Any tuned
+value that wins a Texel sweep must be committed to TOML to take effect
+in production. Measured hot-path cost: < 0.1 % NPS (struct-field load
+vs. compile-time const — verified Sprint 4A via iai-callgrind).
 
 ## Internal: subprocess protocol (`hammerhead bot`)
 
