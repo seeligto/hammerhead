@@ -526,67 +526,17 @@ fn pvs_node(
         }
     }
 
-    // Stage 2.5: hi-bucket pre-emission (Sprint 5D). Generate inner
-    // candidates once; for each move not in `tried`, evaluate its
-    // ordering bucket and dispatch immediately if bucket ≥ 5 (win,
-    // block-win, stone1-defense, S0-create, block-S0). β-cutoff here
-    // skips Stage 3's score+sort entirely; hi-bucket moves land in
-    // `tried` so Stage 3's dedup loop skips them.
-    if !beta_cut {
-        let slot = &mut scratch.moves[ply_idx];
-        moves::generate(board, DEFAULT_MOVE_RADIUS, slot);
-        let stage25_move_count = scratch.moves[ply_idx].len();
-        for i in 0..stage25_move_count {
-            let m = scratch.moves[ply_idx][i];
-            if tried.contains(&m) {
-                continue;
-            }
-            // Build ctx in a tight scope so the immutable borrows of
-            // board / ord drop before try_one_move's mut borrows.
-            let bucket = {
-                let ctx = OrderingContext {
-                    board,
-                    side,
-                    tt_move,
-                    killers: &killers_snap,
-                    history: &ord.history,
-                    stone1_s0_defense: stone1_defense,
-                };
-                ordering::bucket_value(&ctx, m)
-            };
-            if bucket < 5 {
-                continue;
-            }
-            beta_cut = try_one_move(
-                board, tt, ord, scratch, cfg, depth,
-                &mut alpha, &mut beta, ply, extensions_left, deadline,
-                node_count, side, maximize,
-                m, bucket, move_idx,
-                &mut best_score, &mut best_move,
-            )?;
-            if beta_cut {
-                search_stats::note_cut(2, bucket, depth, None);
-            }
-            tried.push(m);
-            move_idx += 1;
-            if beta_cut {
-                break;
-            }
-        }
-    }
-
-    // Stage 3: full order + iterate. `scratch.moves[ply_idx]` is already
-    // populated by Stage 2.5 (when reachable). Skip entries already tried
-    // in stages 1 / 2 / 2.5.
+    // Stage 3: full generate + order, skip entries already tried in stages 1-2.
     if !beta_cut {
         {
-            if scratch.moves[ply_idx].is_empty() {
+            let slot = &mut scratch.moves[ply_idx];
+            moves::generate(board, DEFAULT_MOVE_RADIUS, slot);
+            if slot.is_empty() {
                 if tried.is_empty() {
                     return Ok(board.cached_eval());
                 }
-                // Stages 1-2.5 ran moves and Stage 3 has nothing to add:
-                // fall through to TT store with the staged best_score /
-                // best_move.
+                // Stages 1-2 ran moves and Stage 3 has nothing to add: fall
+                // through to TT store with the staged best_score / best_move.
             } else {
                 let ctx = OrderingContext {
                     board,
