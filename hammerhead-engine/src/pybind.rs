@@ -11,6 +11,7 @@ use crate::board::Player;
 use crate::coords::Coord;
 use crate::engine::Engine as RustEngine;
 use crate::eval_overrides::EvalOverrides;
+use crate::search::SearchConfig;
 
 /// `Board` keeps a few `RefCell` / `Cell` caches (lazy threat sets, lazy
 /// static eval), so the wrapper is `!Sync`. `unsendable` lifts `PyO3`'s
@@ -194,6 +195,40 @@ impl PyEngine {
         self.inner.set_eval_overrides(next);
         Ok(())
     }
+
+    /// Snapshot of the currently-active search params (Sprint 4A).
+    /// Keys mirror the public fields of [`SearchConfig`] that are
+    /// safe to expose for tuning. Defaults equal `crate::config::*`
+    /// (codegen'd from hexo.toml) until `set_search_params` runs.
+    fn search_params<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let cfg = &self.inner.cfg;
+        let d = PyDict::new(py);
+        d.set_item("lmr_min_depth", cfg.lmr_min_depth)?;
+        d.set_item("lmr_min_move_index", cfg.lmr_min_move_index)?;
+        d.set_item("lmr_reduction", cfg.lmr_reduction)?;
+        Ok(d)
+    }
+
+    /// Patch the runtime search params (Sprint 4A). Partial updates:
+    /// missing keys retain their *current* value (incremental, not
+    /// reset-then-set). Unknown keys raise `ValueError`.
+    ///
+    /// Recognised keys (Sprint 4A): `lmr_min_depth` (i8, [1, 32]),
+    /// `lmr_min_move_index` (u8, no upper bound — engine handles
+    /// large values gracefully), `lmr_reduction` (i8, [0, 4]).
+    ///
+    /// Persists across `reset()` and `clear_tt()`; does NOT survive
+    /// engine restart. Use `reset_search_params` to restore defaults.
+    fn set_search_params(&mut self, params: &Bound<'_, PyDict>) -> PyResult<()> {
+        let next = build_search_params_from_dict(self.inner.cfg, params)?;
+        self.inner.cfg = next;
+        Ok(())
+    }
+
+    /// Reset search params to `SearchConfig::default()` (TOML-sourced).
+    fn reset_search_params(&mut self) {
+        self.inner.cfg = SearchConfig::default();
+    }
 }
 
 /// Merge `dict` into `current`. Unknown keys are a `ValueError` (catches
@@ -238,6 +273,47 @@ fn build_overrides_from_dict(
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "unknown eval override key: {key:?}"
+                )));
+            }
+        }
+    }
+    Ok(next)
+}
+
+/// Merge `dict` into the LMR triplet of `current`. Sprint 4C will
+/// extend the match arms with aspiration + extension keys.
+fn build_search_params_from_dict(
+    current: SearchConfig,
+    dict: &Bound<'_, PyDict>,
+) -> PyResult<SearchConfig> {
+    let mut next = current;
+    for (k, v) in dict.iter() {
+        let key: String = k.extract()?;
+        match key.as_str() {
+            "lmr_min_depth" => {
+                let d: i8 = v.extract()?;
+                if !(1..=32).contains(&d) {
+                    return Err(PyValueError::new_err(format!(
+                        "lmr_min_depth out of range [1, 32]: {d}"
+                    )));
+                }
+                next.lmr_min_depth = d;
+            }
+            "lmr_min_move_index" => {
+                next.lmr_min_move_index = v.extract()?;
+            }
+            "lmr_reduction" => {
+                let r: i8 = v.extract()?;
+                if !(0..=4).contains(&r) {
+                    return Err(PyValueError::new_err(format!(
+                        "lmr_reduction out of range [0, 4]: {r}"
+                    )));
+                }
+                next.lmr_reduction = r;
+            }
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown search param key: {key:?}"
                 )));
             }
         }
