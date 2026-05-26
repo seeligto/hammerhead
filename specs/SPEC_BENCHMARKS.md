@@ -878,3 +878,53 @@ NPS measurements, rebuild with `make pgo`.
 `scripts/setup_worktree.sh` honours `HEXO_PGO=1` (set automatically
 by `make vs` and `make promote`), so the `.bestref` worktree is also
 PGO-built for apples-to-apples arena runs.
+
+### PGO correction factor (Φ)
+
+Match-harness arena measurements between the main-repo build and the
+worktree build (`.bestref` or stage-3-tune source) may show a residual
+non-zero mean Elo from PGO build asymmetry alone — independent of
+source-code differences. This is the **PGO correction factor (Φ)**:
+
+```
+corrected_elo = raw_elo − Φ
+```
+
+Φ comes from a **HEAD-vs-HEAD** match: both sides at the same commit
+(typically `.bestref`), both PGO-built (one in the main repo via
+`make pgo`, one in `.worktree-best/` via
+`HEXO_PGO=1 ./scripts/setup_worktree.sh`), then `make vs` between
+them. Any non-zero mean Elo is asymmetry plus pure variance, not a
+strength difference.
+
+Φ is re-derived at the start of any sprint that depends on tight
+arena measurements (e.g. Sprint 5A) and after any change to
+`scripts/pgo_build.sh` / `scripts/setup_worktree.sh`. Empirical Φ
+history:
+
+- Sprint 2B (pre-PGO-bug-fix, contaminated): ≈ −10 Elo (suspect; the
+  worktree `.so` was being installed into the main venv, so both
+  sides of every `make vs` were the same binary — measuring build
+  variance only).
+- Sprint 4 commit `1341ba4`: `scripts/pgo_build.sh` pins
+  `VIRTUAL_ENV="${VENV_DIR}"` before maturin calls, ensuring the
+  worktree build lands in `.worktree-best/.venv-best/`.
+- Sprint 5A (post-fix re-calibration): TBD this sprint.
+
+**Verification protocol** (run after every
+`HEXO_PGO=1 ./scripts/setup_worktree.sh`):
+
+```
+md5sum .venv/lib/python*/site-packages/hammerhead_engine/hammerhead_engine.abi3.so
+md5sum .worktree-best/.venv-best/lib/python*/site-packages/hammerhead_engine/hammerhead_engine.abi3.so
+```
+
+The two hashes **must differ**. Matching hashes indicate the venv-
+pinning fix is not in effect; halt arena work and investigate.
+
+**Sample-size guidance** for Φ derivation: 800 games at 500 ms/stone
+gives a Wilson CI half-width ≈ 24 Elo for outcomes near 50 %. Use the
+observed mean as Φ regardless of statistical significance — for
+downstream phases this estimate is more honest than assuming Φ = 0.
+Sprints prior to a fresh re-calibration may have used a contaminated
+Φ; reverse calibration supersedes prior estimates.
