@@ -847,16 +847,40 @@ per-node `maximize` flag is one branch in cold code. Per node:
       block-win, S0-create…) gets the higher bucket so LMR / check
       extension behave identically to today's ordering-pass result.
       Alloc-free.
-   c. **Stage 3 — Full generate + order.** If no β-cutoff yet, run
-      `moves::generate(board, DEFAULT_MOVE_RADIUS)` and
-      `ordering::order_moves_with_buckets(...)` exactly as before.
-      Iterate the ordered list with `if tried.contains(&m) { continue; }`
-      to skip stage-1/2 entries.
+   c. **Stage 2.5 — Hi-bucket pre-emission (Sprint 5D).** If no
+      β-cutoff yet, run `moves::generate(board, DEFAULT_MOVE_RADIUS)`
+      and walk the generated list in original order. For each move
+      not in `tried`, call `ordering::bucket_value(ctx, m)`; if the
+      bucket ≥ 5 (win 9, block-win 8, stone1-defense 7, S0-create 6,
+      block-S0 5), dispatch the move via `try_one_move`. β-cutoff in
+      this stage skips Stage 3's score+sort entirely. Same
+      `try_one_move` / LMR / check-extension wiring as the other
+      stages — `move_idx` continues to increment globally.
 
-   When stage 1 or stage 2 produces a β-cutoff, the function returns
-   without ever calling `moves::generate` — the TT-cutoff fast path
-   eliminates the candidate-buffer fill + ordering work on the
-   ~89-95% of nodes where the TT or a killer cuts.
+      Cost trade-off: ~50 cyc/move added on the no-cutoff path
+      (axis_probe re-runs via bucket_value); ~900 cyc/node saved on
+      the cutoff path (full Stage 3 sort skipped). Net positive
+      when hi-bucket cutoffs are a non-trivial share of pvs_node
+      visits — Phase 26 R-01 verified the same staging pattern adds
+      +21.8 % NPS at the next level up.
+
+      Tree-shape change by design: reference node counts will
+      shift. Hi-bucket moves now precede killer-flag-only moves
+      (bucket 3) in tactical positions where Stage 3's sorted
+      iteration would have placed killer first.
+
+   d. **Stage 3 — Full order + iterate.** If no β-cutoff yet,
+      `scratch.moves[ply_idx]` is already populated (by Stage 2.5
+      or, if Stage 2.5 was reached and the slot is non-empty,
+      reused as-is). Run `ordering::order_moves_with_buckets(...)`
+      on the slot, then iterate. `if tried.contains(&m) { continue; }`
+      now also skips Stage 2.5's hi-bucket entries.
+
+   When stage 1 or stage 2 produces a β-cutoff, stages 2.5 and 3
+   are skipped — `moves::generate` is never called. The TT-cutoff
+   fast path eliminates the candidate-buffer fill + ordering work
+   on the ~89-95% of nodes where the TT or a killer cuts. When
+   stage 2.5 cuts off, stage 3's score+sort is skipped.
 
 6. Iterate the staged sequence:
    - **First move (move_idx == 0)**: full window `[alpha, beta]`.
