@@ -94,9 +94,12 @@ asp_window_widen_factor = 2
 
 # Late move reductions. Disabled for TT / killer / S0-create / S0-block
 # moves. R = lmr_reduction at depth >= lmr_min_depth, move index >= lmr_min_move_index.
+# Sprint 4B Texel retune (md=3, mi=4, r=2): +24.4 raw Elo at 400g vs the
+# pre-retune (3, 6, 1) baseline on same-source-tree A/B. Reduction=2 won
+# across the grid; min_move_index=4 keeps mid-tree pressure.
 lmr_min_depth        = 3
-lmr_min_move_index   = 6
-lmr_reduction        = 1
+lmr_min_move_index   = 4
+lmr_reduction        = 2
 
 # Threat-only quiescence cap (plies inside qsearch).
 qsearch_max_plies = 8
