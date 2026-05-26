@@ -46,7 +46,13 @@ Phase prompts start with STEP 0 (spec & config updates). Do not skip.
 - `#[cold]` on init / growth branches.
 - No `unwrap` in library code. `Result` + `thiserror`.
 - No `unsafe` without profiling evidence + invariant comment.
-- All numeric tuning lives in `hexo.toml`. Magic numbers in code = bug.
+- All numeric tuning lives in `hexo.toml` (source of truth). Magic
+  numbers in code = bug.
+- Runtime parameter override (`engine.set_search_params` /
+  `set_eval_overrides`) is permitted ONLY for tune-loop workflows.
+  Override values that prove strength gains must be committed to
+  `hexo.toml` before production use. The override layer is transient —
+  engine restart restores TOML defaults.
 - No alloc in search inner loop. `SmallVec` for short collections.
 
 ## Linting
