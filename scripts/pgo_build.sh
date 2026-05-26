@@ -88,6 +88,15 @@ echo "pgo: data dir = ${PGO_DATA}"
 rm -rf "${PGO_DATA}"
 mkdir -p "${PGO_DATA}"
 
+# Sprint 4B — maturin develop installs into the venv pointed to by
+# VIRTUAL_ENV. When pgo_build.sh runs from setup_worktree.sh AFTER its
+# `deactivate`, VIRTUAL_ENV is unset, and maturin falls back to the
+# `python` it finds on PATH — which is the OUTER (main) .venv when
+# `make vs` invokes the chain. The result: worktree's PGO'd .so gets
+# installed into MAIN .venv, silently corrupting the candidate-vs-best
+# arena. Force VIRTUAL_ENV to the target venv to pin the install.
+export VIRTUAL_ENV="${VENV_DIR}"
+
 echo "pgo: pass 1 — building instrumented engine"
 RUSTFLAGS="-Cprofile-generate=${PGO_DATA}" \
   "${MATURIN}" develop --release \
