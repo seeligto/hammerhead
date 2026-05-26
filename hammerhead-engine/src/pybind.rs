@@ -206,16 +206,26 @@ impl PyEngine {
         d.set_item("lmr_min_depth", cfg.lmr_min_depth)?;
         d.set_item("lmr_min_move_index", cfg.lmr_min_move_index)?;
         d.set_item("lmr_reduction", cfg.lmr_reduction)?;
+        d.set_item("asp_window_initial", cfg.asp_window_initial)?;
+        d.set_item("asp_window_widen_factor", cfg.asp_window_widen_factor)?;
+        d.set_item("max_check_extensions", cfg.max_check_extensions)?;
+        d.set_item("qsearch_max_plies", cfg.qsearch_max_plies)?;
         Ok(d)
     }
 
-    /// Patch the runtime search params (Sprint 4A). Partial updates:
+    /// Patch the runtime search params (Sprint 4A + 4C). Partial updates:
     /// missing keys retain their *current* value (incremental, not
     /// reset-then-set). Unknown keys raise `ValueError`.
     ///
-    /// Recognised keys (Sprint 4A): `lmr_min_depth` (i8, [1, 32]),
-    /// `lmr_min_move_index` (u8, no upper bound — engine handles
-    /// large values gracefully), `lmr_reduction` (i8, [0, 4]).
+    /// Recognised keys:
+    /// - Sprint 4A — LMR: `lmr_min_depth` (i8, [1, 32]),
+    ///   `lmr_min_move_index` (u8, no upper bound),
+    ///   `lmr_reduction` (i8, [0, 4]).
+    /// - Sprint 4C — aspiration + extension:
+    ///   `asp_window_initial` (i32, [1, 10000]),
+    ///   `asp_window_widen_factor` (u32, [2, 16]),
+    ///   `max_check_extensions` (u8, [0, 32]),
+    ///   `qsearch_max_plies` (u8, [0, 32]).
     ///
     /// Persists across `reset()` and `clear_tt()`; does NOT survive
     /// engine restart. Use `reset_search_params` to restore defaults.
@@ -280,8 +290,8 @@ fn build_overrides_from_dict(
     Ok(next)
 }
 
-/// Merge `dict` into the LMR triplet of `current`. Sprint 4C will
-/// extend the match arms with aspiration + extension keys.
+/// Merge `dict` into `current`. LMR triplet (Sprint 4A) plus
+/// aspiration + extension knobs (Sprint 4C).
 fn build_search_params_from_dict(
     current: SearchConfig,
     dict: &Bound<'_, PyDict>,
@@ -310,6 +320,42 @@ fn build_search_params_from_dict(
                     )));
                 }
                 next.lmr_reduction = r;
+            }
+            "asp_window_initial" => {
+                let w: i32 = v.extract()?;
+                if !(1..=10_000).contains(&w) {
+                    return Err(PyValueError::new_err(format!(
+                        "asp_window_initial out of range [1, 10000]: {w}"
+                    )));
+                }
+                next.asp_window_initial = w;
+            }
+            "asp_window_widen_factor" => {
+                let f: u32 = v.extract()?;
+                if !(2..=16).contains(&f) {
+                    return Err(PyValueError::new_err(format!(
+                        "asp_window_widen_factor out of range [2, 16]: {f}"
+                    )));
+                }
+                next.asp_window_widen_factor = f;
+            }
+            "max_check_extensions" => {
+                let e: u8 = v.extract()?;
+                if e > 32 {
+                    return Err(PyValueError::new_err(format!(
+                        "max_check_extensions out of range [0, 32]: {e}"
+                    )));
+                }
+                next.max_check_extensions = e;
+            }
+            "qsearch_max_plies" => {
+                let p: u8 = v.extract()?;
+                if p > 32 {
+                    return Err(PyValueError::new_err(format!(
+                        "qsearch_max_plies out of range [0, 32]: {p}"
+                    )));
+                }
+                next.qsearch_max_plies = p;
             }
             _ => {
                 return Err(PyValueError::new_err(format!(
