@@ -1,3 +1,141 @@
+# Hotspots — Sprint 5 (Φ recalibration; LMR re-test + stage-2.5 both null)
+
+## Sprint 5 status (2026-05-26)
+
+**OUTCOME B — `.bestref` UNCHANGED.** Sprint 5 was measurement-first;
+the headline deliverable is a clean, post-PGO-fix arena correction
+factor (Φ = +11.3 Elo) re-baselining all prior strength claims. No
+strength-side changes survived: Phase C's LMR re-test produced two
+identical-result, gate-failing 800g runs; Phase D's staged-2.5 logic
+regressed -5.8 % NPS and -82.6 corrected Elo, was reverted in place.
+
+**Phase A — PGO correction factor recalibration**: HEAD-vs-HEAD 800g
+at `.bestref` (`dedfbbb`) with the Sprint 4B `1341ba4` venv-pin fix
+overlaid (`dedfbbb` predates `1341ba4`). md5s of main vs worktree
+binaries verified distinct (`bfcd00…` vs `46a7d5…`). Result:
+412-386-2, **raw +11.3 Elo, CI95 [-12.8, +35.4]** at 24.1 Elo half-
+width.
+
+  **New Φ = +11.3 Elo.** Applied: `corrected = raw − 11.3`. Sign-
+  flipped vs the old (suspect) −10. Memory `feedback_arena_correction_factor`
+  updated. Spec § "PGO correction factor (Φ)" added to
+  `specs/SPEC_BENCHMARKS.md` (commit `75de950`).
+
+  Strategic implication: Sprint 1 (+12 corrected via old −10) and
+  Sprint 3 (+10 corrected via old −10) are retrospectively revised
+  to ~−39 and ~−11 corrected respectively. Cumulative project Elo
+  story since `.bestref` cfefb3b is **revised downward by ~21 Elo
+  per promote** under the new Φ. The downward revision is consistent
+  with Phase B's external 7 % winrate (only +2 pp over the 5 %
+  historical baseline) — both internal and external lines now agree
+  that prior cumulative Elo claims were inflated.
+
+**Phase B — SealBot-perf re-baseline (200g, 500 ms)**: adapter pre-
+wired in `~/Work/hexo-arena`. External HH updated from `cfefb3b`
+(Sprint 1) to current master `75de950`, rebuilt non-PGO per arena
+convention. Result: **HH 14-0-186 (W-D-L), winrate 7.00 %, Wilson95
+[4.22 %, 11.41 %]**. NPS 341 k (non-PGO build; comparison vs the 5 %
+historical Sprint-1-era baseline is apples-to-apples).
+
+  Verdict per § B.5: 7-10 % band — "modest external gain — Sprint 3's
+  internal +10 partially externalised." +2 pp over historical noise
+  baseline; below the +3 pp gate (`project_arena_external_gate_holds`).
+
+**Phase C — LMR re-validation at 800g**: (lmr_min_depth=3,
+lmr_min_move_index=4, lmr_reduction=2) and (3, 12, 2) via
+`HEXO_SEARCH_PARAMS`. Both candidates ended at the *identical*
+390-408-2, **raw −7.8, corrected −19.1, CI95 corrected [−43.2, +4.9]**.
+Both gates failed (corrected mean ≥ 0 and CI lower ≥ -15 both fail).
+Decision: **NO-WINNER**. No commits. Current TOML LMR (3, 6, 1) is
+locally optimal in this slice.
+
+  The identical W-L-D between two adjacent-cell runs is a low-
+  probability coincidence (~0.1 %); intermediate progress lines
+  differed, confirming the override took effect and game paths
+  diverged. Sprint 4 retro's "+24.4 same-source for (3,4,2) under
+  bugged PGO" is now confirmed as 400g-level noise. The clean 800g
+  result is the truth.
+
+**Phase D — Staged movegen 2.5**: implemented + measured + arena-
+falsified + reverted. Forward commits `8e010c7`, `d5813bb`, `961d695`
+followed by revert commits `c4cb18c`, `1b31870`, `7a24039`.
+
+  - bench-quick NPS: 891 k (Phase 0 baseline 946 k = **-5.8 %**)
+  - iai midgame_12 d6 ins: 2.110 G → 3.372 G (+59.7 %)
+  - reference midgame_12 d6 nodes: 155 k → 227 k (+45.7 %)
+  - 400g vs `.bestref` raw -71.3, **corrected -82.6**, CI95 corrected
+    [-117, -48]
+
+  Suspected root causes (post-revert analysis, unverified):
+  (1) duplicate `bucket_value` calls across Stage 2.5 and Stage 3;
+  (2) hi-bucket subset dispatched in generation order, not bucket-
+  descending order — bucket-5 moves preempt bucket-9 wins;
+  (3) reference shifts suggest broader exploration at shallow ID,
+  narrower at deep ID — the time-bounded match never sees the deep
+  benefit. Sprint 6 work if revisited.
+
+**Phase E — Validation**: 5 cold bench-quick mean **941 k NPS**
+(vs Phase 0 946 k = -0.5 %, within ±1 % noise floor). 800g final
+SPRT vs `.bestref` outcome documented in
+`/tmp/sprint_5/final_validation.md`.
+
+### What Sprint 5 actually delivered
+
+- Trustworthy Φ for all future arena measurements (was the headline
+  goal, achieved).
+- First clean external-strength number since the PGO bug was
+  introduced (Phase B 7 %, Wilson [4.2, 11.4]).
+- Two falsified candidate optimisations (LMR cell, staged-2.5
+  reordering) — null results that prevent Sprint 6 from re-litigating
+  these spaces without new evidence.
+- One spec commit (`75de950`); no engine-code changes survive Sprint 5.
+
+### `.bestref` decision
+
+`.bestref` remains at **`dedfbbb`** (Sprint 3 close). Sprint 5 outcome B
+per § E.5: bench-quick within noise, Φ-corrected mean ≈ 0 expected for
+800g HEAD vs `.bestref`. No advance.
+
+### Sprint 6 handoff (top 5)
+
+1. **Stage 2.5 re-attempt with both fixes.** (a) sort hi-bucket
+   subset bucket-DESC before dispatch; (b) plumb precomputed
+   `(bucket, move)` pairs from Stage 2.5 into Stage 3 to avoid
+   duplicate `bucket_value` calls. Estimated +5-13 % NPS if both fix
+   work; under -5 % if either is missed. Use iai-callgrind as the
+   tight gate — sub-1 % NPS changes are below 800g arena resolution.
+
+2. **Expanded LMR grid at 1600g per cell.** Vary both `lmr_reduction`
+   (1-4) and `lmr_min_move_index` (4-16) with `lmr_min_depth` fixed
+   at 3. Sprint 5C's 800g resolution couldn't distinguish (3,4,2)'s
+   -7.8 from noise. 1600g cuts CI half-width to ~17 Elo. Use Phase A's
+   Φ = +11.3 throughout.
+
+3. **Aspiration / extension retune** — Sprint 4C's runtime override
+   surface is built; Sprint 5 didn't use it. Two parameters
+   (`asp_window_initial`, `max_check_extensions`) are likely
+   non-stationary against current eval/search; coordinate-descent
+   sweep at 400-800g per cell.
+
+4. **External HH PGO build for Phase-B-style re-baselines.** Sprint 5B
+   used non-PGO external HH (per existing arena convention) and saw
+   7 % winrate. PGO'd external HH would close most of the 36-percent
+   NPS gap vs main repo and could push the SB-perf winrate higher,
+   exposing real strength gains that the non-PGO build masks.
+
+5. **`tt_size_mb` retune.** TT-replacement HOTSPOTS bands have not
+   moved since Sprint 1. With Sprint 4A's runtime surface, a small
+   1×1 sweep (32 / 64 / 128 / 256 MB) at 800g would resolve whether
+   the current default 64 MB is still optimal at Zen 4 cache sizes.
+
+### Updated hotspot bands (post-Sprint 5)
+
+No new hotspots shifted. bench-quick 941 k matches Sprint 4 close
+946 k within noise. All Sprint 3 close optimisations remain dominant
+(`place_for_search`, history flat, axis-bitmap unchecked).
+
+---
+
 # Hotspots — Sprint 4 (runtime tuning surface, LMR sweep REVERTED)
 
 ## Sprint 4 status (2026-05-26)
