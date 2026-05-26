@@ -35,6 +35,11 @@ from .cli_match import cmd_match, cmd_promote, _default_workers
 # the parent's environment unset (which equals the hexo.toml default).
 _EVAL_OVERRIDES_ENV = "HEXO_EVAL_OVERRIDES"
 
+# Sprint 4B counterpart of HEXO_EVAL_OVERRIDES, for the LMR / search-
+# param tune harness. Same JSON-object contract; keys match
+# ``Bot.set_search_params``.
+_SEARCH_PARAMS_ENV = "HEXO_SEARCH_PARAMS"
+
 # re-export for back-compat (e.g. test_benchmark.py: from hammerhead.cli import _bench_diff)
 from .cli_bench import _bench_diff  # noqa: F401
 
@@ -172,6 +177,27 @@ def cmd_bot(args: argparse.Namespace) -> int:
         except (ValueError, TypeError) as exc:
             sys.stderr.write(
                 f"error: set_eval_overrides({overrides!r}) failed: {exc}\n"
+            )
+            return 2
+    raw_sp = os.environ.get(_SEARCH_PARAMS_ENV)
+    if raw_sp:
+        try:
+            search_params = json.loads(raw_sp)
+        except json.JSONDecodeError as exc:
+            sys.stderr.write(
+                f"error: {_SEARCH_PARAMS_ENV} is not valid JSON: {exc}\n"
+            )
+            return 2
+        if not isinstance(search_params, dict):
+            sys.stderr.write(
+                f"error: {_SEARCH_PARAMS_ENV} must encode a JSON object\n"
+            )
+            return 2
+        try:
+            eng.set_search_params(search_params)
+        except (ValueError, TypeError) as exc:
+            sys.stderr.write(
+                f"error: set_search_params({search_params!r}) failed: {exc}\n"
             )
             return 2
     sys.stdout.write("hammerhead bot ready\n")
