@@ -222,6 +222,8 @@ impl PyEngine {
         d.set_item("max_check_extensions", cfg.max_check_extensions)?;
         d.set_item("qsearch_max_plies", cfg.qsearch_max_plies)?;
         d.set_item("move_gen_cap", cfg.move_gen_cap)?;
+        d.set_item("move_gen_cap_root", cfg.move_gen_cap_root)?;
+        d.set_item("move_gen_cap_root_span", cfg.move_gen_cap_root_span)?;
         Ok(d)
     }
 
@@ -239,7 +241,9 @@ impl PyEngine {
     ///   `max_check_extensions` (u8, [0, 32]),
     ///   `qsearch_max_plies` (u8, [0, 32]).
     /// - Cap probe — candidate-set size:
-    ///   `move_gen_cap` (usize, [1, 256]).
+    ///   `move_gen_cap` (usize, [1, 256]),
+    ///   `move_gen_cap_root` (usize, [1, 256]),
+    ///   `move_gen_cap_root_span` (usize, [0, 128]).
     ///
     /// Persists across `reset()` and `clear_tt()`; does NOT survive
     /// engine restart. Use `reset_search_params` to restore defaults.
@@ -379,6 +383,24 @@ fn build_search_params_from_dict(
                     )));
                 }
                 next.move_gen_cap = c;
+            }
+            "move_gen_cap_root" => {
+                let c: usize = v.extract()?;
+                if !(1..=256).contains(&c) {
+                    return Err(PyValueError::new_err(format!(
+                        "move_gen_cap_root out of range [1, 256]: {c}"
+                    )));
+                }
+                next.move_gen_cap_root = c;
+            }
+            "move_gen_cap_root_span" => {
+                let s: usize = v.extract()?;
+                if s > 128 {
+                    return Err(PyValueError::new_err(format!(
+                        "move_gen_cap_root_span out of range [0, 128]: {s}"
+                    )));
+                }
+                next.move_gen_cap_root_span = s;
             }
             _ => {
                 return Err(PyValueError::new_err(format!(

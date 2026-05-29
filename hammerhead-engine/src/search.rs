@@ -163,8 +163,19 @@ pub struct SearchConfig {
     /// moves (by bucket+history priority) survive truncation in
     /// `ordering::order_moves_with_buckets`; the rest are dropped. Trades
     /// branching for depth at fixed time. Sourced from `hexo.toml`
-    /// `engine.ordering.move_gen_cap` (default 24).
+    /// `engine.ordering.move_gen_cap` (default 24). Doubles as the
+    /// interior-node cap of the two-tier scheme below.
     pub move_gen_cap: usize,
+    /// Two-tier candidate cap (cap-probe STEP 3): plies with index
+    /// `< move_gen_cap_root_span` use this root cap; deeper plies use
+    /// `move_gen_cap`. Lets the search go wide near the root (where the
+    /// actual move is chosen) and tight in the interior (where breadth
+    /// is wasted and depth is precious). Runtime-only — not in `hexo.toml`.
+    pub move_gen_cap_root: usize,
+    /// Number of shallow plies (ply index `0..span`) that use
+    /// `move_gen_cap_root`. With span 0 the root cap never applies and
+    /// behaviour is flat at `move_gen_cap` (byte-identical default).
+    pub move_gen_cap_root_span: usize,
     /// Qsearch threat-filter variant. Sourced from `hexo.toml`
     /// `engine.search.qsearch_filter_mode`.
     pub qsearch_filter_mode: QsearchFilterMode,
@@ -192,6 +203,8 @@ impl Default for SearchConfig {
             qsearch_max_plies: QSEARCH_MAX_PLIES,
             max_check_extensions: MAX_CHECK_EXTENSIONS,
             move_gen_cap: MOVE_GEN_CAP,
+            move_gen_cap_root: MOVE_GEN_CAP,
+            move_gen_cap_root_span: 0,
             qsearch_filter_mode: QSEARCH_FILTER_MODE_STR
                 .parse()
                 .expect("QSEARCH_FILTER_MODE_STR from hexo.toml must be valid"),
@@ -463,6 +476,15 @@ fn pvs_node(
     let mut tried: SmallVec<[Coord; 3]> = SmallVec::new();
     let mut beta_cut = false;
 
+    // Two-tier candidate cap: shallow plies (`ply < root_span`) search
+    // wide, interior plies stay tight. Flat at `move_gen_cap` when
+    // `move_gen_cap_root_span == 0` (the default → byte-identical).
+    let eff_cap = if usize::from(ply) < cfg.move_gen_cap_root_span {
+        cfg.move_gen_cap_root
+    } else {
+        cfg.move_gen_cap
+    };
+
     // Stage 1: TT move.
     if let Some(m) = tt_move {
         if board.is_legal_during_search(m) {
@@ -474,7 +496,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
-                    cap: cfg.move_gen_cap,
+                    cap: eff_cap,
                 };
                 ordering::bucket_value(&ctx, m)
             };
@@ -509,7 +531,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
-                    cap: cfg.move_gen_cap,
+                    cap: eff_cap,
                 };
                 ordering::bucket_value(&ctx, slot)
             };
@@ -551,7 +573,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
-                    cap: cfg.move_gen_cap,
+                    cap: eff_cap,
                 };
                 // Split-borrow: each scratch field is a distinct
                 // `Box<[Vec<_>; N]>`, so simultaneous mut-borrows of one slot

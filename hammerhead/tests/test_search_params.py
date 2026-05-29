@@ -174,6 +174,21 @@ def test_move_gen_cap_range() -> None:
         bot.set_search_params({"move_gen_cap": 257})
 
 
+def test_move_gen_cap_two_tier_range() -> None:
+    bot = Bot()
+    d = bot.search_params()
+    assert d["move_gen_cap_root"] == CONFIG.ordering.move_gen_cap
+    assert d["move_gen_cap_root_span"] == 0
+    bot.set_search_params({"move_gen_cap_root": 48, "move_gen_cap_root_span": 2})
+    d = bot.search_params()
+    assert d["move_gen_cap_root"] == 48
+    assert d["move_gen_cap_root_span"] == 2
+    with pytest.raises(ValueError):
+        bot.set_search_params({"move_gen_cap_root": 0})
+    with pytest.raises(ValueError):
+        bot.set_search_params({"move_gen_cap_root_span": 129})
+
+
 def test_reset_restores_aspiration_and_extensions() -> None:
     bot = Bot()
     bot.set_search_params({
