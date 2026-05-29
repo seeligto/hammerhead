@@ -49,6 +49,7 @@ fn ctx<'a>(
         killers,
         history,
         stone1_s0_defense,
+        cap: MOVE_GEN_CAP,
     }
 }
 

@@ -22,8 +22,8 @@ use crate::config::{
     ASPIRATION_START_DEPTH, ASP_WINDOW_INITIAL, ASP_WINDOW_WIDEN_FACTOR, DEADLINE_CHECK_NODES,
     DEFAULT_MAX_DEPTH,
     DEFAULT_MOVE_RADIUS, DEFAULT_TIME_MS, LMR_MIN_DEPTH, LMR_MIN_MOVE_INDEX,
-    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, QSEARCH_FILTER_MODE_STR,
-    QSEARCH_MAX_PLIES, QSEARCH_TT_ENABLED,
+    LMR_REDUCTION, MATE_SCORE, MAX_CHECK_EXTENSIONS, MAX_PLY, MOVE_GEN_CAP,
+    QSEARCH_FILTER_MODE_STR, QSEARCH_MAX_PLIES, QSEARCH_TT_ENABLED,
 };
 use crate::coords::{Coord, ORIGIN};
 use crate::moves;
@@ -159,6 +159,12 @@ pub struct SearchConfig {
     pub qsearch_max_plies: u8,
     /// Per-root-path budget for check extensions.
     pub max_check_extensions: u8,
+    /// Post-ordering candidate-count cap per node. The top-`move_gen_cap`
+    /// moves (by bucket+history priority) survive truncation in
+    /// `ordering::order_moves_with_buckets`; the rest are dropped. Trades
+    /// branching for depth at fixed time. Sourced from `hexo.toml`
+    /// `engine.ordering.move_gen_cap` (default 24).
+    pub move_gen_cap: usize,
     /// Qsearch threat-filter variant. Sourced from `hexo.toml`
     /// `engine.search.qsearch_filter_mode`.
     pub qsearch_filter_mode: QsearchFilterMode,
@@ -185,6 +191,7 @@ impl Default for SearchConfig {
             lmr_reduction: LMR_REDUCTION,
             qsearch_max_plies: QSEARCH_MAX_PLIES,
             max_check_extensions: MAX_CHECK_EXTENSIONS,
+            move_gen_cap: MOVE_GEN_CAP,
             qsearch_filter_mode: QSEARCH_FILTER_MODE_STR
                 .parse()
                 .expect("QSEARCH_FILTER_MODE_STR from hexo.toml must be valid"),
@@ -467,6 +474,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
+                    cap: cfg.move_gen_cap,
                 };
                 ordering::bucket_value(&ctx, m)
             };
@@ -501,6 +509,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
+                    cap: cfg.move_gen_cap,
                 };
                 ordering::bucket_value(&ctx, slot)
             };
@@ -542,6 +551,7 @@ fn pvs_node(
                     killers: &killers_snap,
                     history: &ord.history,
                     stone1_s0_defense: stone1_defense,
+                    cap: cfg.move_gen_cap,
                 };
                 // Split-borrow: each scratch field is a distinct
                 // `Box<[Vec<_>; N]>`, so simultaneous mut-borrows of one slot

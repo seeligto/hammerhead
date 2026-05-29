@@ -8,7 +8,7 @@
 use crate::axis_bitmap::Axis;
 use crate::board::{Board, Player};
 use crate::config::{
-    HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY, MOVE_GEN_CAP,
+    HISTORY_CUTOFF_MAX, HISTORY_DECAY_DEN, HISTORY_DECAY_NUM, KILLER_SLOTS, MAX_PLY,
 };
 use crate::coords::Coord;
 use crate::proximity::{PROX_FIELD_SIZE, prox_idx};
@@ -240,6 +240,12 @@ pub struct OrderingContext<'a> {
     /// Defense cells of the S0 created by stone 1 of the current turn, or
     /// empty when stone-1-completion does not apply.
     pub stone1_s0_defense: &'a [Coord],
+    /// Post-ordering candidate-count cap. Top-`cap` moves survive the
+    /// partial-sort truncation in [`order_moves_with_buckets`]; the rest
+    /// are dropped. Sourced from `SearchConfig::move_gen_cap`
+    /// (`hexo.toml` `engine.ordering.move_gen_cap`, default 24). Runtime
+    /// override via `set_search_params` for the cap sweep.
+    pub cap: usize,
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -479,7 +485,7 @@ fn coord_on_axis(axis: Axis, line_id: i16, pos: i16) -> Coord {
 // ────────────────────────────────────────────────────────────────────────
 
 /// Score every entry in `moves`, stable-sort descending by priority, and
-/// truncate to [`MOVE_GEN_CAP`]. Convenience wrapper around
+/// truncate to `ctx.cap`. Convenience wrapper around
 /// [`order_moves_with_buckets`] for callers that don't need the per-move
 /// bucket array — not on the search hot path (search threads
 /// `SearchScratch` slots directly), so the two local scratch `Vec`s here
@@ -518,15 +524,15 @@ pub(crate) fn order_moves_with_buckets(
         scored.push((priority(bucket, h, m), bucket, m));
     }
 
-    // Partial sort: O(n) partition that places the top MOVE_GEN_CAP
-    // entries in indices 0..MOVE_GEN_CAP (unsorted within), then sort
+    // Partial sort: O(n) partition that places the top `ctx.cap`
+    // entries in indices 0..cap (unsorted within), then sort
     // the surviving prefix. The priority key is total (Coord low-32
     // tie-break), so this selection is deterministic without
     // requiring sort stability — see `SPEC_ENGINE.md` "Ordering —
     // encoding".
-    if scored.len() > MOVE_GEN_CAP {
-        scored.select_nth_unstable_by_key(MOVE_GEN_CAP - 1, |s| std::cmp::Reverse(s.0));
-        scored.truncate(MOVE_GEN_CAP);
+    if ctx.cap > 0 && scored.len() > ctx.cap {
+        scored.select_nth_unstable_by_key(ctx.cap - 1, |s| std::cmp::Reverse(s.0));
+        scored.truncate(ctx.cap);
     }
     scored.sort_by_key(|s| std::cmp::Reverse(s.0));
 

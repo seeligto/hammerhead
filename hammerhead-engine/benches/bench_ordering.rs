@@ -21,6 +21,7 @@ use std::hint::black_box;
 use hammerhead_engine_core::board::Board;
 use hammerhead_engine_core::coords::Coord;
 use hammerhead_engine_core::moves;
+use hammerhead_engine_core::config::MOVE_GEN_CAP;
 use hammerhead_engine_core::ordering::{
     HistoryTable, KillerSlot, OrderingContext, bench_bucket_value, order_moves,
 };
@@ -40,6 +41,7 @@ fn make_ctx<'a>(
         killers,
         history,
         stone1_s0_defense: &[],
+        cap: MOVE_GEN_CAP,
     }
 }
 

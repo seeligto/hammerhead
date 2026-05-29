@@ -210,6 +210,7 @@ impl PyEngine {
         d.set_item("asp_window_widen_factor", cfg.asp_window_widen_factor)?;
         d.set_item("max_check_extensions", cfg.max_check_extensions)?;
         d.set_item("qsearch_max_plies", cfg.qsearch_max_plies)?;
+        d.set_item("move_gen_cap", cfg.move_gen_cap)?;
         Ok(d)
     }
 
@@ -226,6 +227,8 @@ impl PyEngine {
     ///   `asp_window_widen_factor` (u32, [2, 16]),
     ///   `max_check_extensions` (u8, [0, 32]),
     ///   `qsearch_max_plies` (u8, [0, 32]).
+    /// - Cap probe — candidate-set size:
+    ///   `move_gen_cap` (usize, [1, 256]).
     ///
     /// Persists across `reset()` and `clear_tt()`; does NOT survive
     /// engine restart. Use `reset_search_params` to restore defaults.
@@ -356,6 +359,15 @@ fn build_search_params_from_dict(
                     )));
                 }
                 next.qsearch_max_plies = p;
+            }
+            "move_gen_cap" => {
+                let c: usize = v.extract()?;
+                if !(1..=256).contains(&c) {
+                    return Err(PyValueError::new_err(format!(
+                        "move_gen_cap out of range [1, 256]: {c}"
+                    )));
+                }
+                next.move_gen_cap = c;
             }
             _ => {
                 return Err(PyValueError::new_err(format!(

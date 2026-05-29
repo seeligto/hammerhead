@@ -163,6 +163,17 @@ def test_qsearch_max_plies_range() -> None:
         bot.set_search_params({"qsearch_max_plies": 33})
 
 
+def test_move_gen_cap_range() -> None:
+    bot = Bot()
+    assert bot.search_params()["move_gen_cap"] == CONFIG.ordering.move_gen_cap
+    bot.set_search_params({"move_gen_cap": 48})
+    assert bot.search_params()["move_gen_cap"] == 48
+    with pytest.raises(ValueError):
+        bot.set_search_params({"move_gen_cap": 0})
+    with pytest.raises(ValueError):
+        bot.set_search_params({"move_gen_cap": 257})
+
+
 def test_reset_restores_aspiration_and_extensions() -> None:
     bot = Bot()
     bot.set_search_params({
