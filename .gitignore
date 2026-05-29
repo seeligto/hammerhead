@@ -59,3 +59,4 @@ scripts/build_opening_book.py
 
 # Phase S5 Stage 2A CMA-ES tuner outputs (per-gen JSON, checkpoint, best.json)
 /tools/cma_output/
+tools/cap_output/
