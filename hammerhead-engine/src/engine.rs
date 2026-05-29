@@ -179,6 +179,37 @@ impl Engine {
         pv
     }
 
+    /// Diagnostic: the full bucket+history ordered candidate list at the
+    /// current position, computed against a FRESH ordering state (no TT
+    /// move, empty killers, empty history) and UNCAPPED (no
+    /// `move_gen_cap` truncation). Mirrors the root ordering of the
+    /// search's first iterative-deepening iteration on a cleared TT.
+    ///
+    /// Offline use only — feeds the `move_gen_cap` survival probe, which
+    /// ranks the deep-best move within this list to size the raw
+    /// truncation drop at each candidate cap. Not on any hot path.
+    #[must_use]
+    pub fn debug_ordered_moves(&self) -> Vec<Coord> {
+        use crate::config::DEFAULT_MOVE_RADIUS;
+        use crate::ordering::{HistoryTable, KillerSlot, OrderingContext, order_moves};
+
+        let mut buf: Vec<Coord> = Vec::new();
+        crate::moves::generate(&self.board, DEFAULT_MOVE_RADIUS, &mut buf);
+        let killers = KillerSlot::default();
+        let history = HistoryTable::new();
+        let ctx = OrderingContext {
+            board: &self.board,
+            side: self.board.to_move(),
+            tt_move: None,
+            killers: &killers,
+            history: &history,
+            stone1_s0_defense: &[],
+            cap: usize::MAX,
+        };
+        order_moves(&mut buf, &ctx);
+        buf
+    }
+
     /// Reset to a fresh game. TT and ordering state are retained (their
     /// own clearing methods are available on the public fields).
     pub fn reset(&mut self) {

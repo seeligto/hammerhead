@@ -98,6 +98,17 @@ impl PyEngine {
             .collect()
     }
 
+    /// Diagnostic: fresh-state, uncapped ordered candidate list at the
+    /// current position. Index 0 is the highest-priority move. Used by
+    /// the `move_gen_cap` survival probe to rank the deep-best move.
+    fn debug_ordered_moves(&self) -> Vec<(i16, i16)> {
+        self.inner
+            .debug_ordered_moves()
+            .into_iter()
+            .map(|c| (c.q, c.r))
+            .collect()
+    }
+
     fn cached_eval(&self) -> i32 {
         self.inner.cached_eval()
     }
