@@ -31,7 +31,8 @@ examples: [`docs/sdk.md`](docs/sdk.md).
 
 ## Goal
 
-Minimax + alpha-beta. WSC threat eval. Fast NPS. Win.
+Minimax + alpha-beta. NNUE leaf eval (outcome-trained; hand-built WSC
+threat eval as fallback). Fast NPS. Win.
 
 ## Toolchain
 

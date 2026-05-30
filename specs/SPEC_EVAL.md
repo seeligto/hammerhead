@@ -15,6 +15,34 @@ Three layers:
 together with the S1/S2 contributions — see § Tempo and § Layer 2
 history.)
 
+## NNUE leaf eval (default)
+
+The three hand-built layers below are the **positional leaf eval**. When
+`[engine.nnue] enabled = true` (the production default) that positional
+sum is **replaced** by an outcome-trained tiny net (`nnue.rs`,
+`nets/peraxis_aug.json`): a 32-input → 16-hidden → 1 MLP over a per-axis
+open-k threat histogram, trained on 6.7k human-game outcomes. See
+`hammerhead-engine/nets/README.md` for provenance and § Caching for the
+incremental accumulator that makes it cheap on the hot path.
+
+What the net **does not** touch:
+- **Mate / fork-mate / terminal** logic (`board.winner()` and Layer 3's
+  cover-≥3 sentinel) runs FIRST and dominates — the net output is clamped
+  below the mate band, so a decisive position never returns a net score.
+- **Threat detection** (S0 / fork) still feeds move ordering, the qsearch
+  filter, and the terminal short-circuits above.
+
+So the net replaces only the **non-terminal positional value**. With
+`enabled = false` the engine reverts to the Layer-1/2/3 sum below
+(byte-identical to the pre-NNUE engine). Consequently the hand-built eval
+weights (`window_k_scores`, `open_4`, …) and the runtime
+`set_eval_overrides` tuning surface affect play **only on the fallback
+path** when the net is enabled.
+
+Strength: +60 Elo real-time @500ms vs the hand-built eval internally
+(CI-clean), flat vs SB-perf externally — it raises absolute strength, it
+does not close the structural per-stone-vs-per-turn gap. See `diag_nnue/`.
+
 ## Layer 1: Window Scan
 
 For each axis, slide a window across the active board region and
@@ -267,6 +295,13 @@ pub fn eval(board: &Board) -> i32 {
     let fork_o = layer3_fork_bonus(&to);
     if fork_x == i32::MAX { return MATE_SCORE - board.ply() as i32; }
     if fork_o == i32::MAX { return -MATE_SCORE + board.ply() as i32; }
+
+    // NNUE leaf eval (default): the net replaces the hand-built positional
+    // sum below. Mate / fork above already returned, so the net never
+    // overrides a decisive position. `None` => Layer-1/2/3 fallback.
+    if let Some(acc_score) = board.nnue_leaf_eval() {
+        return acc_score;
+    }
 
     let mut score = 0;
     score += layer1_window_scan(board);

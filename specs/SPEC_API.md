@@ -170,6 +170,10 @@ class Engine:
     def search_params(self) -> dict: ...
     def set_search_params(self, params: dict) -> None: ...
     def reset_search_params(self) -> None: ...
+    # NNUE leaf-eval override (see § NNUE leaf eval)
+    def set_nnue(self, kind: str, mean, scale, w1, b1, w2,
+                 b2: float, out_scale: float, quantize: bool) -> None: ...
+    def clear_nnue(self) -> None: ...
 ```
 
 - `place` uses the side stored on the board. No player argument.
@@ -232,6 +236,25 @@ override is a tune-loop knob, not a replacement for TOML. Any tuned
 value that wins a Texel sweep must be committed to TOML to take effect
 in production. Measured hot-path cost: < 0.1 % NPS (struct-field load
 vs. compile-time const — verified Sprint 4A via iai-callgrind).
+
+### NNUE leaf eval (runtime override)
+
+Production installs the committed net (`[engine.nnue]`) at
+`Engine::new`; it is the leaf eval by default. Tune-loop / harness
+workflows may swap or remove the net at runtime:
+
+```python
+bot.set_nnue({"kind": "peraxis", "mean": [...], "scale": [...],
+              "w1": [...], "b1": [...], "w2": [...], "b2": ...,
+              "out_scale": 600.0, "quantize": True})  # install a net
+bot.clear_nnue()   # revert to the hand-built positional eval
+```
+
+`w1` is flat row-major `[h*nfeat + f]`. Like the search-param override,
+this persists across `reset()` but **not** across engine restart (a
+fresh `Bot()` reloads the TOML-selected net). With a net installed,
+`set_eval_overrides` tunes only the hand-built fallback, which the net
+bypasses. See `SPEC_EVAL.md` § "NNUE leaf eval".
 
 ## Internal: subprocess protocol (`hammerhead bot`)
 

@@ -67,6 +67,13 @@ cargo clippy --all-targets -- -D warnings -W clippy::all -W clippy::pedantic -A 
 
 - Search is **per-stone**, not per-turn.
 - **Minimax form**, not negamax. Eval is X-positive globally.
+- **NNUE leaf eval on by default** (`nnue.rs`, `nets/peraxis_aug.json`,
+  `[engine.nnue] enabled`). The outcome-net replaces the hand-built
+  Layer-1/2/3 *positional* eval only; mate / fork / terminal logic runs
+  first and dominates (net clamped below the mate band). `enabled = false`
+  reverts to the byte-identical hand-built eval. The hand-built weights +
+  `set_eval_overrides` tune the fallback path. Incremental accumulator in
+  `Board::apply_set` / `apply_clear`. See SPEC_EVAL.md § NNUE leaf eval.
 - Single `pvs_node` dispatches on `board.to_move()` (not separate
   `pvs_max` / `pvs_min`).
 - `Board::to_move()` parity rule handles the same-player-twice case.
@@ -142,7 +149,7 @@ specs/
   SPEC_ARCHITECTURE.md          crate layout
   SPEC_CONFIG.md                hexo.toml schema
   SPEC_ENGINE.md                Rust internals
-  SPEC_EVAL.md                  3-layer eval + WSC theory
+  SPEC_EVAL.md                  NNUE leaf eval + hand-built 3-layer + WSC theory
   SPEC_API.md                   Python surface + subprocess protocol
   SPEC_BENCHMARKS.md            bench infrastructure (Phase 10)
   SPEC_ROADMAP.md               phase plan + locked decisions
@@ -151,8 +158,9 @@ prompts/
   PHASE_{4..11}_PROMPT.md       Claude Code prompts, one per phase
 
 hammerhead-engine/               Rust crate
+  nets/                         committed NNUE nets (peraxis_aug.json) + provenance
   src/                          {coords, board, zobrist, axis_bitmap,
-                                 moves, win, threats, eval, tt,
+                                 moves, win, threats, eval, nnue, tt,
                                  ordering, search, pybind, config}.rs
   benches/                      criterion micro-benches (Phase 10)
   src/bin/bench_drain.rs        criterion → JSON consolidator

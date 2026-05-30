@@ -37,6 +37,11 @@ open_5     = 8000
 # ...
 window_k_scores = [0, 1, 8, 64, 512, 4096, 1_000_000]
 
+[engine.nnue]
+enabled  = true                                  # NNUE leaf eval on by default
+quantize = true                                  # int16 inference
+net_file = "hammerhead-engine/nets/peraxis_aug.json"
+
 [engine.tt]
 default_size_mb = 64
 
@@ -65,6 +70,30 @@ kill-switch for the qsearch-TT feature; a one-line toggle reverts.
 Both probe AND store are gated by this single flag. Default `true`.
 
 See `SPEC_ENGINE.md` § "Quiescence" for the full semantics.
+
+### `engine.nnue` (NNUE leaf eval)
+
+| key | type | meaning |
+|---|---|---|
+| `enabled`  | bool | `true` (default) installs the outcome-net as the leaf positional eval in `Engine::new`; `false` keeps the hand-built Layer-1/2/3 eval. |
+| `quantize` | bool | `true` uses int16 post-training quantised inference; `false` uses float. |
+| `net_file` | str  | Path (relative to the workspace root) to the committed trained net JSON. The net **is** the eval, so it ships in the repo. |
+
+Unlike the scalar tables, the net weights are **not** hand-written in
+`hexo.toml`: `build.rs` reads `net_file` at compile time and codegens the
+weight arrays (`NNUE_MEAN`, `NNUE_W1`, …) into `config_generated.rs`
+alongside the `NNUE_ENABLED` / `NNUE_QUANTIZE` flags — so the hot path
+needs no JSON parser or `serde` at runtime. `nnue::production_net`
+assembles `NnueParams` from those constants. `cargo:rerun-if-changed` is
+registered for `net_file`, so swapping the net triggers a rebuild.
+
+The Python `config.py` dataclasses do **not** mirror `[engine.nnue]` (the
+net is engine-internal). Runtime net overrides for tune-loop / harness
+workflows go through `Bot.set_nnue` / `clear_nnue` (see `SPEC_API.md`);
+they revert to the TOML default on engine restart.
+
+See `SPEC_EVAL.md` § "NNUE leaf eval" and
+`hammerhead-engine/nets/README.md` for the net itself.
 
 ## Rust side: build-time codegen
 

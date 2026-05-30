@@ -18,7 +18,8 @@ hexo.toml                   single source of truth for engine tuning (SPEC_CONFI
 hammerhead-engine/          Rust crate
 ├── Cargo.toml
 ├── pyproject.toml          maturin build config
-├── build.rs                reads ../hexo.toml, codegens src/config_generated.rs
+├── build.rs                reads ../hexo.toml (+ the NNUE net_file), codegens src/config_generated.rs
+├── nets/                   committed trained NNUE nets (peraxis_aug.json) + provenance
 ├── src/
 │   ├── lib.rs              crate root, pub use only
 │   ├── config.rs           include!-s codegen'd consts from hexo.toml
@@ -30,7 +31,8 @@ hammerhead-engine/          Rust crate
 │   ├── win.rs              6-in-row detection
 │   ├── threats.rs          WSC threat classification
 │   ├── line_contrib.rs     per-(axis,line_id) Layer-1 contribution cache (Phase 27)
-│   ├── eval.rs             static eval (3-layer)
+│   ├── eval.rs             static eval (NNUE leaf eval; hand-built 3-layer fallback)
+│   ├── nnue.rs             outcome-net leaf eval + incremental accumulator + int16 quant
 │   ├── zobrist.rs          hash keys, incremental update
 │   ├── tt.rs               transposition table
 │   ├── ordering.rs         move ordering for alpha-beta
