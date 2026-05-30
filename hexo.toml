@@ -68,6 +68,24 @@ fork_cover2_bonus = 4000
 # dropped together with the S1/S2 contributions. See SPEC_EVAL.md
 # § Tempo.)
 
+[engine.nnue]
+# Outcome-trained tiny-net leaf eval (NNUE). When enabled it replaces the
+# hand-built Layer-1/2/3 positional eval above; the mate / fork / terminal
+# short-circuits in eval::eval still run FIRST and dominate (net output is
+# clamped below mate_score). See SPEC_EVAL.md § NNUE leaf eval and
+# hammerhead-engine/nets/README.md for provenance.
+#
+# enabled = false reverts to the hand-built positional eval (no behaviour
+# change vs the pre-NNUE engine).
+enabled  = true
+# int16 post-training quantisation (Stockfish scheme) — faster hot path,
+# ~7-score-unit error vs float. false = float inference.
+quantize = true
+# Trained net artifact (committed). Path is relative to the workspace root;
+# build.rs reads it at compile time and codegens the weights. The net IS the
+# eval, so it ships in the repo.
+net_file = "hammerhead-engine/nets/peraxis_aug.json"
+
 [engine.threats]
 # guard against pathological positions (worst-case all-stones-in-one-cluster)
 max_s0_instances_per_player = 64

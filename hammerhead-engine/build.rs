@@ -45,6 +45,7 @@ fn main() {
     emit_search(&mut out, &cfg);
     emit_ordering(&mut out, &cfg);
     emit_board(&mut out, &cfg);
+    emit_nnue(&mut out, &cfg, workspace_root);
     emit_bench(&mut out, &cfg);
 
     fs::write(&out_path, out).expect("write config_generated.rs");
@@ -315,6 +316,21 @@ impl JsonValue {
             JsonValue::Number(n) => *n as i64,
             _ => panic!("fixtures JSON: expected number"),
         }
+    }
+    fn as_f64(&self) -> f64 {
+        match self {
+            JsonValue::Number(n) => *n,
+            _ => panic!("net JSON: expected number"),
+        }
+    }
+    fn as_str(&self) -> &str {
+        match self {
+            JsonValue::String(s) => s,
+            _ => panic!("net JSON: expected string"),
+        }
+    }
+    fn as_f32_vec(&self) -> Vec<f32> {
+        self.as_array().iter().map(|v| v.as_f64() as f32).collect()
     }
     fn get<'a>(&'a self, key: &str) -> &'a JsonValue {
         match self {
@@ -686,6 +702,62 @@ fn emit_board(out: &mut String, cfg: &toml::Value) {
         &["engine", "board", "zobrist_window"],
         "ZOBRIST_WINDOW",
     );
+}
+
+/// Emit the NNUE leaf-eval config: the `enabled` / `quantize` toggles from
+/// hexo.toml plus the trained net weights from the committed `net_file`
+/// (read here at build time so the hot path needs no JSON parser / serde at
+/// runtime — same codegen pattern as the rest of the config). nnue.rs
+/// assembles `NnueParams` from these constants.
+fn emit_nnue(out: &mut String, cfg: &toml::Value, workspace_root: &Path) {
+    emit_bool(out, cfg, &["engine", "nnue", "enabled"], "NNUE_ENABLED");
+    emit_bool(out, cfg, &["engine", "nnue", "quantize"], "NNUE_QUANTIZE");
+
+    let net_rel = get(cfg, &["engine", "nnue", "net_file"])
+        .as_str()
+        .expect("hexo.toml engine.nnue.net_file must be a string");
+    let net_path = workspace_root.join(net_rel);
+    println!("cargo:rerun-if-changed={}", net_path.display());
+
+    let txt = fs::read_to_string(&net_path)
+        .unwrap_or_else(|e| panic!("cannot read net_file {}: {e}", net_path.display()));
+    let net = parse_json(&txt);
+
+    let kind = net.get("kind").as_str();
+    let mean = net.get("mean").as_f32_vec();
+    let scale = net.get("scale").as_f32_vec();
+    let w1 = net.get("w1").as_f32_vec();
+    let b1 = net.get("b1").as_f32_vec();
+    let w2 = net.get("w2").as_f32_vec();
+    let b2 = net.get("b2").as_f64() as f32;
+    let out_scale = net.get("out_scale").as_f64() as f32;
+
+    let nfeat = mean.len();
+    let nhid = b1.len();
+    assert_eq!(scale.len(), nfeat, "net scale len {} != nfeat {nfeat}", scale.len());
+    assert_eq!(w2.len(), nhid, "net w2 len {} != nhid {nhid}", w2.len());
+    assert_eq!(w1.len(), nfeat * nhid, "net w1 len {} != nfeat*nhid {}", w1.len(), nfeat * nhid);
+
+    writeln!(out, "pub const NNUE_KIND: &str = \"{kind}\";").unwrap();
+    writeln!(out, "pub const NNUE_NFEAT: usize = {nfeat};").unwrap();
+    writeln!(out, "pub const NNUE_NHID: usize = {nhid};").unwrap();
+    emit_f32_array(out, "NNUE_MEAN", &mean);
+    emit_f32_array(out, "NNUE_SCALE", &scale);
+    emit_f32_array(out, "NNUE_W1", &w1); // flat row-major [h*nfeat + f]
+    emit_f32_array(out, "NNUE_B1", &b1);
+    emit_f32_array(out, "NNUE_W2", &w2);
+    writeln!(out, "pub const NNUE_B2: f32 = {};", fmt_f32(b2)).unwrap();
+    writeln!(out, "pub const NNUE_OUT_SCALE: f32 = {};", fmt_f32(out_scale)).unwrap();
+}
+
+/// Round-trippable shortest f32 literal (Debug repr + suffix).
+fn fmt_f32(v: f32) -> String {
+    format!("{v:?}f32")
+}
+
+fn emit_f32_array(out: &mut String, name: &str, vals: &[f32]) {
+    let body = vals.iter().map(|&v| fmt_f32(v)).collect::<Vec<_>>().join(", ");
+    writeln!(out, "pub const {name}: [f32; {}] = [{body}];", vals.len()).unwrap();
 }
 
 fn get<'a>(cfg: &'a toml::Value, path: &[&str]) -> &'a toml::Value {
