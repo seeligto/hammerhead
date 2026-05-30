@@ -78,6 +78,16 @@ pub fn eval(board: &Board) -> i32 {
         return -(MATE_SCORE - board.ply() as i32);
     }
 
+    // Diagnostic (Gate B): outcome-net replaces the positional eval via the
+    // incremental accumulator. Mate / fork-mate above still dominate.
+    if let Some(params) = board.nnue().as_deref() {
+        let stm = board.to_move();
+        // Accumulator is always installed alongside `nnue` (see set_nnue).
+        if let Some(acc) = board.acc() {
+            return acc.eval(params, stm, params.quant.is_some());
+        }
+    }
+
     let mut score = 0;
     score += layer1_window_scan_8cell(board);
     score += layer2_shapes(tx.counts, &ov) - layer2_shapes(to.counts, &ov);

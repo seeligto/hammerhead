@@ -113,6 +113,11 @@ impl Engine {
         self.board.cached_eval()
     }
 
+    /// Diagnostic (Gate 2): install / clear the tiny-net leaf eval.
+    pub fn set_nnue(&mut self, params: Option<crate::nnue::NnueParams>) {
+        self.board.set_nnue(params);
+    }
+
     /// Side that places the next stone.
     #[must_use]
     pub fn to_move(&self) -> Player {

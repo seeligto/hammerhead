@@ -11,6 +11,7 @@ pub mod eval;
 pub mod eval_overrides;
 pub mod line_contrib;
 pub mod moves;
+pub mod nnue;
 pub mod ordering;
 pub mod proximity;
 pub mod pybind;

@@ -113,6 +113,74 @@ impl PyEngine {
         self.inner.cached_eval()
     }
 
+    /// Install the outcome-net leaf eval (Gate B). `kind` is "hist" (12-d)
+    /// or "peraxis" (32-d); `nfeat` is inferred from `mean.len()`. `w1`
+    /// flat row-major [NHID*nfeat]. `quantize` installs the int16 mirror.
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    fn set_nnue(
+        &mut self,
+        kind: &str,
+        mean: Vec<f32>,
+        scale: Vec<f32>,
+        w1: Vec<f32>,
+        b1: Vec<f32>,
+        w2: Vec<f32>,
+        b2: f32,
+        out_scale: f32,
+        quantize: bool,
+    ) -> PyResult<()> {
+        use crate::nnue::{FeatureKind, NnueParams, MAX_FEAT, NFEAT_HIST, NFEAT_PERAXIS, NHID};
+        let (k, nfeat) = match kind {
+            "hist" => (FeatureKind::Hist, NFEAT_HIST),
+            "peraxis" => (FeatureKind::PerAxis, NFEAT_PERAXIS),
+            _ => return Err(PyValueError::new_err("set_nnue: kind must be hist|peraxis")),
+        };
+        if mean.len() != nfeat
+            || scale.len() != nfeat
+            || w1.len() != nfeat * NHID
+            || b1.len() != NHID
+            || w2.len() != NHID
+        {
+            return Err(PyValueError::new_err("set_nnue: bad parameter shape"));
+        }
+        let mut m = [0f32; MAX_FEAT];
+        m[..nfeat].copy_from_slice(&mean);
+        let mut s = [1f32; MAX_FEAT]; // unit scale on unused tail avoids /0
+        s[..nfeat].copy_from_slice(&scale);
+        let mut bb1 = [0f32; NHID];
+        bb1.copy_from_slice(&b1);
+        let mut ww2 = [0f32; NHID];
+        ww2.copy_from_slice(&w2);
+        let mut ww1 = [[0f32; MAX_FEAT]; NHID];
+        for h in 0..NHID {
+            for f in 0..nfeat {
+                ww1[h][f] = w1[h * nfeat + f];
+            }
+        }
+        let mut params = NnueParams {
+            kind: k,
+            nfeat,
+            mean: m,
+            scale: s,
+            w1: ww1,
+            b1: bb1,
+            w2: ww2,
+            b2,
+            out_scale,
+            quant: None,
+        };
+        if quantize {
+            params.quantize();
+        }
+        self.inner.set_nnue(Some(params));
+        Ok(())
+    }
+
+    /// Diagnostic (Gate 2): remove the tiny-net eval; restore positional.
+    fn clear_nnue(&mut self) {
+        self.inner.set_nnue(None);
+    }
+
     fn to_move(&self) -> u8 {
         match self.inner.to_move() {
             Player::X => 0,

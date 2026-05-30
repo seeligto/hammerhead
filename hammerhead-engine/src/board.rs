@@ -165,6 +165,15 @@ pub struct Board {
     /// allocation per `set_eval_overrides` call where Layer-1 inputs
     /// changed — amortised across a whole match, never per node.
     window_score_table: RefCell<Option<Box<[i32; WINDOW_SCORE_8_LEN]>>>,
+    /// Diagnostic-only tiny-net leaf eval (Gate 2). `Some` ⟹ `eval::eval`
+    /// replaces Layer-1/2/3 with the net output (mate logic still runs
+    /// first). Persists across `reset`. Never set in production.
+    nnue: RefCell<Option<Box<crate::nnue::NnueParams>>>,
+    /// Incremental feature accumulator for the net (Gate B). `Some` iff
+    /// `nnue` is installed; maintained in `apply_set` / `apply_clear` by a
+    /// bounded 3-line delta. Plain field (not `RefCell`): mutated only on
+    /// `&mut self` paths, read only on `&self` eval paths.
+    acc: Option<Box<crate::nnue::Accumulator>>,
 }
 
 impl Default for Board {
@@ -202,6 +211,8 @@ impl Board {
             line_contrib: RefCell::new(LineContrib::new()),
             eval_overrides: Cell::new(EvalOverrides::default()),
             window_score_table: RefCell::new(None),
+            nnue: RefCell::new(None),
+            acc: None,
         }
     }
 
@@ -225,6 +236,11 @@ impl Board {
         self.threat_scratch.borrow_mut().clear_all();
         self.eval_cache.set(None);
         self.line_contrib.borrow_mut().reset();
+        // Board is now empty; the accumulator (if installed) resets to the
+        // empty-board feature vector. `nnue` itself persists across reset.
+        if self.acc.is_some() {
+            self.acc = Some(Box::new(crate::nnue::Accumulator::new()));
+        }
     }
 
     /// Place the next stone at `c`. Updates hash, candidates, history.
@@ -585,6 +601,43 @@ impl Board {
         self.window_score_table.borrow()
     }
 
+    /// Diagnostic (Gate 2): install / clear the tiny-net leaf eval.
+    /// Invalidates the static-eval cache so the next read recomputes.
+    pub fn set_nnue(&mut self, params: Option<crate::nnue::NnueParams>) {
+        let present = params.is_some();
+        *self.nnue.borrow_mut() = params.map(Box::new);
+        self.eval_cache.set(None);
+        if present {
+            // Build the incremental accumulator from the current board.
+            let mut n_x = 0i32;
+            let mut n_o = 0i32;
+            for &p in &self.history_players {
+                match p {
+                    Player::X => n_x += 1,
+                    Player::O => n_o += 1,
+                }
+            }
+            let mut acc = crate::nnue::Accumulator::new();
+            acc.rebuild(&self.axes, n_x, n_o);
+            self.acc = Some(Box::new(acc));
+        } else {
+            self.acc = None;
+        }
+    }
+
+    /// Tiny-net params if installed (Gate 2 diagnostic).
+    #[inline]
+    pub(crate) fn nnue(&self) -> std::cell::Ref<'_, Option<Box<crate::nnue::NnueParams>>> {
+        self.nnue.borrow()
+    }
+
+    /// Incremental feature accumulator if installed (Gate B). Read-only.
+    #[inline]
+    pub(crate) fn acc(&self) -> Option<&crate::nnue::Accumulator> {
+        self.acc.as_deref()
+    }
+
+
     /// Replace the runtime eval-weight overrides. Invalidates the
     /// Phase-27 `LineContribution` cache, the lazy static-eval cache,
     /// and the cached threats so Layer 2/3 re-read the new S0/fork
@@ -746,6 +799,11 @@ impl Board {
     fn apply_set(&mut self, c: Coord, player: Player) {
         self.axes.set(c, player);
         self.line_contrib.borrow_mut().invalidate_coord(c);
+        // Disjoint-field borrow: `acc` (mut) and `axes` (shared) are
+        // separate fields, so this is a single bounded 3-line update.
+        if let Some(acc) = self.acc.as_mut() {
+            acc.on_set(&self.axes, c, player);
+        }
     }
 
     /// Symmetric inverse of [`Self::apply_set`] for `undo`. Same
@@ -754,6 +812,9 @@ impl Board {
     fn apply_clear(&mut self, c: Coord, player: Player) {
         self.axes.clear(c, player);
         self.line_contrib.borrow_mut().invalidate_coord(c);
+        if let Some(acc) = self.acc.as_mut() {
+            acc.on_clear(&self.axes, c, player);
+        }
     }
 
     /// Re-derive `winner` from scratch by scanning `player`'s placed stones
@@ -939,3 +1000,63 @@ fn prev_parity(side: Player, halfmove: u8, post_ply: u32) -> (Player, u8) {
     }
 }
 
+
+#[cfg(test)]
+mod acc_tests {
+    use super::*;
+    use crate::coords::Coord;
+    use crate::nnue::{features_full, FeatureKind, NnueParams, MAX_FEAT, NHID};
+
+    fn dummy_params() -> NnueParams {
+        NnueParams {
+            kind: FeatureKind::PerAxis,
+            nfeat: 32,
+            mean: [0.0; MAX_FEAT],
+            scale: [1.0; MAX_FEAT],
+            w1: [[0.0; MAX_FEAT]; NHID],
+            b1: [0.0; NHID],
+            w2: [0.0; NHID],
+            b2: 0.0,
+            out_scale: 1.0,
+            quant: None,
+        }
+    }
+
+    /// The board-maintained accumulator (through `place_for_search` /
+    /// `undo_for_search`) equals a full recompute at every ply, both kinds.
+    #[test]
+    #[allow(clippy::float_cmp)] // features are integer counts stored as f32
+    fn board_accumulator_matches_full_recompute_through_search() {
+        let mut b = Board::new();
+        b.set_nnue(Some(dummy_params()));
+        let moves = [
+            (0, 0), (1, 0), (0, 1), (-1, 1), (2, 0),
+            (1, -1), (0, 2), (-1, 0), (1, 1), (2, -1),
+        ];
+        for &(q, r) in &moves {
+            b.place_for_search(Coord::new(q, r));
+            let stm = b.to_move();
+            let (cells, players) = (&b.history[..], &b.history_players[..]);
+            for kind in [FeatureKind::PerAxis, FeatureKind::Hist] {
+                assert_eq!(
+                    b.acc().unwrap().assemble(kind, stm),
+                    features_full(cells, players, stm, kind),
+                    "place ply={} kind={:?}",
+                    b.ply(),
+                    kind
+                );
+            }
+        }
+        for _ in 0..moves.len() {
+            b.undo_for_search();
+            let stm = b.to_move();
+            let (cells, players) = (&b.history[..], &b.history_players[..]);
+            assert_eq!(
+                b.acc().unwrap().assemble(FeatureKind::PerAxis, stm),
+                features_full(cells, players, stm, FeatureKind::PerAxis),
+                "undo ply={}",
+                b.ply()
+            );
+        }
+    }
+}
