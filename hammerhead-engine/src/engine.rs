@@ -47,8 +47,15 @@ impl Engine {
         } else {
             tt_size_mb
         };
+        let mut board = Board::new();
+        // Production leaf eval: install the outcome-net on the empty board
+        // (accumulator starts empty, updates incrementally on place/undo).
+        // `enabled = false` in hexo.toml keeps the hand-built positional eval.
+        if crate::config::NNUE_ENABLED {
+            board.set_nnue(Some(crate::nnue::production_net()));
+        }
         Self {
-            board: Board::new(),
+            board,
             tt: TranspositionTable::new(mb),
             ordering: OrderingState::new(),
             scratch: SearchScratch::new(),
@@ -113,7 +120,9 @@ impl Engine {
         self.board.cached_eval()
     }
 
-    /// Diagnostic (Gate 2): install / clear the tiny-net leaf eval.
+    /// Override the leaf-eval net at runtime (tune-loop / harness only;
+    /// production installs `nnue::production_net` in `new`). `None` restores
+    /// the hand-built positional eval. Restart reverts to the TOML default.
     pub fn set_nnue(&mut self, params: Option<crate::nnue::NnueParams>) {
         self.board.set_nnue(params);
     }

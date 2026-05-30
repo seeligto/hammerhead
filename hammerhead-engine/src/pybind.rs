@@ -113,9 +113,11 @@ impl PyEngine {
         self.inner.cached_eval()
     }
 
-    /// Install the outcome-net leaf eval (Gate B). `kind` is "hist" (12-d)
-    /// or "peraxis" (32-d); `nfeat` is inferred from `mean.len()`. `w1`
-    /// flat row-major [NHID*nfeat]. `quantize` installs the int16 mirror.
+    /// Runtime override of the leaf-eval net (tune-loop / harness only;
+    /// production installs the committed net in `Engine::new`). `kind` is
+    /// "hist" (12-d) or "peraxis" (32-d); `nfeat` is inferred from
+    /// `mean.len()`. `w1` flat row-major [NHID*nfeat]. `quantize` installs
+    /// the int16 mirror.
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn set_nnue(
         &mut self,
@@ -176,7 +178,8 @@ impl PyEngine {
         Ok(())
     }
 
-    /// Diagnostic (Gate 2): remove the tiny-net eval; restore positional.
+    /// Runtime override: remove the leaf-eval net; restore the hand-built
+    /// positional eval. Reverts to the TOML default on engine restart.
     fn clear_nnue(&mut self) {
         self.inner.set_nnue(None);
     }

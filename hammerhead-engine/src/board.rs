@@ -165,11 +165,12 @@ pub struct Board {
     /// allocation per `set_eval_overrides` call where Layer-1 inputs
     /// changed — amortised across a whole match, never per node.
     window_score_table: RefCell<Option<Box<[i32; WINDOW_SCORE_8_LEN]>>>,
-    /// Diagnostic-only tiny-net leaf eval (Gate 2). `Some` ⟹ `eval::eval`
-    /// replaces Layer-1/2/3 with the net output (mate logic still runs
-    /// first). Persists across `reset`. Never set in production.
+    /// Outcome-net leaf eval (NNUE). `Some` ⟹ `eval::eval` replaces
+    /// Layer-1/2/3 with the net output (mate logic still runs first).
+    /// Persists across `reset`. Installed by `Engine::new` when
+    /// `config::NNUE_ENABLED`; `None` uses the hand-built positional eval.
     nnue: RefCell<Option<Box<crate::nnue::NnueParams>>>,
-    /// Incremental feature accumulator for the net (Gate B). `Some` iff
+    /// Incremental feature accumulator for the net. `Some` iff
     /// `nnue` is installed; maintained in `apply_set` / `apply_clear` by a
     /// bounded 3-line delta. Plain field (not `RefCell`): mutated only on
     /// `&mut self` paths, read only on `&self` eval paths.
@@ -601,8 +602,10 @@ impl Board {
         self.window_score_table.borrow()
     }
 
-    /// Diagnostic (Gate 2): install / clear the tiny-net leaf eval.
-    /// Invalidates the static-eval cache so the next read recomputes.
+    /// Install / clear the outcome-net leaf eval and (re)build its
+    /// accumulator from the current board. Invalidates the static-eval cache
+    /// so the next read recomputes. Called by `Engine::new` (production
+    /// default) and by the runtime override path.
     pub fn set_nnue(&mut self, params: Option<crate::nnue::NnueParams>) {
         let present = params.is_some();
         *self.nnue.borrow_mut() = params.map(Box::new);
@@ -625,13 +628,13 @@ impl Board {
         }
     }
 
-    /// Tiny-net params if installed (Gate 2 diagnostic).
+    /// Outcome-net params if installed.
     #[inline]
     pub(crate) fn nnue(&self) -> std::cell::Ref<'_, Option<Box<crate::nnue::NnueParams>>> {
         self.nnue.borrow()
     }
 
-    /// Incremental feature accumulator if installed (Gate B). Read-only.
+    /// Incremental feature accumulator if installed. Read-only.
     #[inline]
     pub(crate) fn acc(&self) -> Option<&crate::nnue::Accumulator> {
         self.acc.as_deref()

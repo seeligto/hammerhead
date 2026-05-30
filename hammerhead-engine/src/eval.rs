@@ -78,8 +78,10 @@ pub fn eval(board: &Board) -> i32 {
         return -(MATE_SCORE - board.ply() as i32);
     }
 
-    // Diagnostic (Gate B): outcome-net replaces the positional eval via the
-    // incremental accumulator. Mate / fork-mate above still dominate.
+    // NNUE leaf eval: the outcome-net replaces the hand-built positional
+    // eval below via the incremental accumulator. All mate / fork-mate /
+    // terminal short-circuits above still run FIRST and dominate. `None`
+    // (hexo.toml `enabled = false`) falls through to Layer 1/2/3.
     if let Some(params) = board.nnue().as_deref() {
         let stm = board.to_move();
         // Accumulator is always installed alongside `nnue` (see set_nnue).

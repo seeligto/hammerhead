@@ -1,9 +1,13 @@
-//! Outcome-trained tiny-net leaf eval with an INCREMENTAL accumulator
-//! (NNUE Stage 2, Gate B). Replaces the Stage-1 full-recompute path.
+//! Outcome-trained tiny-net leaf eval with an INCREMENTAL accumulator.
+//! The production positional eval when `[engine.nnue] enabled` (default):
+//! it replaces the hand-built Layer-1/2/3 scan in `eval::eval`.
 //!
-//! The net is trained in Python on human-game OUTCOME labels and exported
-//! as float weights; Rust runs integer-or-float inference on the hot path.
-//! Mate / fork-mate logic in `eval::eval` still runs first and dominates.
+//! The net is trained offline (`diag_nnue/`) on human-game OUTCOME labels
+//! and committed as `nets/peraxis_aug.json`; `build.rs` codegens its weights
+//! into `config` so the hot path needs no JSON parse. Rust runs
+//! integer-or-float inference; `production_net` assembles the params and
+//! `Engine::new` installs them. Mate / fork-mate logic in `eval::eval` still
+//! runs FIRST and dominates — the net output is clamped below mate scores.
 //!
 //! ## Features (Gate-A locked: per-axis open-k, D6-aug)
 //! Per axis (Q/R/S) and per length-6 window on every populated line, count
@@ -168,6 +172,64 @@ impl NnueParams {
         let b2q = f64::from(self.b2 * q_logit).round() as i64;
         self.quant = Some(QuantParams { w1q, b1q, w2q, b2q, q_logit });
     }
+}
+
+/// Build the production leaf-eval net from the codegen'd config weights
+/// (`hexo.toml` `[engine.nnue] net_file`, read at build time by `build.rs`).
+/// Quantises iff `config::NNUE_QUANTIZE`. `Engine::new` installs the result
+/// when `config::NNUE_ENABLED`; the runtime `set_nnue` override path bypasses
+/// this for tune-loop / harness workflows.
+///
+/// # Panics
+///
+/// Panics if the committed net is structurally incompatible with the engine
+/// (unknown `kind`, `nfeat > MAX_FEAT`, or `NHID` mismatch). These reflect a
+/// malformed `net_file` and are caught the first time an engine is built.
+#[cold]
+#[must_use]
+pub fn production_net() -> NnueParams {
+    use crate::config;
+    let kind = match config::NNUE_KIND {
+        "hist" => FeatureKind::Hist,
+        "peraxis" => FeatureKind::PerAxis,
+        other => panic!("config::NNUE_KIND must be hist|peraxis, got {other}"),
+    };
+    let nfeat = config::NNUE_NFEAT;
+    assert!(nfeat <= MAX_FEAT, "net nfeat {nfeat} > MAX_FEAT {MAX_FEAT}");
+    assert_eq!(config::NNUE_NHID, NHID, "net NHID != engine NHID");
+
+    let mut mean = [0.0f32; MAX_FEAT];
+    let mut scale = [1.0f32; MAX_FEAT]; // unit scale on unused tail avoids /0
+    mean[..nfeat].copy_from_slice(&config::NNUE_MEAN);
+    scale[..nfeat].copy_from_slice(&config::NNUE_SCALE);
+
+    let mut w1 = [[0.0f32; MAX_FEAT]; NHID];
+    for h in 0..NHID {
+        for f in 0..nfeat {
+            w1[h][f] = config::NNUE_W1[h * nfeat + f];
+        }
+    }
+    let mut b1 = [0.0f32; NHID];
+    b1.copy_from_slice(&config::NNUE_B1);
+    let mut w2 = [0.0f32; NHID];
+    w2.copy_from_slice(&config::NNUE_W2);
+
+    let mut params = NnueParams {
+        kind,
+        nfeat,
+        mean,
+        scale,
+        w1,
+        b1,
+        w2,
+        b2: config::NNUE_B2,
+        out_scale: config::NNUE_OUT_SCALE,
+        quant: None,
+    };
+    if config::NNUE_QUANTIZE {
+        params.quantize();
+    }
+    params
 }
 
 /// Clipped-ReLU upper bound in the quantised z1 domain. Generous: real

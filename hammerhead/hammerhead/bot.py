@@ -365,10 +365,10 @@ class Bot:
         return self._engine.cached_eval()
 
     def set_nnue(self, params: dict) -> None:
-        """Diagnostic (Gate B throwaway): install the outcome-net as the
-        leaf eval. ``params`` keys: kind ("hist"|"peraxis"), mean, scale,
-        w1, b1, w2, b2, out_scale, and optional quantize (bool). Not a
-        production surface."""
+        """Runtime override of the leaf-eval net (tune-loop / harness only;
+        production loads the net from hexo.toml at engine construction).
+        ``params`` keys: kind ("hist"|"peraxis"), mean, scale, w1, b1, w2,
+        b2, out_scale, and optional quantize (bool). Reverts on restart."""
         self._engine.set_nnue(params.get("kind", "peraxis"),
                               params["mean"], params["scale"], params["w1"],
                               params["b1"], params["w2"], params["b2"],
@@ -376,7 +376,8 @@ class Bot:
                               bool(params.get("quantize", False)))
 
     def clear_nnue(self) -> None:
-        """Diagnostic: restore the hand-built positional eval."""
+        """Runtime override: restore the hand-built positional eval (revert
+        the NNUE leaf eval). Reverts on engine restart."""
         self._engine.clear_nnue()
 
     def principal_variation(self, max_depth: int = _DEFAULT_PV_DEPTH) -> list[Move]:
