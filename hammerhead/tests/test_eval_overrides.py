@@ -94,9 +94,14 @@ def test_window_k_override_changes_eval() -> None:
     """Bumping a Layer-1 window-k score rebuilds the runtime
     `WINDOW_SCORE_8` table, so any non-trivial position with stones
     visible to the scan returns a different eval. Uses k=2 (a count
-    that fires on almost any midgame fragment)."""
+    that fires on almost any midgame fragment).
+
+    `eval_overrides` tune the hand-built Layer-1/2/3 eval, which the NNUE
+    leaf eval (on by default) bypasses — so clear the net first to exercise
+    the path the override actually affects."""
     a = Bot()
     _seed_position(a)
+    a.clear_nnue()
     base = a.evaluate()
     new_k = list(CONFIG.eval.window_k_scores)
     new_k[2] += 1_000

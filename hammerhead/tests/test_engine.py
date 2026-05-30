@@ -13,7 +13,11 @@ def test_initial_state() -> None:
     assert eng.halfmove() == 0
     assert eng.to_move() == 0  # X
     assert eng.winner() is None
-    assert eng.cached_eval() == 0
+    # NNUE leaf eval is on by default: the empty-board score is the net's
+    # learned prior (deterministic, sub-mate), not the hand-built 0.
+    assert abs(eng.cached_eval()) < 900_000
+    eng.clear_nnue()
+    assert eng.cached_eval() == 0  # hand-built eval is symmetric on empty board
 
 
 def test_place_origin_then_query() -> None:
